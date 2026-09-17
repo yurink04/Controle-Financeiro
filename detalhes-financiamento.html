@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <title>Detalhes do Financiamento - Controle Financeiro</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <header>
+        <h1>Controle Financeiro</h1>
+        <span id="usuarioLogadoNome"></span>
+        <nav>
+            <a href="dashboard.html">Início</a>
+            <a href="categorias.html">Categorias</a>
+            <a href="cartoes.html">Cartões</a>
+            <a href="lancamentos.html">Lançamentos</a>
+            <a href="relatorios.html" class="active">Relatórios</a>
+            <a href="admin-logs.html" style="color: #ef4444; font-weight: bold;">Admin Logs</a>
+            
+            <button type="button" onclick="alternarTemaVisual()" class="btn-icone-tema" title="Alternar Modo Escuro / Claro">
+                <img src="imagens/modo_escuro.jpg" alt="Modo Escuro">
+            </button>
+
+            <a href="index.html" onclick="localStorage.removeItem('usuarioLogado')">Sair</a>
+        </nav>
+    </header>
+
+    <main class="container">
+        <!-- Cabeçalho e Informações Gerais do Financiamento -->
+        <div class="form-card">
+            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; margin-bottom: 15px;">
+                <h2 id="tituloFinanciamentoDetalhe" style="margin: 0;">Detalhes do Financiamento</h2>
+                <a href="relatorios.html" style="background-color: #64748b; color: white; padding: 6px 12px; border-radius: 6px; text-decoration: none; font-size: 0.9rem;">← Voltar para Relatórios</a>
+            </div>
+
+            <div class="stats-grid" style="margin-bottom: 20px;">
+                <div class="stat-box">
+                    <h3>Progresso</h3>
+                    <p id="infoProgressoMeses" style="font-size: 1.1rem; font-weight: bold;">0 / 0 meses</p>
+                </div>
+                <div class="stat-box">
+                    <h3>Meses Faltantes</h3>
+                    <p id="infoMesesFaltantes" style="font-size: 1.1rem; font-weight: bold; color: #f59e0b;">0 meses</p>
+                </div>
+                <div class="stat-box">
+                    <h3>Previsão de Término</h3>
+                    <p id="infoTerminoFinanciamento" style="font-size: 1.1rem; font-weight: bold; color: #3b82f6;">--/----</p>
+                </div>
+            </div>
+
+            <!-- Formulário para editar dados gerais do financiamento -->
+            <form id="formEditarFinanciamentoCompleto" onsubmit="salvarEdicaoFinanciamentoCompleto(event)">
+                <div style="display: grid; grid-template-columns: 2fr 1fr 1fr; gap: 12px; align-items: end;">
+                    <div>
+                        <label>Nome do Contrato:</label>
+                        <input type="text" id="editNomeFin" required>
+                    </div>
+                    <div>
+                        <label>Total de Meses:</label>
+                        <input type="number" id="editTotalMesesFin" min="1" required>
+                    </div>
+                    <div>
+                        <button type="submit" style="background-color: #f59e0b; height: 42px;">Salvar Alterações</button>
+                    </div>
+                </div>
+            </form>
+        </div>
+
+        <!-- Tabela de Parcelas Vinculadas -->
+        <div class="form-card" style="margin-top: 20px;">
+            <h2>Parcelas do Financiamento</h2>
+            <p style="font-size: 0.9rem; color: var(--text-muted); margin-bottom: 15px;">Aqui você pode acompanhar o status de cada parcela e alterar valores individuais em caso de reajuste.</p>
+            
+            <div class="tabela-container">
+                <table class="tabela">
+                    <thead>
+                        <tr>
+                            <th>Parcela</th>
+                            <th>Vencimento</th>
+                            <th>Categoria</th>
+                            <th>Valor (R$)</th>
+                            <th>Status</th>
+                            <th>Ações</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tabelaParcelasFinanciamento">
+                        <!-- Preenchido via JS -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </main>
+
+    <script src="script.js"></script>
+    <script>
+        verificarAutenticacao();
+        
+        const urlParams = new URLSearchParams(window.location.search);
+        const financiamentoId = urlParams.get('id');
+
+        if (!financiamentoId) {
+            alert('Financiamento não especificado!');
+            window.location.href = 'relatorios.html';
+        }
+
+        carregarDetalhesFinanciamentoPagina();
+
+        function carregarDetalhesFinanciamentoPagina() {
+            const dados = obterDados();
+            const fin = dados.financiamentos.find(f => Number(f.id) === Number(financiamentoId));
+            
+            if (!fin) {
+                alert('Financiamento não encontrado!');
+                window.location.href = 'relatorios.html';
+                return;
+            }
+
+            document.getElementById('tituloFinanciamentoDetalhe').innerText = `Contrato: ${fin.nome}`;
+            document.getElementById('editNomeFin').value = fin.nome;
+            document.getElementById('editTotalMesesFin').value = fin.totalMeses;
+
+            // Busca todas as parcelas associadas a este financiamento
+            const parcelasVinculadas = dados.lancamentos.filter(l => 
+                l.tipo === 'saida' && 
+                l.descricao.toLowerCase().includes(`financiamento: ${fin.nome.toLowerCase()}`)
+            ).sort((a, b) => a.vencimento.localeCompare(b.vencimento));
+
+            const totalPagas = parcelasVinculadas.filter(l => l.pago).length;
+            const totalMeses = fin.totalMeses;
+            const faltantes = Math.max(0, totalMeses - totalPagas);
+
+            document.getElementById('infoProgressoMeses').innerText = `${totalPagas} / ${totalMeses} meses`;
+            document.getElementById('infoMesesFaltantes').innerText = `${faltantes} meses`;
+
+            if (parcelasVinculadas.length > 0) {
+                const ultimaParcela = parcelasVinculadas[parcelasVinculadas.length - 1];
+                if (ultimaParcela && ultimaParcela.vencimento) {
+                    const [ano, mes] = ultimaParcela.vencimento.split('-');
+                    document.getElementById('infoTerminoFinanciamento').innerText = `${mes}/${ano}`;
+                } else {
+                    document.getElementById('infoTerminoFinanciamento').innerText = 'Indefinido';
+                }
+            } else {
+                document.getElementById('infoTerminoFinanciamento').innerText = 'Sem parcelas';
+            }
+
+            // Preenche a tabela de parcelas
+            const tbody = document.getElementById('tabelaParcelasFinanciamento');
+            tbody.innerHTML = '';
+
+            if (parcelasVinculadas.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="6" style="text-align: center;">Nenhuma parcela encontrada para este financiamento.</td></tr>`;
+                return;
+            }
+
+            parcelasVinculadas.forEach(l => {
+                const cat = dados.categorias.find(c => Number(c.id) === Number(l.categoriaId));
+                const [ano, mes, dia] = l.vencimento.split('-');
+                const dataFormatada = `${dia}/${mes}/${ano}`;
+                const tr = document.createElement('tr');
+
+                tr.innerHTML = `
+                    <td><strong>${l.parcelaAtual || '-'} / ${l.totalParcelas || '-'}</strong></td>
+                    <td>${dataFormatada}</td>
+                    <td>${cat ? cat.nome : 'Geral'}</td>
+                    <td>R$ ${Number(l.valor).toFixed(2)}</td>
+                    <td><span style="color: ${l.pago ? '#10b981' : '#f59e0b'}; font-weight: bold;">${l.pago ? 'Pago ✓' : 'Pendente'}</span></td>
+                    <td>
+                        <button onclick="editarValorParcelaFinanciamento(${l.id})" style="background-color: #f59e0b; padding: 4px 8px; font-size: 0.8rem; margin-right: 4px;">Editar Valor</button>
+                        <button onclick="alternarStatusPagamentoFin(${l.id})" style="background-color: ${l.pago ? '#64748b' : '#10b981'}; padding: 4px 8px; font-size: 0.8rem;">${l.pago ? 'Desfazer' : 'Pagar'}</button>
+                    </td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        async function salvarEdicaoFinanciamentoCompleto(event) {
+            event.preventDefault();
+            if (!await verificarSenhaAdmin("editar financiamento")) return;
+
+            const novoNome = document.getElementById('editNomeFin').value.trim();
+            const novoTotalMeses = parseInt(document.getElementById('editTotalMesesFin').value);
+
+            const dados = obterDados();
+            const fin = dados.financiamentos.find(f => Number(f.id) === Number(financiamentoId));
+            
+            if (fin) {
+                const nomeAntigo = fin.nome;
+                fin.nome = novoNome;
+                fin.totalMeses = novoTotalMeses;
+
+                // Atualiza também o nome nas descrições dos lançamentos vinculados antigos se necessário
+                dados.lancamentos.forEach(l => {
+                    if (l.descricao.toLowerCase().includes(`financiamento: ${nomeAntigo.toLowerCase()}`)) {
+                        l.descricao = l.descricao.replace(new RegExp(`financiamento: ${nomeAntigo}`, 'i'), `Financiamento: ${novoNome}`);
+                    }
+                });
+
+                await salvarDados(dados);
+                await registrarLog("EDIÇÃO FINANCIAMENTO", `Contrato ID ${financiamentoId} atualizado para: ${novoNome}`);
+                alert('Financiamento atualizado com sucesso!');
+                carregarDetalhesFinanciamentoPagina();
+            }
+        }
+
+        async function editarValorParcelaFinanciamento(lancamentoId) {
+            const valorStr = await mostrarPromptModal("Editar Valor da Parcela", "Digite o novo valor para esta parcela (R$):");
+            if (valorStr === null) return;
+
+            const novoValor = parseFloat(valorStr.replace(',', '.'));
+            if (isNaN(novoValor) || novoValor <= 0) {
+                alert('Valor inválido!');
+                return;
+            }
+
+            const dados = obterDados();
+            const lanc = dados.lancamentos.find(l => Number(l.id) === Number(lancamentoId));
+            if (lanc) {
+                lanc.valor = Number(novoValor.toFixed(2));
+                await salvarDados(dados);
+                await registrarLog("EDIÇÃO PARCELA FINANCIAMENTO", `Parcela ID ${lancamentoId} alterada para R$ ${novoValor.toFixed(2)}`);
+                alert('Valor da parcela atualizado com sucesso!');
+                carregarDetalhesFinanciamentoPagina();
+            }
+        }
+
+        async function alternarStatusPagamentoFin(lancamentoId) {
+            await alternarStatusPagamento(lancamentoId);
+            carregarDetalhesFinanciamentoPagina();
+        }
+    </script>
+</body>
+</html>

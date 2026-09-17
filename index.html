@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <title>Login - Controle Financeiro</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body style="display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0;">
+
+    <div class="form-card" style="width: 100%; max-width: 400px; text-align: center; padding: 32px;">
+        <h1 style="font-size: 1.5rem; margin-bottom: 8px; color: var(--accent);">Controle Financeiro</h1>
+        <p style="color: var(--text-muted); margin-bottom: 24px; font-size: 0.9rem;">Selecione o seu perfil para acessar</p>
+
+        <form onsubmit="realizarLogin(event)">
+            <label for="selectUsuario" style="text-align: left;">Usuário:</label>
+            <select id="selectUsuario" style="margin-bottom: 24px;" required>
+                <!-- Preenchido via JS -->
+            </select>
+
+            <button type="submit" style="width: 100%;">Entrar no Sistema</button>
+        </form>
+    </div>
+
+    <script src="script.js"></script>
+    <script>
+        document.addEventListener("DOMContentLoaded", async () => {
+            await inicializarBanco();
+            const dados = obterDados();
+            const select = document.getElementById('selectUsuario');
+            
+            if (select && dados.usuarios) {
+                select.innerHTML = '';
+                dados.usuarios.forEach(u => {
+                    const opt = document.createElement('option');
+                    opt.value = u.id;
+                    opt.innerText = u.nome;
+                    select.appendChild(opt);
+                });
+            }
+        });
+
+        async function realizarLogin(event) {
+            event.preventDefault();
+            const usuarioId = document.getElementById('selectUsuario').value;
+            localStorage.setItem('usuarioLogado', usuarioId);
+            
+            await registrarLog("LOGIN", "Usuário acessou o sistema");
+            window.location.href = 'dashboard.html';
+        }
+    </script>
+</body>
+</html>

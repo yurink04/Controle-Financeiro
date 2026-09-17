@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <title>Lançamentos - Controle Financeiro</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <header>
+        <h1>Controle Financeiro</h1>
+        <span id="usuarioLogadoNome"></span>
+        <nav>
+            <a href="dashboard.html">Início</a>
+            <a href="categorias.html">Categorias</a>
+            <a href="cartoes.html">Cartões</a>
+            <a href="lancamentos.html" class="active">Lançamentos</a>
+            <a href="relatorios.html">Relatórios</a>
+            <a href="admin-logs.html" style="color: #ef4444; font-weight: bold;">Admin Logs</a>
+            
+            <button type="button" onclick="alternarTemaVisual()" class="btn-icone-tema" title="Alternar Modo Escuro / Claro">
+                <img src="imagens/modo_escuro.jpg" alt="Modo Escuro">
+            </button>
+
+            <a href="index.html" onclick="localStorage.removeItem('usuarioLogado')">Sair</a>
+        </nav>
+    </header>
+
+    <main class="container">
+        <!-- 1. Formulário de Novo Lançamento -->
+        <div class="form-card">
+            <h2>Novo Lançamento</h2>
+            <form id="formLancamento" onsubmit="salvarLancamentoForm(event)">
+                <label>Tipo de Lançamento:</label>
+                <select id="tipoLancamento" onchange="tratarMudancaTipoLancamento()">
+                    <option value="saida">Saída (Despesa / Boleto / Cartão)</option>
+                    <option value="entrada">Entrada (Receita / Salário)</option>
+                </select>
+
+                <label>Descrição:</label>
+                <input type="text" id="descricaoLancamento" placeholder="Ex: Mercado, Uber, Salário" required>
+
+                <div id="blocoValorTotal">
+                    <label>Valor Total (R$):</label>
+                    <input type="number" step="0.01" id="valorTotalLancamento" placeholder="Ex: 1800.00" required>
+                </div>
+
+                <div id="blocoHoraExtra" style="display: none;">
+                    <label>Valor de Hora Extra Embutido (R$):</label>
+                    <input type="number" step="0.01" id="valorHoraExtra" placeholder="Ex: 300.00" value="0">
+                </div>
+
+                <label>Categoria:</label>
+                <select id="categoriaLancamento" required>
+                    <!-- Preenchido via JS -->
+                </select>
+
+                <label>Forma de Pagamento:</label>
+                <select id="formaPagamento" onchange="tratarMudancaFormaPagamento()">
+                    <option value="DINHEIRO">Dinheiro / Pix / Débito</option>
+                    <option value="BOLETO">Boleto / Conta</option>
+                    <option value="FIXO">Conta Fixa / Mensal (Faculdade, Internet...)</option>
+                    <option value="CARTAO">Cartão de Crédito</option>
+                </select>
+
+                <div id="blocoCartao" style="display: none;">
+                    <label>Cartão:</label>
+                    <select id="cartaoLancamento">
+                        <!-- Preenchido via JS -->
+                    </select>
+
+                    <label>Data da Compra:</label>
+                    <input type="date" id="dataCompraCartao">
+
+                    <label>Quantidade de Parcelas:</label>
+                    <input type="number" min="1" max="48" id="qtdParcelas" value="1" required>
+                </div>
+
+                <div id="blocoVencimento">
+                    <label>Data de Vencimento / Referência:</label>
+                    <input type="date" id="vencimentoLancamento" required>
+                </div>
+
+                <label>Observação (Opcional):</label>
+                <input type="text" id="observacaoLancamento" placeholder="Detalhes adicionais">
+
+                <button type="submit" style="margin-top: 20px; width: 100%;">Salvar Lançamento</button>
+            </form>
+        </div>
+
+        <!-- 2. Formulário de Contrato de Financiamento -->
+        <div class="form-card" style="margin-top: 20px;">
+            <h2>Cadastrar Contrato de Financiamento</h2>
+            <form id="formFinanciamento" onsubmit="salvarFinanciamentoForm(event)">
+                <label>Nome do Contrato / Financiamento:</label>
+                <input type="text" id="nomeFinanciamento" placeholder="Ex: Financiamento Carro / Imóvel" required>
+
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                    <div>
+                        <label>Valor da Parcela (R$):</label>
+                        <input type="number" step="0.01" id="valorParcelaFin" placeholder="Ex: 850.00" required>
+                    </div>
+                    <div>
+                        <label>Quantidade de Meses:</label>
+                        <input type="number" min="1" max="360" id="qtdMesesFin" placeholder="Ex: 48" required>
+                    </div>
+                </div>
+
+                <label>Categoria:</label>
+                <select id="categoriaFinanciamento" required>
+                    <!-- Preenchido via JS -->
+                </select>
+
+                <label>Data do Primeiro Vencimento:</label>
+                <input type="date" id="primeiroVencimentoFin" required>
+
+                <button type="submit" style="margin-top: 20px; width: 100%; background-color: #3b82f6;">Criar Contrato de Financiamento</button>
+            </form>
+        </div>
+    </main>
+
+    <script src="script.js"></script>
+    <script>
+        verificarAutenticacao();
+        popularSelectsLancamento();
+        popularSelectCategoriaFinanciamento();
+
+        const hojeStr = new Date().toISOString().split('T')[0];
+        document.getElementById('vencimentoLancamento').value = hojeStr;
+        document.getElementById('primeiroVencimentoFin').value = hojeStr;
+        const inputDataCompra = document.getElementById('dataCompraCartao');
+        if(inputDataCompra) inputDataCompra.value = hojeStr;
+
+        function popularSelectCategoriaFinanciamento() {
+            const dados = obterDados();
+            const selectCatFin = document.getElementById('categoriaFinanciamento');
+            if (!selectCatFin) return;
+
+            selectCatFin.innerHTML = '';
+            const categoriasSaida = dados.categorias.filter(c => c.tipo === 'saida');
+            
+            if (categoriasSaida.length === 0) {
+                const opt = document.createElement('option');
+                opt.value = "";
+                opt.innerText = "Nenhuma categoria de saída cadastrada";
+                selectCatFin.appendChild(opt);
+                return;
+            }
+
+            categoriasSaida.forEach(cat => {
+                const opt = document.createElement('option');
+                opt.value = cat.id;
+                opt.innerText = cat.nome;
+                selectCatFin.appendChild(opt);
+            });
+        }
+
+        function tratarMudancaTipoLancamento() {
+            const tipo = document.getElementById('tipoLancamento').value;
+            atualizarFiltroCategoriasPorTipo(tipo);
+            
+            const blocoHE = document.getElementById('blocoHoraExtra');
+            if (tipo === 'entrada') {
+                blocoHE.style.display = 'block';
+            } else {
+                blocoHE.style.display = 'none';
+                document.getElementById('valorHoraExtra').value = '0';
+            }
+        }
+
+        function tratarMudancaFormaPagamento() {
+            const forma = document.getElementById('formaPagamento').value;
+            const blocoCartao = document.getElementById('blocoCartao');
+            const blocoVencimento = document.getElementById('blocoVencimento');
+
+            if (forma === 'CARTAO') {
+                blocoCartao.style.display = 'block';
+                blocoVencimento.style.display = 'none';
+            } else {
+                blocoCartao.style.display = 'none';
+                blocoVencimento.style.display = 'block';
+            }
+        }
+
+        async function salvarLancamentoForm(event) {
+            event.preventDefault();
+            
+            const descricao = document.getElementById('descricaoLancamento').value;
+            const tipo = document.getElementById('tipoLancamento').value;
+            const categoriaId = parseInt(document.getElementById('categoriaLancamento').value);
+            const formaPagamento = document.getElementById('formaPagamento').value;
+            const observacao = document.getElementById('observacaoLancamento').value;
+            const valorTotal = parseFloat(document.getElementById('valorTotalLancamento').value);
+            const horaExtra = parseFloat(document.getElementById('valorHoraExtra').value) || 0;
+
+            let vencimento = document.getElementById('vencimentoLancamento').value;
+            let qtdParcelas = 1;
+            let cartaoId = null;
+
+            if (formaPagamento === 'CARTAO') {
+                cartaoId = parseInt(document.getElementById('cartaoLancamento').value);
+                qtdParcelas = parseInt(document.getElementById('qtdParcelas').value) || 1;
+                const dataCompra = document.getElementById('dataCompraCartao').value;
+
+                const dados = obterDados();
+                const cartao = dados.cartoes.find(c => Number(c.id) === Number(cartaoId));
+                
+                if (cartao && dataCompra) {
+                    const [anoC, mesC, diaC] = dataCompra.split('-').map(Number);
+                    const ultimoDiaDoMes = new Date(anoC, mesC, 0).getDate();
+                    let diaFechamentoEfetivo = Number(cartao.fechamento);
+                    if (diaFechamentoEfetivo > ultimoDiaDoMes) diaFechamentoEfetivo = ultimoDiaDoMes;
+
+                    let mesVenc = mesC;
+                    let anoVenc = anoC;
+
+                    if (diaC >= diaFechamentoEfetivo) {
+                        mesVenc += 1;
+                        if (mesVenc > 12) {
+                            mesVenc = 1;
+                            anoVenc += 1;
+                        }
+                    }
+
+                    const diaPgto = String(cartao.vencimento).padStart(2, '0');
+                    vencimento = `${anoVenc}-${String(mesVenc).padStart(2, '0')}-${diaPgto}`;
+                }
+            } else if (formaPagamento === 'FIXO') {
+                qtdParcelas = 12; 
+            }
+
+            const dadosForm = {
+                descricao,
+                tipo,
+                categoriaId,
+                formaPagamento: formaPagamento === 'FIXO' ? 'BOLETO' : formaPagamento,
+                cartaoId,
+                valorTotal,
+                qtdParcelas,
+                vencimento,
+                observacao,
+                horaExtra
+            };
+
+            await adicionarLancamentoComParcelas(dadosForm);
+            alert('Lançamento cadastrado com sucesso!');
+            window.location.href = 'dashboard.html';
+        }
+
+        async function salvarFinanciamentoForm(event) {
+            event.preventDefault();
+            const nome = document.getElementById('nomeFinanciamento').value;
+            const valorParcela = parseFloat(document.getElementById('valorParcelaFin').value);
+            const qtdMeses = parseInt(document.getElementById('qtdMesesFin').value);
+            const categoriaId = parseInt(document.getElementById('categoriaFinanciamento').value);
+            const primeiroVencimento = document.getElementById('primeiroVencimentoFin').value;
+
+            await adicionarFinanciamentoComRecorrencia(nome, 'sim', valorParcela, qtdMeses, primeiroVencimento, categoriaId);
+            alert('Contrato de financiamento cadastrado com sucesso!');
+            window.location.href = 'relatorios.html';
+        }
+    </script>
+</body>
+</html>
