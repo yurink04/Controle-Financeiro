@@ -54,13 +54,16 @@
                     <!-- Preenchido via JS -->
                 </select>
 
-                <label>Forma de Pagamento:</label>
-                <select id="formaPagamento" onchange="tratarMudancaFormaPagamento()">
-                    <option value="DINHEIRO">Dinheiro / Pix / Débito</option>
-                    <option value="BOLETO">Boleto / Conta</option>
-                    <option value="FIXO">Conta Fixa / Mensal (Faculdade, Internet...)</option>
-                    <option value="CARTAO">Cartão de Crédito</option>
-                </select>
+                <!-- Bloco de Forma de Pagamento (Ocultado automaticamente em Entradas) -->
+                <div id="blocoFormaPagamentoContainer">
+                    <label>Forma de Pagamento:</label>
+                    <select id="formaPagamento" onchange="tratarMudancaFormaPagamento()">
+                        <option value="DINHEIRO">Dinheiro / Pix / Débito</option>
+                        <option value="BOLETO">Boleto / Conta</option>
+                        <option value="FIXO">Conta Fixa / Mensal (Faculdade, Internet...)</option>
+                        <option value="CARTAO">Cartão de Crédito</option>
+                    </select>
+                </div>
 
                 <div id="blocoCartao" style="display: none;">
                     <label>Cartão:</label>
@@ -75,11 +78,20 @@
                     <input type="number" min="1" max="48" id="qtdParcelas" value="1" required>
                 </div>
 
-                <div id="blocoVencimento">
-                    <label>Data de Vencimento / Referência:</label>
-                    <input type="date" id="vencimentoLancamento" required>
+                <!-- Nova Opção: Serviço Essencial (Apenas visível em Saídas) -->
+                <div id="blocoServicoEssencial" style="margin-top: 12px;">
+                    <label for="servicoEssencial">Serviço essencial?</label>
+                    <select id="servicoEssencial">
+                        <option value="nao">Não</option>
+                        <option value="sim">Sim</option>
+                    </select>
                 </div>
 
+                <div id="blocoVencimento">
+                    <label id="labelDataReferencia">Data de Vencimento / Referência:</label>
+                    <input type="date" id="vencimentoLancamento" required>
+                </div>
+                
                 <label>Observação (Opcional):</label>
                 <input type="text" id="observacaoLancamento" placeholder="Detalhes adicionais">
 
@@ -114,6 +126,36 @@
                 <input type="date" id="primeiroVencimentoFin" required>
 
                 <button type="submit" style="margin-top: 20px; width: 100%; background-color: #3b82f6;">Criar Contrato de Financiamento</button>
+            </form>
+        </div>
+
+       <!-- 3. Formulário de Contas Recorrentes Retroativas / Em Lote -->
+        <div class="form-card" style="margin-top: 20px;">
+            <h2>Cadastrar Contas em Lote (Meses Passados até o Atual)</h2>
+            <form id="formContaLote" onsubmit="salvarContaLoteForm(event)">
+                <label>Descrição da Conta:</label>
+                <input type="text" id="descricaoLote" placeholder="Ex: Seguro do Carro, Mensalidade..." required>
+
+                <label>Valor da Conta (R$):</label>
+                <input type="number" step="0.01" id="valorParcelaLote" placeholder="Ex: 150.00" required>
+
+                <label>Categoria:</label>
+                <select id="categoriaLote" required>
+                    <!-- Preenchido via JS -->
+                </select>
+
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                    <div>
+                        <label>Data do Primeiro Vencimento (Início):</label>
+                        <input type="date" id="primeiroVencimentoLote" required>
+                    </div>
+                    <div>
+                        <label>Data do Último Vencimento (Fim):</label>
+                        <input type="date" id="ultimoVencimentoLote" required>
+                    </div>
+                </div>
+
+                <button type="submit" style="margin-top: 20px; width: 100%; background-color: #10b981;">Gerar Contas em Lote</button>
             </form>
         </div>
     </main>
@@ -159,11 +201,25 @@
             atualizarFiltroCategoriasPorTipo(tipo);
             
             const blocoHE = document.getElementById('blocoHoraExtra');
+            const blocoFormaPgto = document.getElementById('blocoFormaPagamentoContainer');
+            const blocoCartao = document.getElementById('blocoCartao');
+            const blocoEssencial = document.getElementById('blocoServicoEssencial');
+            const labelData = document.getElementById('labelDataReferencia');
+
             if (tipo === 'entrada') {
-                blocoHE.style.display = 'block';
+                if (blocoHE) blocoHE.style.display = 'block';
+                if (blocoFormaPgto) blocoFormaPgto.style.display = 'none';
+                if (blocoCartao) blocoCartao.style.display = 'none';
+                if (blocoEssencial) blocoEssencial.style.display = 'none';
+                if (labelData) labelData.innerText = 'Data de Recebimento:';
             } else {
-                blocoHE.style.display = 'none';
-                document.getElementById('valorHoraExtra').value = '0';
+                if (blocoHE) blocoHE.style.display = 'none';
+                const inputHE = document.getElementById('valorHoraExtra');
+                if (inputHE) inputHE.value = '0';
+                if (blocoFormaPgto) blocoFormaPgto.style.display = 'block';
+                if (blocoEssencial) blocoEssencial.style.display = 'block';
+                if (labelData) labelData.innerText = 'Data de Vencimento / Referência:';
+                tratarMudancaFormaPagamento();
             }
         }
 
@@ -173,11 +229,11 @@
             const blocoVencimento = document.getElementById('blocoVencimento');
 
             if (forma === 'CARTAO') {
-                blocoCartao.style.display = 'block';
-                blocoVencimento.style.display = 'none';
+                if (blocoCartao) blocoCartao.style.display = 'block';
+                if (blocoVencimento) blocoVencimento.style.display = 'none';
             } else {
-                blocoCartao.style.display = 'none';
-                blocoVencimento.style.display = 'block';
+                if (blocoCartao) blocoCartao.style.display = 'none';
+                if (blocoVencimento) blocoVencimento.style.display = 'block';
             }
         }
 
@@ -187,16 +243,17 @@
             const descricao = document.getElementById('descricaoLancamento').value;
             const tipo = document.getElementById('tipoLancamento').value;
             const categoriaId = parseInt(document.getElementById('categoriaLancamento').value);
-            const formaPagamento = document.getElementById('formaPagamento').value;
+            const formaPagamento = tipo === 'entrada' ? 'DINHEIRO' : document.getElementById('formaPagamento').value;
             const observacao = document.getElementById('observacaoLancamento').value;
             const valorTotal = parseFloat(document.getElementById('valorTotalLancamento').value);
-            const horaExtra = parseFloat(document.getElementById('valorHoraExtra').value) || 0;
+            const horaExtra = tipo === 'entrada' ? (parseFloat(document.getElementById('valorHoraExtra').value) || 0) : 0;
+            const servicoEssencial = tipo === 'saida' ? document.getElementById('servicoEssencial').value : 'nao';
 
             let vencimento = document.getElementById('vencimentoLancamento').value;
             let qtdParcelas = 1;
             let cartaoId = null;
 
-            if (formaPagamento === 'CARTAO') {
+            if (tipo === 'saida' && formaPagamento === 'CARTAO') {
                 cartaoId = parseInt(document.getElementById('cartaoLancamento').value);
                 qtdParcelas = parseInt(document.getElementById('qtdParcelas').value) || 1;
                 const dataCompra = document.getElementById('dataCompraCartao').value;
@@ -224,7 +281,7 @@
                     const diaPgto = String(cartao.vencimento).padStart(2, '0');
                     vencimento = `${anoVenc}-${String(mesVenc).padStart(2, '0')}-${diaPgto}`;
                 }
-            } else if (formaPagamento === 'FIXO') {
+            } else if (tipo === 'saida' && formaPagamento === 'FIXO') {
                 qtdParcelas = 12; 
             }
 
@@ -238,25 +295,99 @@
                 qtdParcelas,
                 vencimento,
                 observacao,
-                horaExtra
+                horaExtra,
+                servicoEssencial
             };
 
             await adicionarLancamentoComParcelas(dadosForm);
-            alert('Lançamento cadastrado com sucesso!');
-            window.location.href = 'dashboard.html';
+            
+            await mostrarAlertaModal('Lançamento cadastrado com sucesso!');
+            document.getElementById('formLancamento').reset();
+            
+            const hojeStr = new Date().toISOString().split('T')[0];
+            document.getElementById('vencimentoLancamento').value = hojeStr;
+            tratarMudancaTipoLancamento();
         }
 
-        async function salvarFinanciamentoForm(event) {
-            event.preventDefault();
-            const nome = document.getElementById('nomeFinanciamento').value;
-            const valorParcela = parseFloat(document.getElementById('valorParcelaFin').value);
-            const qtdMeses = parseInt(document.getElementById('qtdMesesFin').value);
-            const categoriaId = parseInt(document.getElementById('categoriaFinanciamento').value);
-            const primeiroVencimento = document.getElementById('primeiroVencimentoFin').value;
+        // Popula as categorias no select do formulário em lote
+        function popularSelectCategoriaLote() {
+            const dados = obterDados();
+            const selectCatLote = document.getElementById('categoriaLote');
+            if (!selectCatLote) return;
 
-            await adicionarFinanciamentoComRecorrencia(nome, 'sim', valorParcela, qtdMeses, primeiroVencimento, categoriaId);
-            alert('Contrato de financiamento cadastrado com sucesso!');
-            window.location.href = 'relatorios.html';
+            selectCatLote.innerHTML = '';
+            const categoriasSaida = dados.categorias.filter(c => c.tipo === 'saida');
+            
+            if (categoriasSaida.length === 0) {
+                const opt = document.createElement('option');
+                opt.value = "";
+                opt.innerText = "Nenhuma categoria de saída cadastrada";
+                selectCatLote.appendChild(opt);
+                return;
+            }
+
+            categoriasSaida.forEach(cat => {
+                const opt = document.createElement('option');
+                opt.value = cat.id;
+                opt.innerText = cat.nome;
+                selectCatLote.appendChild(opt);
+            });
+        }
+
+        popularSelectCategoriaLote();
+        
+        const dataHojeObj = new Date();
+        const anoAtualStr = dataHojeObj.getFullYear();
+        const mesAtualStr = String(dataHojeObj.getMonth() + 1).padStart(2, '0');
+        const diaAtualStr = String(dataHojeObj.getDate()).padStart(2, '0');
+        
+        const inputUltimoVenc = document.getElementById('ultimoVencimentoLote');
+        if(inputUltimoVenc) inputUltimoVenc.value = `${anoAtualStr}-${mesAtualStr}-${diaAtualStr}`;
+
+        const inputPrimeiroVenc = document.getElementById('primeiroVencimentoLote');
+        if(inputPrimeiroVenc) {
+            const dataPassada = new Date();
+            dataPassada.setMonth(dataPassada.getMonth() - 2);
+            inputPrimeiroVenc.value = `${dataPassada.getFullYear()}-${String(dataPassada.getMonth() + 1).padStart(2, '0')}-${diaAtualStr}`;
+        }
+
+        async function salvarContaLoteForm(event) {
+            event.preventDefault();
+
+            const descricao = document.getElementById('descricaoLote').value;
+            const valorParcela = parseFloat(document.getElementById('valorParcelaLote').value);
+            const categoriaId = parseInt(document.getElementById('categoriaLote').value);
+            const primeiroVencimento = document.getElementById('primeiroVencimentoLote').value;
+            const ultimoVencimento = document.getElementById('ultimoVencimentoLote').value;
+
+            if (!descricao || isNaN(valorParcela) || !primeiroVencimento || !ultimoVencimento) {
+                await mostrarAlertaModal('Preencha todos os campos corretamente.');
+                return;
+            }
+
+            const [anoI, mesI, diaI] = primeiroVencimento.split('-').map(Number);
+            const [anoF, mesF, diaF] = ultimoVencimento.split('-').map(Number);
+
+            const dataInicio = new Date(anoI, mesI - 1, diaI);
+            const dataFim = new Date(anoF, mesF - 1, diaF);
+
+            if (dataInicio > dataFim) {
+                await mostrarAlertaModal('A data do primeiro vencimento não pode ser posterior à data final.');
+                return;
+            }
+
+            const qtdMeses = (dataFim.getFullYear() - dataInicio.getFullYear()) * 12 + (dataFim.getMonth() - dataInicio.getMonth()) + 1;
+
+            if (qtdMeses <= 0 || qtdMeses > 120) {
+                await mostrarAlertaModal('O intervalo de meses é inválido ou muito longo.');
+                return;
+            }
+
+            await adicionarContaLotePorPeriodo(descricao, valorParcela, dataInicio, qtdMeses, categoriaId);
+            
+            await mostrarAlertaModal(`${qtdMeses} contas geradas e adicionadas com sucesso!`);
+            document.getElementById('formContaLote').reset();
+            popularSelectCategoriaLote();
         }
     </script>
 </body>

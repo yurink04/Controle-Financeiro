@@ -80,10 +80,10 @@
 
             if (idEdit) {
                 await atualizarCartaoNoBanco(idEdit, nome, limite, fechamento, vencimento);
-                alert('Cartão atualizado com sucesso!');
+                await mostrarAlertaModal('Cartão atualizado com sucesso!');
             } else {
                 await adicionarCartao(nome, limite, fechamento, vencimento);
-                alert('Cartão cadastrado com sucesso!');
+                await mostrarAlertaModal('Cartão cadastrado com sucesso!');
             }
 
             cancelarEdicaoCartao();

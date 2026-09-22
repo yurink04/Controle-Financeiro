@@ -9,15 +9,14 @@
     <header>
         <h1>Controle Financeiro</h1>
         <span id="usuarioLogadoNome"></span>
-    <nav>
+        <nav>
             <a href="dashboard.html">Início</a>
-            <a href="categorias.html">Categorias</a>
+            <a href="categorias.html" class="active">Categorias</a>
             <a href="cartoes.html">Cartões</a>
             <a href="lancamentos.html">Lançamentos</a>
             <a href="relatorios.html">Relatórios</a>
             <a href="admin-logs.html" style="color: #ef4444; font-weight: bold;">Admin Logs</a>
             
-            <!-- Botão com o ícone de modo escuro -->
             <button type="button" onclick="alternarTemaVisual()" class="btn-icone-tema" title="Alternar Modo Escuro / Claro">
                 <img src="imagens/modo_escuro.jpg" alt="Modo Escuro">
             </button>
@@ -77,10 +76,10 @@
 
             if (idEdit) {
                 await atualizarCategoria(idEdit, nome, tipo);
-                alert('Categoria atualizada com sucesso!');
+                await mostrarAlertaModal('Categoria atualizada com sucesso!');
             } else {
                 await adicionarCategoria(nome, tipo);
-                alert('Categoria cadastrada com sucesso!');
+                await mostrarAlertaModal('Categoria cadastrada com sucesso!');
             }
 
             cancelarEdicaoCategoria();
@@ -107,7 +106,8 @@
         }
 
         async function excluirCategoriaPrompt(id) {
-            if (confirm('Deseja realmente excluir esta categoria?')) {
+            const confirmar = await mostrarConfirmacaoModal('Deseja realmente excluir esta categoria?');
+            if (confirmar) {
                 await excluirCategoria(id);
                 renderizarCategorias();
             }

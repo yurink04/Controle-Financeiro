@@ -15,7 +15,6 @@
     --transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-/* Modo Escuro Confortável (Soft Dark) */
 body.dark-mode {
     --bg-primary: #121212;
     --surface: #1e1e1e;
@@ -110,9 +109,9 @@ nav a:hover, nav a.active, .btn-tema:hover {
 }
 
 .container {
-    max-width: 1100px;
+    max-width: 1280px;
     margin: 24px auto;
-    padding: 0 16px;
+    padding: 0 20px;
 }
 
 .form-card {
@@ -216,7 +215,6 @@ button:hover {
 .positivo { color: var(--success) !important; }
 .negativo { color: var(--danger) !important; }
 
-/* Estilos para os Gráficos de Pizza */
 .grafico-container {
     position: relative;
     width: 100%;
@@ -226,12 +224,12 @@ button:hover {
     align-items: center;
 }
 
-/* Botão de Ícone de Tema */
+/* Botão de Alternar Tema Visual */
 .btn-icone-tema {
-    background: transparent;
+    background: #f1f5f9;
     border: 1px solid var(--border);
     border-radius: 8px;
-    padding: 4px 8px;
+    padding: 6px 10px;
     cursor: pointer;
     display: inline-flex;
     align-items: center;
@@ -239,10 +237,20 @@ button:hover {
     transition: var(--transition);
 }
 
+body.dark-mode .btn-icone-tema {
+    background: #ffffff;
+    border-color: #ffffff;
+}
+
 .btn-icone-tema:hover {
-    background-color: rgba(59, 130, 246, 0.1);
+    background-color: rgba(59, 130, 246, 0.15);
     border-color: var(--primary);
     transform: translateY(-1px);
+}
+
+body.dark-mode .btn-icone-tema:hover {
+    background-color: #e2e8f0;
+    border-color: #e2e8f0;
 }
 
 .btn-icone-tema img {
@@ -253,7 +261,54 @@ button:hover {
     border-radius: 4px;
 }
 
-/* Tabelas Responsivas */
+/* Botões de Ação com Ícones e Cores Contextuais (Modo Claro & Escuro) */
+.btn-acao-icone {
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 6px 10px;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    transition: var(--transition);
+    margin-right: 4px;
+    vertical-align: middle;
+}
+
+/* Modo Claro (Cores suaves por ação) */
+.btn-acao-icone.editar { background-color: #fef3c7; border-color: #f59e0b; }
+.btn-acao-icone.excluir { background-color: #fee2e2; border-color: #ef4444; }
+.btn-acao-icone.visualizar { background-color: #e0f2fe; border-color: #3b82f6; }
+.btn-acao-icone.pagar { background-color: #d1fae5; border-color: #10b981; }
+.btn-acao-icone.desfazer { background-color: #f1f5f9; border-color: #64748b; }
+
+/* Modo Escuro (Fundo Branco com alta visibilidade e contraste) */
+body.dark-mode .btn-acao-icone.editar,
+body.dark-mode .btn-acao-icone.excluir,
+body.dark-mode .btn-acao-icone.visualizar,
+body.dark-mode .btn-acao-icone.pagar,
+body.dark-mode .btn-acao-icone.desfazer {
+    background-color: #ffffff;
+    border-color: #ffffff;
+}
+
+.btn-acao-icone:hover {
+    filter: brightness(0.95);
+    transform: translateY(-1px);
+}
+
+body.dark-mode .btn-acao-icone:hover {
+    background-color: #e2e8f0;
+    border-color: #e2e8f0;
+}
+
+.btn-acao-icone img {
+    width: 18px;
+    height: 18px;
+    object-fit: contain;
+    display: block;
+}
+
 .tabela-container {
     width: 100%;
     overflow-x: auto;
@@ -304,7 +359,6 @@ table.tabela tr:hover {
     border-bottom: 1px solid var(--border);
 }
 
-/* Modal Centralizado */
 .modal-overlay {
     position: fixed;
     top: 0;
@@ -317,6 +371,7 @@ table.tabela tr:hover {
     justify-content: center;
     align-items: center;
     z-index: 1000;
+    animation: fadeIn 0.2s ease-in-out;
 }
 
 .modal-box {
@@ -324,28 +379,52 @@ table.tabela tr:hover {
     padding: 28px;
     border-radius: var(--radius);
     width: 90%;
-    max-width: 400px;
+    max-width: 450px;
     box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.5);
-    text-align: center;
+    text-align: left;
     border: 1px solid var(--border);
+    animation: scaleUp 0.2s ease-in-out;
+}
+
+@keyframes scaleUp {
+    from { opacity: 0; transform: scale(0.95); }
+    to { opacity: 1; transform: scale(1); }
 }
 
 .modal-box h3 {
     font-size: 1.2rem;
     color: var(--accent);
     margin-bottom: 10px;
+    font-weight: 700;
 }
 
 .modal-box p {
     font-size: 0.95rem;
     color: var(--text-muted);
     margin-bottom: 20px;
+    line-height: 1.5;
 }
 
 .modal-buttons {
     display: flex;
-    gap: 10px;
-    justify-content: center;
+    gap: 12px;
+    justify-content: flex-end;
+    margin-top: 20px;
+}
+
+.modal-buttons button {
+    flex: 1;
+    margin: 0;
+}
+
+.modal-buttons button#btnNaoModal,
+.modal-buttons button#btnCancelarPrompt,
+.modal-buttons button#btnCancelarEscopo {
+    background-color: var(--text-muted);
+}
+
+.modal-buttons button#btnSimModal {
+    background-color: var(--danger);
 }
 
 @media (max-width: 768px) {
@@ -356,5 +435,11 @@ table.tabela tr:hover {
     }
     nav {
         justify-content: center;
+    }
+    .modal-buttons {
+        flex-direction: column-reverse;
+    }
+    .modal-buttons button {
+        width: 100%;
     }
 }

@@ -42,10 +42,11 @@
         async function realizarLogin(event) {
             event.preventDefault();
             const usuarioId = document.getElementById('selectUsuario').value;
-            localStorage.setItem('usuarioLogado', usuarioId);
+            
+            // Chama a função centralizada no script.js que valida a senha da coluna C
+            await selecionarUsuario(usuarioId);
             
             await registrarLog("LOGIN", "Usuário acessou o sistema");
-            window.location.href = 'dashboard.html';
         }
     </script>
 </body>

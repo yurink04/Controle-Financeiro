@@ -4,6 +4,8 @@
     <meta charset="UTF-8">
     <title>Relatórios - Controle Financeiro</title>
     <link rel="stylesheet" href="style.css">
+    <!-- Chart.js para os gráficos -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
     <header>
@@ -38,6 +40,78 @@
             </div>
         </section>
 
+        <!-- 4 Campos de Resumo por Usuário -->
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 15px; margin-top: 20px; margin-bottom: 20px;">
+            <div class="stat-box" style="text-align: left;">
+                <h3 style="font-size: 0.9rem; margin-bottom: 5px;">Entradas - Samuel</h3>
+                <p id="relatorioEntradaSamuel" style="font-size: 1.2rem; font-weight: bold;" class="positivo">R$ 0,00</p>
+            </div>
+            <div class="stat-box" style="text-align: left;">
+                <h3 style="font-size: 0.9rem; margin-bottom: 5px;">Saídas - Samuel</h3>
+                <p id="relatorioSaidaSamuel" style="font-size: 1.2rem; font-weight: bold;" class="negativo">R$ 0,00</p>
+            </div>
+            <div class="stat-box" style="text-align: left;">
+                <h3 style="font-size: 0.9rem; margin-bottom: 5px;">Entradas - Mariana</h3>
+                <p id="relatorioEntradaMariana" style="font-size: 1.2rem; font-weight: bold;" class="positivo">R$ 0,00</p>
+            </div>
+            <div class="stat-box" style="text-align: left;">
+                <h3 style="font-size: 0.9rem; margin-bottom: 5px;">Saídas - Mariana</h3>
+                <p id="relatorioSaidaMariana" style="font-size: 1.2rem; font-weight: bold;" class="negativo">R$ 0,00</p>
+            </div>
+        </div>
+
+    <div class="form-card">
+    <h2>Gráficos e Estatísticas do Período</h2>
+    
+    <div style="margin-bottom: 20px; display: flex; gap: 15px; flex-wrap: wrap; align-items: center;">
+        <div>
+            <label for="filtroUsuarioGraficos">Filtrar Usuário:</label>
+            <select id="filtroUsuarioGraficos" onchange="carregarRelatorios()">
+                <option value="todos">Ambos (Geral)</option>
+                <option value="1">Samuel</option>
+                <option value="2">Mariana</option>
+            </select>
+        </div>
+        <div>
+            <label for="filtroServicoEssencialDashboard">Serviço Essencial:</label>
+            <select id="filtroServicoEssencialDashboard" onchange="carregarRelatorios()">
+                <option value="todos">Todos</option>
+                <option value="sim">Essenciais</option>
+                <option value="nao">Não Essenciais</option>
+            </select>
+        </div>
+    </div>
+
+    <!-- Grade unificada com os gráficos lado a lado -->
+    <div class="stats-grid" style="grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px;">
+        
+        <!-- Gráfico 1: Entradas e Saídas -->
+        <div class="stat-box" style="text-align: center;">
+            <h3 style="margin-bottom: 10px;">Entradas vs Saídas</h3>
+            <div class="grafico-container" style="height: 220px;">
+                <canvas id="graficoRelatorioEntradasSaidas"></canvas>
+            </div>
+        </div>
+
+        <!-- Gráfico 2: Gastos por Categoria -->
+        <div class="stat-box" style="text-align: center;">
+            <h3 style="margin-bottom: 10px;">Gastos por Categoria</h3>
+            <div class="grafico-container" style="height: 220px;">
+                <canvas id="graficoRelatorioCategorias"></canvas>
+            </div>
+        </div>
+
+        <!-- Gráfico 3: Serviços Essenciais -->
+        <div class="stat-box" style="text-align: center;">
+            <h3 style="margin-bottom: 10px;">Serviços Essenciais</h3>
+            <div class="grafico-container" style="height: 220px;">
+                <canvas id="graficoServicosEssenciais"></canvas>
+            </div>
+        </div>
+
+    </div>
+</div>
+        
         <!-- Indicador de Horas Extras e Resumo por Categoria -->
         <div class="stats-grid">
             <div class="stat-box">
@@ -45,7 +119,7 @@
                 <p id="totalHoraExtraPeriodo" class="positivo">R$ 0,00</p>
             </div>
             <div class="stat-box">
-                <h3>Gastos por Categoria</h3>
+                <h3>Gastos por Categoria (Texto)</h3>
                 <div id="relatorioCategorias" style="margin-top: 8px; font-size: 0.95rem;">
                     <!-- Preenchido via JS -->
                 </div>
@@ -92,9 +166,16 @@
             </div>
         </div>
 
-        <!-- Parcelamentos Ativos do Mês -->
+        <!-- Seção de Parcelamentos Ativos -->
         <div class="form-card" style="margin-top: 20px;">
-            <h2>Parcelamentos Ativos no Período</h2>
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; flex-wrap: wrap; gap: 10px;">
+                <h3 style="margin: 0;">Parcelamentos Ativos no Período</h3>
+                <select id="filtroCartaoParcelamento" onchange="carregarRelatorios()" style="width: auto; padding: 4px; font-size: 0.85rem;">
+                    <option value="todos">Todos os Cartões</option>
+                    <!-- Preenchido via JS -->
+                </select>
+            </div>
+            
             <div class="tabela-container">
                 <table class="tabela">
                     <thead>
@@ -111,7 +192,7 @@
                 </table>
             </div>
         </div>
-
+        
         <!-- Financiamentos e Contratos -->
         <div class="form-card" style="margin-top: 20px;">
             <h2>Contratos de Financiamento</h2>
