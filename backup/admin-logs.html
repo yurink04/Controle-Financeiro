@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <title>Painel do Administrador - Logs de Auditoria</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <header>
+        <h1>Controle Financeiro - Admin</h1>
+        <span id="usuarioLogadoNome"></span>
+        <nav>
+            <a href="dashboard.html">Início</a>
+            <a href="admin-logs.html" class="active" style="background-color: #c0392b;">Painel Admin (Logs)</a>
+            <a href="index.html" onclick="localStorage.removeItem('usuarioLogado'); sessionStorage.removeItem('adminLogado');">Sair</a>
+        </nav>
+    </header>
+
+    <main class="container">
+        <!-- Tela de Login do Admin -->
+        <div id="divLoginAdmin" class="form-card" style="max-width: 400px; margin: 50px auto; text-align: center;">
+            <h2>Acesso Restrito ao Administrador</h2>
+            <p style="margin-bottom: 15px; color: #555;">Digite a senha de acesso ao paine:</p>
+            <input type="password" id="senhaAdminInput" placeholder="Senha do Administrador" style="margin-bottom: 15px;">
+            <button onclick="autenticarPainelAdmin()" style="background-color: #c0392b; width: 100%;">Entrar no Painel</button>
+            <button onclick="window.location.href='dashboard.html'" style="background-color: #7f8c8d; width: 100%; margin-top: 10px;">Voltar ao Início</button>
+        </div>
+
+        <!-- Conteúdo dos Logs (Visível apenas após autenticação) -->
+        <div id="divConteudoAdmin" style="display: none;">
+            <div class="form-card" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+                <h2>Logs de Auditoria e Acessos</h2>
+                <button onclick="limparLogsSistemaComSenha()" style="background-color: #c0392b; width: auto; padding: 8px 15px;">Limpar Logs</button>
+            </div>
+
+            <div class="form-card" style="margin-top: 20px; overflow-x: auto;">
+                <table class="tabela">
+                    <thead>
+                        <tr>
+                            <th>Data / Hora</th>
+                            <th>Usuário</th>
+                            <th>Ação</th>
+                            <th>Detalhes da Operação</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tabelaLogs">
+                        <!-- Preenchido via JS -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </main>
+
+    <script src="script.js"></script>
+    <script>
+        verificarAutenticacao();
+
+        if (sessionStorage.getItem('adminLogado') === 'true') {
+            liberarPainelAdmin();
+        }
+
+        function autenticarPainelAdmin() {
+            const senha = document.getElementById('senhaAdminInput').value;
+            if (senha === "praia2222") {
+                sessionStorage.setItem('adminLogado', 'true');
+                liberarPainelAdmin();
+                registrarLog("LOGIN ADMIN", "Administrador acessou o Painel de Logs");
+            } else {
+                alert("Senha de administrador incorreta!");
+            }
+        }
+
+        function liberarPainelAdmin() {
+            document.getElementById('divLoginAdmin').style.display = 'none';
+            document.getElementById('divConteudoAdmin').style.display = 'block';
+            carregarTabelaLogs();
+        }
+
+        function carregarTabelaLogs() {
+            const dados = obterDados();
+            const tbody = document.getElementById('tabelaLogs');
+            if (!tbody) return;
+            tbody.innerHTML = '';
+
+            const logs = dados.logs || [];
+            if (logs.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="4" style="text-align: center;">Nenhum registro de log encontrado.</td></tr>`;
+                return;
+            }
+
+            [...logs].reverse().forEach(log => {
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td>${log.dataHora}</td>
+                    <td><strong>${log.usuario}</strong></td>
+                    <td><span style="padding: 3px 8px; border-radius: 4px; background: #eee; font-size: 12px; font-weight: bold;">${log.acao}</span></td>
+                    <td>${log.detalhes}</td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        async function limparLogsSistemaComSenha() {
+            const senhaDigitada = prompt("Digite a senha de administrador (praia2222) para confirmar a limpeza dos logs:");
+            if (senhaDigitada === null) return;
+
+            if (senhaDigitada === "praia2222") {
+                if (confirm('Deseja realmente apagar todo o histórico de auditoria?')) {
+                    const dados = obterDados();
+                    dados.logs = [];
+                    await salvarDados(dados);
+                    registrarLog("LIMPEZA DE LOGS", "O histórico de auditoria foi limpo pelo administrador");
+                    carregarTabelaLogs();
+                    alert('Logs limpos com sucesso!');
+                }
+            } else {
+                alert('Senha incorreta! Ação cancelada.');
+            }
+        }
+    </script>
+</body>
+</html>

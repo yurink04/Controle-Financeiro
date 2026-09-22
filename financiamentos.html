@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Financiamentos | Controle Financeiro</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <header class="app-header">
+        <div class="header-inner">
+            <div class="brand"><span class="brand-title">Controle Financeiro</span><span class="brand-subtitle">Gestão de contratos e parcelamentos</span></div>
+            <span id="usuarioLogadoNome" class="user-chip"></span>
+            <nav class="app-nav" aria-label="Navegação principal">
+                <a href="dashboard.html">Início</a>
+                <div class="nav-dropdown">
+                    <a href="#" onclick="event.preventDefault();" style="cursor: pointer;">Cadastros ▾</a>
+                    <div class="nav-dropdown-content">
+                        <a href="cartoes.html">Cartões</a>
+                        <a href="categorias.html">Categorias</a>
+                        <a href="bens.html">Bens</a>
+                        <a href="financiamentos.html">Financiamentos</a>
+                    </div>
+                </div>
+                <a href="lancamentos.html">Lançamentos</a>
+                <a href="relatorios.html">Relatórios</a>
+                <button type="button" onclick="alternarTemaVisual()" class="btn-theme" title="Alternar tema"><img src="imagens/modo_escuro.jpg" alt="Tema"></button>
+                <a href="configuracoes.html" class="btn-theme" title="Configurações"><img src="imagens/config.png" alt="Configurações"></a>
+                <a href="index.html" onclick="event.preventDefault(); deslogarSistema()" class="btn-theme" title="Sair"><img src="imagens/exit.png" alt="Sair"></a>
+            </nav>
+        </div>
+    </header>
+
+    <main class="container">
+        <div class="page-heading">
+            <div>
+                <h2>Financiamentos e Contratos</h2>
+                <p>Gerencie contratos de longo prazo, vincule bens patrimoniais e acompanhe parcelas.</p>
+            </div>
+            <div class="toolbar-actions">
+                <button type="button" onclick="abrirModalNovoFinanciamento()">+ Novo Contrato</button>
+            </div>
+        </div>
+
+        <section class="form-card">
+            <div class="section-title">
+                <div><h2>Contratos Ativos</h2><p>Listagem de todos os financiamentos e parcelamentos de longo prazo cadastrados.</p></div>
+            </div>
+            <div class="tabela-container">
+                <table class="tabela">
+                    <thead>
+                        <tr>
+                            <th>Contrato</th>
+                            <th>Bem Vinculado</th>
+                            <th>Progresso</th>
+                            <th>Valor Parcela</th>
+                            <th>Saldo Devedor</th>
+                            <th>Ações</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tabelaFinanciamentosGeral"></tbody>
+                </table>
+            </div>
+        </section>
+    </main>
+
+    <!-- Modal Novo Contrato / Financiamento -->
+    <div id="modalNovoFinanciamento" class="modal-overlay" style="display: none;">
+        <div class="modal-box" style="max-width: 600px; width: 95%;">
+            <h3>Novo Contrato</h3>
+            <p>Informe os dados do financiamento ou parcelamento. É obrigatório vincular a um bem.</p>
+            
+            <form id="formFinanciamentoModal" onsubmit="salvarFinanciamentoModal(event)">
+                <div class="form-grid-2">
+                    <div class="form-group">
+                        <label for="nomeFinanciamento">Nome do Contrato / Descrição</label>
+                        <input type="text" id="nomeFinanciamento" placeholder="Ex.: Financiamento Ford Ka" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="bemVinculadoFin">Vincular a um Bem Patrimonial (*Obrigatório)</label>
+                        <div style="display: flex; gap: 6px;">
+                            <select id="bemVinculadoFin" required style="flex: 1;">
+                                <option value="">Carregando bens...</option>
+                            </select>
+                            <button type="button" class="btn-secundario" onclick="window.location.href='bens.html'" title="Cadastrar novo bem" style="padding: 0 12px;">+ Bem</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="form-grid-2" style="margin-top: 12px;">
+                    <div class="form-group">
+                        <label for="qtdMesesFin">Total de Meses / Parcelas</label>
+                        <input type="number" min="1" max="360" id="qtdMesesFin" value="48" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="valorParcelaFin">Valor da Parcela (R$)</label>
+                        <input type="number" step="0.01" min="0.01" id="valorParcelaFin" placeholder="850,00" required>
+                    </div>
+                </div>
+
+                <div class="form-grid-2" style="margin-top: 12px;">
+                    <div class="form-group">
+                        <label for="primeiroVencimentoFin">Primeiro Vencimento</label>
+                        <input type="date" id="primeiroVencimentoFin" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="categoriaFinanciamento">Categoria Padrão</label>
+                        <select id="categoriaFinanciamento" required></select>
+                    </div>
+                </div>
+
+                <div class="modal-buttons" style="margin-top: 20px;">
+                    <button type="button" class="btn-secundario" onclick="fecharModalNovoFinanciamento()">Cancelar</button>
+                    <button type="submit">Salvar contrato</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script src="script.js"></script>
+    <script>
+        verificarAutenticacao();
+        carregarTabelaFinanciamentosGeral();
+
+        async function abrirModalNovoFinanciamento() {
+            const dados = obterDados();
+            const bensAtivos = (dados.bens || []).filter(b => b.ativo !== false);
+            
+            if (bensAtivos.length === 0) {
+                const criar = await mostrarConfirmacaoModal("Você precisa cadastrar pelo menos um bem patrimonial antes de criar um financiamento. Deseja ir para a tela de Bens agora?");
+                if (criar) window.location.href = 'bens.html';
+                return;
+            }
+
+            const selectBens = document.getElementById('bemVinculadoFin');
+            const selectCat = document.getElementById('categoriaFinanciamento');
+            
+            selectBens.innerHTML = '<option value="">Selecione um bem obrigatório...</option>';
+            bensAtivos.forEach(b => {
+                const opt = document.createElement('option');
+                opt.value = b.id;
+                opt.textContent = b.nome;
+                selectBens.appendChild(opt);
+            });
+
+            selectCat.innerHTML = '';
+            (dados.categorias || []).filter(c => c.tipo === 'saida').forEach(c => {
+                const opt = document.createElement('option');
+                opt.value = c.id;
+                opt.textContent = c.nome;
+                selectCat.appendChild(opt);
+            });
+
+            document.getElementById('primeiroVencimentoFin').value = dataLocalYYYYMMDD();
+            document.getElementById('modalNovoFinanciamento').style.display = 'flex';
+        }
+
+        function fecharModalNovoFinanciamento() {
+            document.getElementById('modalNovoFinanciamento').style.display = 'none';
+            document.getElementById('formFinanciamentoModal').reset();
+        }
+
+        async function salvarFinanciamentoModal(event) {
+            event.preventDefault();
+            const nome = document.getElementById('nomeFinanciamento').value.trim();
+            const bemId = document.getElementById('bemVinculadoFin').value;
+            const qtdMeses = parseInt(document.getElementById('qtdMesesFin').value, 10);
+            const valorParcela = parseFloat(document.getElementById('valorParcelaFin').value);
+            const primeiroVencimento = document.getElementById('primeiroVencimentoFin').value;
+            const categoriaId = document.getElementById('categoriaFinanciamento').value;
+
+            if (!nome || !bemId || !qtdMeses || !Number.isFinite(valorParcela) || !primeiroVencimento || !categoriaId) {
+                await mostrarAlertaModal('Preencha todos os campos obrigatórios (incluindo o bem patrimonial).');
+                return;
+            }
+
+            mostrarLoading("Salvando contrato...");
+            const dados = obterDados();
+            const usuarioId = Number(localStorage.getItem('usuarioLogado'));
+
+            const financiamentoId = dados.financiamentos.reduce((m, f) => Math.max(m, Number(f.id) || 0), 0) + 1;
+            const parcelamentoId = gerarId('finparc');
+
+            dados.financiamentos.push({
+                id: financiamentoId,
+                usuarioId,
+                nome,
+                bemId,
+                totalMeses: qtdMeses,
+                mesesPagos: 0,
+                valorParcela: Number(valorParcela.toFixed(2)),
+                categoriaId,
+                primeiroVencimento,
+                ativo: true,
+                createdAt: new Date().toISOString()
+            });
+
+            let proximaIdLanc = dados.lancamentos.reduce((m, l) => Math.max(m, Number(l.id) || 0), 0) + 1;
+            const dataBase = criarDataLocal(primeiroVencimento);
+            const parcelas = dividirValorExato(valorParcela * qtdMeses, qtdMeses);
+
+            for (let i = 1; i <= qtdMeses; i++) {
+                const dataVenc = adicionarMesesClamped(dataBase, i - 1);
+                dados.lancamentos.push({
+                    id: proximaIdLanc++,
+                    usuarioId,
+                    descricao: `Financiamento: ${nome} (${i}/${qtdMeses})`,
+                    valor: parcelas[i - 1],
+                    tipo: 'saida',
+                    categoriaId,
+                    formaPagamento: 'BOLETO',
+                    cartaoId: null,
+                    bemId,
+                    vencimento: dataParaString(dataVenc),
+                    recorrencia: 'mensal',
+                    parcelaAtual: i,
+                    totalParcelas: qtdMeses,
+                    parcelamentoId,
+                    financiamentoId,
+                    observacao: 'Gerado automaticamente pelo contrato',
+                    horaExtra: 0,
+                    servicoEssencial: 'nao',
+                    pago: false,
+                    status: 'pendente',
+                    createdAt: new Date().toISOString(),
+                    updatedAt: new Date().toISOString()
+                });
+            }
+
+            registrarLogInterno(dados, "CADASTRO FINANCIAMENTO", `Contrato criado: ${nome} (${qtdMeses} meses)`, { entidade: 'financiamento', entidadeId: financiamentoId });
+            await salvarDados(dados);
+
+            esconderLoading();
+            fecharModalNovoFinanciamento();
+            carregarTabelaFinanciamentosGeral();
+            await mostrarAlertaModal("Contrato de financiamento cadastrado com sucesso!");
+        }
+
+        function carregarTabelaFinanciamentosGeral() {
+            const dados = obterDados();
+            const tbody = document.getElementById('tabelaFinanciamentosGeral');
+            if (!tbody) return;
+            tbody.innerHTML = '';
+
+            const financiamentos = (dados.financiamentos || []).filter(f => f.ativo !== false);
+
+            if (financiamentos.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="6" style="text-align: center;">Nenhum contrato cadastrado.</td></tr>`;
+                return;
+            }
+
+            financiamentos.forEach(f => {
+                const lancamentosFin = dados.lancamentos.filter(l => Number(l.financiamentoId) === Number(f.id));
+                const pagos = lancamentosFin.filter(l => l.pago).length;
+                const restantes = Math.max(0, Number(f.totalMeses) - pagos);
+                const saldoDevedor = restantes * Number(f.valorParcela || 0);
+                const percentual = Math.min(100, Math.round((pagos / Number(f.totalMeses)) * 100)) || 0;
+
+                const bemObj = dados.bens.find(b => Number(b.id) === Number(f.bemId));
+                const nomeBem = bemObj ? bemObj.nome : 'Não vinculado';
+
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td><strong>${f.nome}</strong></td>
+                    <td>${nomeBem}</td>
+                    <td>${pagos}/${f.totalMeses} (${percentual}%)</td>
+                    <td>R$ ${Number(f.valorParcela || 0).toLocaleString('pt-BR', {minimumFractionDigits: 2})}</td>
+                    <td class="negativo">R$ ${saldoDevedor.toLocaleString('pt-BR', {minimumFractionDigits: 2})}</td>
+                    <td>
+                        <button onclick="window.location.href='detalhes-financiamento.html?id=${f.id}'" class="btn-acao-icone visualizar" title="Detalhes"><img src="imagens/visualizar.png" alt="Detalhes"></button>
+                        <button onclick="excluirFinanciamentoGeral(${f.id})" class="btn-acao-icone excluir" title="Excluir"><img src="imagens/excluir.png" alt="Excluir"></button>
+                    </td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        async function excluirFinanciamentoGeral(id) {
+            const sucesso = await excluirFinanciamento(id);
+            if (sucesso) carregarTabelaFinanciamentosGeral();
+        }
+    </script>
+</body>
+</html>

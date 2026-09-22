@@ -2,67 +2,128 @@
 <html lang="pt-BR">
 <head>
     <meta charset="UTF-8">
-    <title>Cartões - Controle Financeiro</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cartões | Controle Financeiro</title>
     <link rel="stylesheet" href="style.css">
+    <style>
+        .checkbox-label {
+            display: flex !important;
+            align-items: center !important;
+            gap: 10px !important;
+            cursor: pointer;
+            margin: 0 !important;
+            font-size: 0.85rem !important;
+            font-weight: 600 !important;
+            color: var(--text-main) !important;
+        }
+        .checkbox-label input[type="checkbox"] {
+            width: 18px !important;
+            height: 18px !important;
+            accent-color: var(--primary);
+            cursor: pointer;
+        }
+    </style>
 </head>
 <body>
-    <header>
-        <h1>Controle Financeiro</h1>
-        <span id="usuarioLogadoNome"></span>
-        <nav>
-            <a href="dashboard.html">Início</a>
-            <a href="categorias.html">Categorias</a>
-            <a href="cartoes.html" class="active">Cartões</a>
-            <a href="lancamentos.html">Lançamentos</a>
-            <a href="relatorios.html">Relatórios</a>
-            <a href="admin-logs.html" style="color: #ef4444; font-weight: bold;">Admin Logs</a>
-            
-            <button type="button" onclick="alternarTemaVisual()" class="btn-icone-tema" title="Alternar Modo Escuro / Claro">
-                <img src="imagens/modo_escuro.jpg" alt="Modo Escuro">
-            </button>
-
-            <a href="index.html" onclick="localStorage.removeItem('usuarioLogado')">Sair</a>
-        </nav>
-    </header>
-
-    <main class="container">
-        <!-- Formulário de Cadastro / Edição de Cartão -->
-        <div class="form-card">
-            <h2 id="tituloFormCartao">Cadastrar Novo Cartão</h2>
-            <form id="formCartao" onsubmit="salvarCartaoForm(event)">
-                <input type="hidden" id="cartaoIdEdit">
-
-                <label for="nomeCartao">Nome do Cartão:</label>
-                <input type="text" id="nomeCartao" placeholder="Ex: Nubank, Itaú, Inter" required>
-
-                <label for="limiteCartao">Limite Total (R$):</label>
-                <input type="number" step="0.01" id="limiteCartao" placeholder="Ex: 3500.00" required>
-
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
-                    <div>
-                        <label for="fechamentoCartao">Dia do Fechamento:</label>
-                        <input type="number" min="1" max="31" id="fechamentoCartao" placeholder="Ex: 13" required>
-                    </div>
-                    <div>
-                        <label for="vencimentoCartao">Dia do Vencimento (Pagamento):</label>
-                        <input type="number" min="1" max="31" id="vencimentoCartao" placeholder="Ex: 20" required>
-                    </div>
-                </div>
-
-                <div style="display: flex; gap: 10px; margin-top: 20px;">
-                    <button type="submit" id="btnSalvarCartao" style="flex: 1;">Salvar Cartão</button>
-                    <button type="button" id="btnCancelarCartao" onclick="cancelarEdicaoCartao()" style="background-color: #64748b; display: none;">Cancelar</button>
-                </div>
-            </form>
-        </div>
-
-        <!-- Seção de Listagem de Cartões e Limites -->
-        <div class="form-card" style="margin-top: 20px;">
-            <h2>Meus Cartões e Limites</h2>
-            <div id="gridCartoes" class="stats-grid">
-                <!-- Preenchido via JavaScript -->
+<header class="app-header">
+    <div class="header-inner">
+        <!-- Esquerdo: Controle Financeiro + Perfil/Sync -->
+        <div class="header-left">
+            <div class="brand">
+                <span class="brand-title">Controle Financeiro</span>
+                <span class="brand-subtitle">Gestão Inteligente</span>
+            </div>
+            <div class="header-perfil-sync">
+                <span id="usuarioLogadoNome" class="user-chip"></span>
+                <!-- Ícone de Sincronização ou Status -->
+                <span id="syncStatusIcon" title="Sincronizado" style="cursor: pointer; display: flex; align-items: center;">
+                    <img src="imagens/nuvem.png" alt="Sync" style="width: 22px; height: 22px;">
+                </span>
             </div>
         </div>
+
+        <!-- Centro: Opções Principais -->
+        <nav class="app-nav-center" aria-label="Navegação principal">
+            <a href="dashboard.html">Início</a>
+            <div class="nav-dropdown" style="position: relative;">
+                <a href="#" onclick="event.preventDefault();" style="cursor: pointer;">Cadastros ▾</a>
+                <div class="nav-dropdown-content" style="position: absolute; top: 100%; left: 0;">
+                    <a href="cartoes.html">Cartões</a>
+                    <a href="categorias.html">Categorias</a>
+                    <a href="bens.html">Bens</a>
+                    <a href="financiamentos.html">Financiamentos</a>
+                </div>
+            </div>
+            <a href="lancamentos.html">Lançamentos</a>
+            <a href="relatorios.html">Relatórios</a>
+        </nav>
+
+        <!-- Direito: Tema, Configurações, Notificações e Sair separados -->
+        <div class="header-right">
+            <div class="header-tools">
+                <button type="button" onclick="alternarTemaVisual()" title="Alternar tema">
+                    <img src="imagens/modo_escuro.jpg" alt="Tema">
+                </button>
+                <a href="configuracoes.html" title="Configurações">
+                    <img src="imagens/config.png" alt="Configurações">
+                </a>
+                <!-- Ícone de Notificações -->
+                <button type="button" title="Notificações" id="btnNotificacoesHeader">
+                    <img src="imagens/notificacao.png" alt="Notificações" onerror="this.style.display='none'">
+                </button>
+            </div>
+            
+            <div class="header-tools" style="border-left: 1px solid var(--border-color, #e5e7eb); padding-left: 18px;">
+                <a href="index.html" onclick="event.preventDefault(); deslogarSistema()" class="btn-sair-extremo" title="Sair do sistema">
+                    <img src="imagens/exit.png" alt="Sair">
+                </a>
+            </div>
+        </div>
+    </div>
+</header>
+
+    <main class="container">
+        <div class="page-heading"><div><h2>Cartões</h2><p>Acompanhe limites de crédito e saldos de benefícios (VR/VA).</p></div></div>
+
+        <section class="form-card">
+            <div class="section-title"><div><h2 id="tituloFormCartao">Novo cartão</h2><p>Cadastre cartões de crédito ou de benefício.</p></div></div>
+            <form id="formCartao" onsubmit="salvarCartaoForm(event)">
+                <input type="hidden" id="cartaoIdEdit">
+                <div class="form-grid-2">
+                    <div class="form-group"><label for="nomeCartao">Nome do cartão</label><input type="text" id="nomeCartao" maxlength="60" placeholder="Ex.: Nubank ou VR Refeição" required></div>
+                    <div class="form-group"><label for="limiteCartao" id="labelLimiteCartao">Limite total (R$)</label><input type="number" step="0.01" min="0" id="limiteCartao" placeholder="3500.00" required></div>
+                </div>
+                
+                <div id="camposCredito" class="form-grid-2" style="margin-top:12px;">
+                    <div class="form-group"><label for="fechamentoCartao">Dia do fechamento</label><input type="number" min="1" max="31" id="fechamentoCartao" placeholder="13"></div>
+                    <div class="form-group"><label for="vencimentoCartao">Dia do vencimento</label><input type="number" min="1" max="31" id="vencimentoCartao" placeholder="20"></div>
+                </div>
+
+                <div style="margin-top: 16px;">
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="isBeneficioCartao" onchange="alternarCamposBeneficio()"> 
+                        Cartão de Benefício (VR/VA - Saldo variável por recargas/compras)
+                    </label>
+                </div>
+
+                <div class="btn-row" style="margin-top:16px;">
+                    <button type="submit" id="btnSalvarCartao">Salvar cartão</button>
+                    <button type="button" id="btnCancelarCartao" class="btn-secondary" onclick="cancelarEdicaoCartao()" style="display:none;">Cancelar edição</button>
+                </div>
+            </form>
+        </section>
+
+        <!-- Seção de Cartões de Crédito -->
+        <section class="form-card">
+            <div class="section-title"><div><h2>Cartões de Crédito</h2><p>Gerenciamento de faturas e limites.</p></div></div>
+            <div id="gridCartoesCredito" class="grid-3"></div>
+        </section>
+
+        <!-- Seção de Cartões de Benefício (VR/VA) -->
+        <section class="form-card" style="margin-top: 24px;">
+            <div class="section-title"><div><h2>Cartões de Benefício (VR / VA)</h2><p>Saldos alimentados por recargas e movimentações específicas.</p></div></div>
+            <div id="gridCartoesBeneficio" class="grid-3"></div>
+        </section>
     </main>
 
     <script src="script.js"></script>
@@ -70,45 +131,163 @@
         verificarAutenticacao();
         renderizarCartoes();
 
+        function alternarCamposBeneficio() {
+            const isBeneficio = document.getElementById('isBeneficioCartao').checked;
+            const camposCredito = document.getElementById('camposCredito');
+            const labelLimite = document.getElementById('labelLimiteCartao');
+            const fechamentoInput = document.getElementById('fechamentoCartao');
+            const vencimentoInput = document.getElementById('vencimentoCartao');
+
+            if (isBeneficio) {
+                camposCredito.style.display = 'none';
+                labelLimite.textContent = 'Saldo Inicial / Atual (R$)';
+                fechamentoInput.required = false;
+                vencimentoInput.required = false;
+            } else {
+                camposCredito.style.display = 'grid';
+                labelLimite.textContent = 'Limite total (R$)';
+                fechamentoInput.required = true;
+                vencimentoInput.required = true;
+            }
+        }
+
         async function salvarCartaoForm(event) {
             event.preventDefault();
             const idEdit = document.getElementById('cartaoIdEdit').value;
-            const nome = document.getElementById('nomeCartao').value;
+            const nome = document.getElementById('nomeCartao').value.trim();
             const limite = parseFloat(document.getElementById('limiteCartao').value);
-            const fechamento = parseInt(document.getElementById('fechamentoCartao').value);
-            const vencimento = parseInt(document.getElementById('vencimentoCartao').value);
+            const isBeneficio = document.getElementById('isBeneficioCartao').checked;
+            
+            const fechamento = isBeneficio ? null : parseInt(document.getElementById('fechamentoCartao').value, 10);
+            const vencimento = isBeneficio ? null : parseInt(document.getElementById('vencimentoCartao').value, 10);
+
+            const dados = obterDados();
+            dados.cartoes = dados.cartoes || [];
 
             if (idEdit) {
-                await atualizarCartaoNoBanco(idEdit, nome, limite, fechamento, vencimento);
-                await mostrarAlertaModal('Cartão atualizado com sucesso!');
+                const c = dados.cartoes.find(card => Number(card.id) === Number(idEdit));
+                if (c) {
+                    c.nome = nome;
+                    c.limite = limite;
+                    c.fechamento = fechamento;
+                    c.vencimento = vencimento;
+                    c.isBeneficio = isBeneficio;
+                }
             } else {
-                await adicionarCartao(nome, limite, fechamento, vencimento);
-                await mostrarAlertaModal('Cartão cadastrado com sucesso!');
+                const novoId = dados.cartoes.reduce((m, c) => Math.max(m, Number(c.id) || 0), 0) + 1;
+                dados.cartoes.push({
+                    id: novoId,
+                    nome,
+                    limite,
+                    fechamento,
+                    vencimento,
+                    isBeneficio,
+                    ativo: true
+                });
             }
 
+            await salvarDados(dados);
             cancelarEdicaoCartao();
-            document.getElementById('formCartao').reset();
             renderizarCartoes();
+            await mostrarAlertaModal("Cartão salvo com sucesso!");
         }
 
-        function prepararEdicaoCartao(id, nome, limite, fechamento, vencimento) {
-            document.getElementById('cartaoIdEdit').value = id;
-            document.getElementById('nomeCartao').value = nome;
-            document.getElementById('limiteCartao').value = limite;
-            document.getElementById('fechamentoCartao').value = fechamento;
-            document.getElementById('vencimentoCartao').value = vencimento;
+        function renderizarCartoes() {
+            const dados = obterDados();
+            const gridCredito = document.getElementById('gridCartoesCredito');
+            const gridBeneficio = document.getElementById('gridCartoesBeneficio');
+            if (!gridCredito || !gridBeneficio) return;
+
+            gridCredito.innerHTML = '';
+            gridBeneficio.innerHTML = '';
+
+            const cartoes = (dados.cartoes || []).filter(c => c.ativo !== false);
             
-            document.getElementById('tituloFormCartao').innerText = 'Editar Cartão';
-            document.getElementById('btnSalvarCartao').innerText = 'Atualizar Cartão';
+            const creditos = cartoes.filter(c => !c.isBeneficio);
+            const beneficios = cartoes.filter(c => c.isBeneficio);
+
+            // Renderizar Crédito
+            if (creditos.length === 0) {
+                gridCredito.innerHTML = `<div class="empty-state" style="grid-column: span 3;"><strong>Nenhum cartão de crédito cadastrado.</strong></div>`;
+            } else {
+                creditos.forEach(c => {
+                    const div = document.createElement('div');
+                    div.className = 'form-card card-visual';
+                    div.style.marginBottom = '0';
+                    div.innerHTML = `
+                        <span class="status-badge status-pendente" style="margin-bottom: 8px; display: inline-block;">CRÉDITO</span>
+                        <h3 style="margin-bottom: 6px;">${c.nome}</h3>
+                        <p class="muted small">Limite: <strong>R$ ${Number(c.limite || 0).toLocaleString('pt-BR', {minimumFractionDigits: 2})}</strong></p>
+                        <p class="muted small" style="margin-top: 2px;">Fechamento: Dia ${c.fechamento} | Vencimento: Dia ${c.vencimento}</p>
+                        <div style="margin-top: 14px; display: flex; gap: 6px;">
+                            <button onclick="prepararEdicaoCartao(${c.id})" class="btn-secundario small" style="padding: 6px 12px;">Editar</button>
+                        </div>
+                    `;
+                    gridCredito.appendChild(div);
+                });
+            }
+
+            // Renderizar Benefício
+            if (beneficios.length === 0) {
+                gridBeneficio.innerHTML = `<div class="empty-state" style="grid-column: span 3;"><strong>Nenhum cartão de benefício (VR/VA) cadastrado.</strong></div>`;
+            } else {
+                beneficios.forEach(c => {
+                    // Calcula o saldo atual do benefício com base nas entradas e saídas associadas a ele
+                    const lancamentos = dados.lancamentos || [];
+                    const saldoAtual = lancamentos.reduce((acc, l) => {
+                        if (Number(l.cartaoId) === Number(c.id)) {
+                            return l.tipo === 'entrada' ? acc + Number(l.valor) : acc - Number(l.valor);
+                        }
+                        return acc;
+                    }, Number(c.limite || 0)); // Considera o limite inicial como base do saldo
+
+                    const div = document.createElement('div');
+                    div.className = 'form-card card-visual';
+                    div.style.marginBottom = '0';
+                    div.innerHTML = `
+                        <span class="status-badge status-pago" style="margin-bottom: 8px; display: inline-block;">BENEFÍCIO (VR/VA)</span>
+                        <h3 style="margin-bottom: 6px;">${c.nome}</h3>
+                        <p class="muted small">Saldo Atual: <strong class="positivo">R$ ${saldoAtual.toLocaleString('pt-BR', {minimumFractionDigits: 2})}</strong></p>
+                        <div style="margin-top: 14px; display: flex; gap: 6px;">
+                            <button onclick="prepararEdicaoCartao(${c.id})" class="btn-secundario small" style="padding: 6px 12px;">Editar</button>
+                        </div>
+                    `;
+                    gridBeneficio.appendChild(div);
+                });
+            }
+        }
+
+        function prepararEdicaoCartao(id) {
+            const dados = obterDados();
+            const c = (dados.cartoes || []).find(card => Number(card.id) === Number(id));
+            if (!c) return;
+
+            document.getElementById('cartaoIdEdit').value = c.id;
+            document.getElementById('nomeCartao').value = c.nome;
+            document.getElementById('limiteCartao').value = c.limite;
+            document.getElementById('isBeneficioCartao').checked = !!c.isBeneficio;
+            
+            if (!c.isBeneficio) {
+                document.getElementById('fechamentoCartao').value = c.fechamento;
+                document.getElementById('vencimentoCartao').value = c.vencimento;
+            }
+
+            alternarCamposBeneficio();
+
+            document.getElementById('tituloFormCartao').textContent = 'Editar cartão';
+            document.getElementById('btnSalvarCartao').textContent = 'Atualizar cartão';
             document.getElementById('btnCancelarCartao').style.display = 'inline-flex';
+            document.getElementById('nomeCartao').focus();
             window.scrollTo({ top: 0, behavior: 'smooth' });
         }
 
         function cancelarEdicaoCartao() {
             document.getElementById('cartaoIdEdit').value = '';
             document.getElementById('formCartao').reset();
-            document.getElementById('tituloFormCartao').innerText = 'Cadastrar Novo Cartão';
-            document.getElementById('btnSalvarCartao').innerText = 'Salvar Cartão';
+            document.getElementById('isBeneficioCartao').checked = false;
+            alternarCamposBeneficio();
+            document.getElementById('tituloFormCartao').textContent = 'Novo cartão';
+            document.getElementById('btnSalvarCartao').textContent = 'Salvar cartão';
             document.getElementById('btnCancelarCartao').style.display = 'none';
         }
     </script>

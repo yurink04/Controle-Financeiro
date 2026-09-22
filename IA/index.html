@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#2563eb">
+    <title>Login | Controle Financeiro</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body class="login-page">
+    <main class="form-card login-card">
+        <div class="login-logo">R$</div>
+        <h1>Controle Financeiro</h1>
+        <p class="login-subtitle">Selecione seu perfil para acessar o sistema</p>
+
+        <form id="formLogin" onsubmit="realizarLogin(event)" novalidate>
+            <label for="selectUsuario">Usuário</label>
+            <select id="selectUsuario" required>
+                <option value="">Carregando usuários...</option>
+            </select>
+
+            <button type="submit" class="btn-full" style="margin-top: 16px;">Entrar no sistema</button>
+        </form>
+
+        <div class="login-tip">
+            <span aria-hidden="true">🔒</span>
+            <span>Alguns perfis podem solicitar um PIN antes do acesso.</span>
+        </div>
+    </main>
+
+    <script src="script.js"></script>
+    <script>
+        document.addEventListener("DOMContentLoaded", async () => {
+            await inicializarBanco();
+            const dados = obterDados();
+            const select = document.getElementById('selectUsuario');
+            if (!select) return;
+
+            select.innerHTML = '';
+            dados.usuarios.forEach(usuario => {
+                const option = document.createElement('option');
+                option.value = usuario.id;
+                option.textContent = usuario.nome;
+                select.appendChild(option);
+            });
+
+            if (!dados.usuarios.length) {
+                select.innerHTML = '<option value="">Nenhum usuário cadastrado</option>';
+            }
+        });
+
+        async function realizarLogin(event) {
+            event.preventDefault();
+            const select = document.getElementById('selectUsuario');
+            if (!select?.value) return;
+            await selecionarUsuario(select.value);
+        }
+    </script>
+</body>
+</html>

@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Financiamento | Controle Financeiro</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <header class="app-header">
+        <div class="header-inner">
+            <div class="brand"><span class="brand-title">Controle Financeiro</span><span class="brand-subtitle">Detalhes do financiamento</span></div>
+            <span id="usuarioLogadoNome" class="user-chip"></span>
+            <nav class="app-nav" aria-label="Navegação principal">
+                <a href="dashboard.html">Início</a><a href="categorias.html">Categorias</a><a href="cartoes.html">Cartões</a><a href="lancamentos.html">Lançamentos</a><a href="relatorios.html" class="active">Relatórios</a><a href="admin-logs.html" class="nav-admin">Admin</a>
+                <button type="button" onclick="alternarTemaVisual()" class="btn-theme" title="Alternar tema"><img src="imagens/modo_escuro.jpg" alt="Tema"></button>
+                <a href="index.html" onclick="event.preventDefault(); deslogarSistema()">Sair</a>
+            </nav>
+        </div>
+    </header>
+
+    <main class="container">
+        <div class="page-heading">
+            <div><h2 id="tituloFinanciamentoDetalhe">Detalhes do financiamento</h2><p>Acompanhe o progresso e as parcelas do contrato.</p></div>
+            <a href="relatorios.html" class="text-link">← Voltar para relatórios</a>
+        </div>
+
+        <section class="stat-grid">
+            <div class="stat-box"><div class="stat-label">Progresso</div><div id="infoProgressoMeses" class="stat-value">0 / 0</div></div>
+            <div class="stat-box"><div class="stat-label">Meses faltantes</div><div id="infoMesesFaltantes" class="stat-value warning">0</div></div>
+            <div class="stat-box"><div class="stat-label">Previsão de término</div><div id="infoTerminoFinanciamento" class="stat-value">--/----</div></div>
+            <div class="stat-box"><div class="stat-label">Ações</div><div class="stat-detail">Edite uma parcela sem alterar as demais.</div></div>
+        </section>
+
+        <section class="form-card" style="margin-top:16px;">
+            <div class="section-title"><div><h2>Dados do contrato</h2><p>A alteração do total de meses não apaga automaticamente parcelas já existentes.</p></div></div>
+            <form id="formEditarFinanciamentoCompleto" onsubmit="salvarEdicaoFinanciamentoCompleto(event)">
+                <div class="form-grid-3">
+                    <div class="form-group"><label for="editNomeFin">Nome do contrato</label><input type="text" id="editNomeFin" maxlength="120" required></div>
+                    <div class="form-group"><label for="editTotalMesesFin">Total de meses</label><input type="number" id="editTotalMesesFin" min="1" max="360" required></div>
+                    <div class="form-group"><label>&nbsp;</label><button type="submit" class="btn-warning btn-full">Salvar alterações</button></div>
+                </div>
+            </form>
+        </section>
+
+        <section class="form-card">
+            <div class="section-title"><div><h2>Parcelas do financiamento</h2><p>Status, vencimento e valor de cada parcela.</p></div></div>
+            <div class="tabela-container">
+                <table class="tabela"><thead><tr><th>Parcela</th><th>Vencimento</th><th>Categoria</th><th>Valor</th><th>Status</th><th>Ações</th></tr></thead><tbody id="tabelaParcelasFinanciamento"></tbody></table>
+            </div>
+        </section>
+    </main>
+
+    <script src="script.js"></script>
+    <script>
+        verificarAutenticacao();
+        const urlParams = new URLSearchParams(window.location.search);
+        const financiamentoId = urlParams.get('id');
+
+        function obterParcelasFinanciamento(dados, fin) {
+            return dados.lancamentos.filter(l =>
+                l.tipo === 'saida' &&
+                (String(l.financiamentoId) === String(fin.id) ||
+                 (!l.financiamentoId && normalizarTexto(l.descricao).includes(normalizarTexto(`Financiamento: ${fin.nome}`))))
+            ).sort((a, b) => String(a.vencimento).localeCompare(String(b.vencimento)));
+        }
+
+        function statusBadge(lancamento) {
+            const status = lancamento.status || (lancamento.pago ? 'pago' : 'pendente');
+            const texto = status === 'pago' ? 'Pago' : status === 'atrasado' ? 'Atrasado' : 'Pendente';
+            const classe = status === 'pago' ? 'status-pago' : status === 'atrasado' ? 'status-atrasado' : 'status-pendente';
+            return `<span class="status-badge ${classe}">${texto}</span>`;
+        }
+
+        function carregarDetalhesFinanciamentoPagina() {
+            const dados = obterDados();
+            const fin = dados.financiamentos.find(f => String(f.id) === String(financiamentoId));
+            if (!fin) {
+                mostrarAlertaModal('Financiamento não encontrado.').then(() => window.location.href = 'relatorios.html');
+                return;
+            }
+
+            document.getElementById('tituloFinanciamentoDetalhe').textContent = `Contrato: ${fin.nome}`;
+            document.getElementById('editNomeFin').value = fin.nome;
+            document.getElementById('editTotalMesesFin').value = fin.totalMeses;
+
+            const parcelas = obterParcelasFinanciamento(dados, fin);
+            const pagas = parcelas.filter(p => p.pago).length;
+            const total = Number(fin.totalMeses) || parcelas.length;
+            const faltantes = Math.max(0, total - pagas);
+            document.getElementById('infoProgressoMeses').textContent = `${pagas} / ${total}`;
+            document.getElementById('infoMesesFaltantes').textContent = String(faltantes);
+            const ultima = parcelas[parcelas.length - 1];
+            document.getElementById('infoTerminoFinanciamento').textContent = ultima?.vencimento ? ultima.vencimento.slice(5, 7) + '/' + ultima.vencimento.slice(0, 4) : '--/----';
+
+            const tbody = document.getElementById('tabelaParcelasFinanciamento');
+            tbody.innerHTML = '';
+            if (!parcelas.length) {
+                tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;">Nenhuma parcela encontrada.</td></tr>';
+                return;
+            }
+
+            parcelas.forEach(l => {
+                const cat = dados.categorias.find(c => String(c.id) === String(l.categoriaId));
+                const tr = document.createElement('tr');
+                const parcela = `${l.parcelaAtual || '-'} / ${l.totalParcelas || '-'}`;
+                tr.innerHTML = `
+                    <td><strong>${escaparHTML(parcela)}</strong></td>
+                    <td>${escaparHTML(formatarDataBR(l.vencimento))}</td>
+                    <td>${escaparHTML(cat?.nome || 'Geral')}</td>
+                    <td>${escaparHTML(formatarMoeda(l.valor))}</td>
+                    <td>${statusBadge(l)}</td>
+                    <td class="action-cell">
+                        <button type="button" onclick="editarValorParcelaFinanciamento(${Number(l.id)})" class="btn-acao-icone editar" title="Editar valor">✎</button>
+                        <button type="button" onclick="alternarStatusPagamentoFin(${Number(l.id)})" class="btn-acao-icone ${l.pago ? 'desfazer' : 'pagar'}" title="Alterar status">${l.pago ? '↩' : '✓'}</button>
+                    </td>`;
+                tbody.appendChild(tr);
+            });
+        }
+
+        async function salvarEdicaoFinanciamentoCompleto(event) {
+            event.preventDefault();
+            if (!await verificarSenhaAdmin('editar financiamento')) return;
+            const dados = obterDados();
+            const fin = dados.financiamentos.find(f => String(f.id) === String(financiamentoId));
+            if (!fin) return;
+            const novoNome = document.getElementById('editNomeFin').value.trim();
+            const novoTotal = parseInt(document.getElementById('editTotalMesesFin').value, 10);
+            if (!novoNome || !novoTotal || novoTotal < 1 || novoTotal > 360) {
+                await mostrarAlertaModal('Informe um nome e uma quantidade válida de meses.'); return;
+            }
+            const nomeAnterior = fin.nome;
+            fin.nome = novoNome;
+            fin.totalMeses = novoTotal;
+            fin.updatedAt = new Date().toISOString();
+
+            // Compatibilidade com parcelas antigas sem financiamentoId.
+            dados.lancamentos.forEach(l => {
+                if (!l.financiamentoId && normalizarTexto(l.descricao).includes(normalizarTexto(`Financiamento: ${nomeAnterior}`))) {
+                    l.descricao = l.descricao.replace(new RegExp(`Financiamento: ${nomeAnterior}`, 'i'), `Financiamento: ${novoNome}`);
+                }
+            });
+            registrarLogInterno(dados, 'EDIÇÃO FINANCIAMENTO', `Contrato ID ${financiamentoId} atualizado para: ${novoNome}`);
+            await salvarDados(dados);
+            await mostrarAlertaModal('Financiamento atualizado com sucesso.');
+            carregarDetalhesFinanciamentoPagina();
+        }
+
+        async function editarValorParcelaFinanciamento(lancamentoId) {
+            const valorStr = await mostrarPromptModal('Editar valor da parcela', 'Digite o novo valor (R$):');
+            if (valorStr === null) return;
+            const novoValor = Number(String(valorStr).replace(',', '.'));
+            if (!Number.isFinite(novoValor) || novoValor <= 0) {
+                await mostrarAlertaModal('Valor inválido.'); return;
+            }
+            const dados = obterDados();
+            const lanc = dados.lancamentos.find(l => String(l.id) === String(lancamentoId));
+            if (!lanc) return;
+            lanc.valor = Number(novoValor.toFixed(2));
+            lanc.updatedAt = new Date().toISOString();
+            registrarLogInterno(dados, 'EDIÇÃO PARCELA FINANCIAMENTO', `Parcela ID ${lancamentoId} alterada para ${formatarMoeda(novoValor)}`);
+            await salvarDados(dados);
+            await mostrarAlertaModal('Valor da parcela atualizado com sucesso.');
+            carregarDetalhesFinanciamentoPagina();
+        }
+
+        async function alternarStatusPagamentoFin(lancamentoId) {
+            const ok = await alternarStatusPagamento(lancamentoId);
+            if (ok) carregarDetalhesFinanciamentoPagina();
+        }
+
+        if (!financiamentoId) {
+            mostrarAlertaModal('Financiamento não especificado.').then(() => window.location.href = 'relatorios.html');
+        } else {
+            carregarDetalhesFinanciamentoPagina();
+        }
+    </script>
+</body>
+</html>

@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <title>Cartões - Controle Financeiro</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <header>
+        <h1>Controle Financeiro</h1>
+        <span id="usuarioLogadoNome"></span>
+        <nav>
+            <a href="dashboard.html">Início</a>
+            <a href="categorias.html">Categorias</a>
+            <a href="cartoes.html" class="active">Cartões</a>
+            <a href="lancamentos.html">Lançamentos</a>
+            <a href="relatorios.html">Relatórios</a>
+            <a href="admin-logs.html" style="color: #ef4444; font-weight: bold;">Admin Logs</a>
+            
+            <button type="button" onclick="alternarTemaVisual()" class="btn-icone-tema" title="Alternar Modo Escuro / Claro">
+                <img src="imagens/modo_escuro.jpg" alt="Modo Escuro">
+            </button>
+
+            <a href="index.html" onclick="localStorage.removeItem('usuarioLogado')">Sair</a>
+        </nav>
+    </header>
+
+    <main class="container">
+        <!-- Formulário de Cadastro / Edição de Cartão -->
+        <div class="form-card">
+            <h2 id="tituloFormCartao">Cadastrar Novo Cartão</h2>
+            <form id="formCartao" onsubmit="salvarCartaoForm(event)">
+                <input type="hidden" id="cartaoIdEdit">
+
+                <label for="nomeCartao">Nome do Cartão:</label>
+                <input type="text" id="nomeCartao" placeholder="Ex: Nubank, Itaú, Inter" required>
+
+                <label for="limiteCartao">Limite Total (R$):</label>
+                <input type="number" step="0.01" id="limiteCartao" placeholder="Ex: 3500.00" required>
+
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                    <div>
+                        <label for="fechamentoCartao">Dia do Fechamento:</label>
+                        <input type="number" min="1" max="31" id="fechamentoCartao" placeholder="Ex: 13" required>
+                    </div>
+                    <div>
+                        <label for="vencimentoCartao">Dia do Vencimento (Pagamento):</label>
+                        <input type="number" min="1" max="31" id="vencimentoCartao" placeholder="Ex: 20" required>
+                    </div>
+                </div>
+
+                <div style="display: flex; gap: 10px; margin-top: 20px;">
+                    <button type="submit" id="btnSalvarCartao" style="flex: 1;">Salvar Cartão</button>
+                    <button type="button" id="btnCancelarCartao" onclick="cancelarEdicaoCartao()" style="background-color: #64748b; display: none;">Cancelar</button>
+                </div>
+            </form>
+        </div>
+
+        <!-- Seção de Listagem de Cartões e Limites -->
+        <div class="form-card" style="margin-top: 20px;">
+            <h2>Meus Cartões e Limites</h2>
+            <div id="gridCartoes" class="stats-grid">
+                <!-- Preenchido via JavaScript -->
+            </div>
+        </div>
+    </main>
+
+    <script src="script.js"></script>
+    <script>
+        verificarAutenticacao();
+        renderizarCartoes();
+
+        async function salvarCartaoForm(event) {
+            event.preventDefault();
+            const idEdit = document.getElementById('cartaoIdEdit').value;
+            const nome = document.getElementById('nomeCartao').value;
+            const limite = parseFloat(document.getElementById('limiteCartao').value);
+            const fechamento = parseInt(document.getElementById('fechamentoCartao').value);
+            const vencimento = parseInt(document.getElementById('vencimentoCartao').value);
+
+            if (idEdit) {
+                await atualizarCartaoNoBanco(idEdit, nome, limite, fechamento, vencimento);
+                await mostrarAlertaModal('Cartão atualizado com sucesso!');
+            } else {
+                await adicionarCartao(nome, limite, fechamento, vencimento);
+                await mostrarAlertaModal('Cartão cadastrado com sucesso!');
+            }
+
+            cancelarEdicaoCartao();
+            document.getElementById('formCartao').reset();
+            renderizarCartoes();
+        }
+
+        function prepararEdicaoCartao(id, nome, limite, fechamento, vencimento) {
+            document.getElementById('cartaoIdEdit').value = id;
+            document.getElementById('nomeCartao').value = nome;
+            document.getElementById('limiteCartao').value = limite;
+            document.getElementById('fechamentoCartao').value = fechamento;
+            document.getElementById('vencimentoCartao').value = vencimento;
+            
+            document.getElementById('tituloFormCartao').innerText = 'Editar Cartão';
+            document.getElementById('btnSalvarCartao').innerText = 'Atualizar Cartão';
+            document.getElementById('btnCancelarCartao').style.display = 'inline-flex';
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+
+        function cancelarEdicaoCartao() {
+            document.getElementById('cartaoIdEdit').value = '';
+            document.getElementById('formCartao').reset();
+            document.getElementById('tituloFormCartao').innerText = 'Cadastrar Novo Cartão';
+            document.getElementById('btnSalvarCartao').innerText = 'Salvar Cartão';
+            document.getElementById('btnCancelarCartao').style.display = 'none';
+        }
+    </script>
+</body>
+</html>

@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <title>Editar Lançamento - Controle Financeiro</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <header>
+        <h1>Controle Financeiro</h1>
+        <span id="usuarioLogadoNome"></span>
+       <nav>
+            <a href="dashboard.html">Início</a>
+            <a href="categorias.html">Categorias</a>
+            <a href="cartoes.html">Cartões</a>
+            <a href="lancamentos.html">Lançamentos</a>
+            <a href="relatorios.html">Relatórios</a>
+            <a href="admin-logs.html" style="color: #ef4444; font-weight: bold;">Admin Logs</a>
+            
+            <button type="button" onclick="alternarTemaVisual()" class="btn-icone-tema" title="Alternar Modo Escuro / Claro">
+                <img src="imagens/modo_escuro.jpg" alt="Modo Escuro">
+            </button>
+
+            <a href="index.html" onclick="localStorage.removeItem('usuarioLogado')">Sair</a>
+        </nav>
+    </header>
+
+    <main class="container">
+        <div class="form-card">
+            <h2>Editar Lançamento</h2>
+            <form onsubmit="salvarEdicaoLancamento(event)">
+                <input type="hidden" id="editId">
+
+                <label>Descrição:</label>
+                <input type="text" id="editDescricao" required>
+
+                <label>Tipo:</label>
+                <select id="editTipo" onchange="tratarMudancaTipoEdicao()">
+                    <option value="saida">Saída (Despesa / Boleto / Financiamento)</option>
+                    <option value="entrada">Entrada (Receita)</option>
+                </select>
+
+                <label>Categoria:</label>
+                <select id="editCategoria" required></select>
+
+                <label>Forma de Pagamento:</label>
+                <select id="editFormaPagamento">
+                    <option value="PIX">PIX</option>
+                    <option value="BOLETO">Boleto</option>
+                    <option value="DINHEIRO">Dinheiro / Outros</option>
+                    <option value="CARTAO">Cartão de Crédito</option>
+                </select>
+
+                <!-- Nova Opção: Serviço Essencial (Apenas visível em Saídas) -->
+                <div id="blocoServicoEssencial" style="margin-top: 12px;">
+                    <label for="editServicoEssencial">Serviço essencial?</label>
+                    <select id="editServicoEssencial">
+                        <option value="nao">Não</option>
+                        <option value="sim">Sim</option>
+                    </select>
+                </div>
+
+                <label>Valor (R$):</label>
+                <input type="number" step="0.01" id="editValor" required>
+
+                <label>Observação (Opcional):</label>
+                <input type="text" id="editObservacao">
+
+                <label>Data de Vencimento:</label>
+                <input type="date" id="editVencimento" required>
+
+                <button type="submit" style="margin-top: 20px;">Salvar Alterações</button>
+                <button type="button" onclick="history.back()" style="background-color: #7f8c8d; margin-top: 10px;">Voltar</button>
+            </form>
+        </div>
+    </main>
+
+    <script src="script.js"></script>
+    <script>
+        verificarAutenticacao();
+        
+        const urlParams = new URLSearchParams(window.location.search);
+        const lancamentoId = parseInt(urlParams.get('id'));
+
+        const dados = obterDados();
+        const lancamento = dados.lancamentos.find(l => Number(l.id) === lancamentoId);
+
+        if (!lancamento) {
+            alert('Lançamento não encontrado!');
+            history.back();
+        } else {
+            const selectCat = document.getElementById('editCategoria');
+            dados.categorias.forEach(c => {
+                const opt = document.createElement('option');
+                opt.value = c.id;
+                opt.innerText = c.nome;
+                selectCat.appendChild(opt);
+            });
+
+            document.getElementById('editId').value = lancamento.id;
+            document.getElementById('editDescricao').value = lancamento.descricao;
+            document.getElementById('editTipo').value = lancamento.tipo;
+            document.getElementById('editCategoria').value = lancamento.categoriaId;
+            document.getElementById('editFormaPagamento').value = lancamento.formaPagamento || 'BOLETO';
+            document.getElementById('editValor').value = lancamento.valor;
+            document.getElementById('editObservacao').value = lancamento.observacao || '';
+            document.getElementById('editVencimento').value = lancamento.vencimento;
+            document.getElementById('editServicoEssencial').value = lancamento.servicoEssencial || 'nao';
+
+            tratarMudancaTipoEdicao();
+        }
+
+        function tratarMudancaTipoEdicao() {
+            const tipo = document.getElementById('editTipo').value;
+            const blocoEssencial = document.getElementById('blocoServicoEssencial');
+            if (tipo === 'entrada') {
+                if (blocoEssencial) blocoEssencial.style.display = 'none';
+            } else {
+                if (blocoEssencial) blocoEssencial.style.display = 'block';
+            }
+        }
+
+        async function salvarEdicaoLancamento(event) {
+            event.preventDefault();
+            const id = parseInt(document.getElementById('editId').value);
+            const descricao = document.getElementById('editDescricao').value;
+            const tipo = document.getElementById('editTipo').value;
+            const categoriaId = parseInt(document.getElementById('editCategoria').value);
+            const formaPagamento = document.getElementById('editFormaPagamento').value;
+            const valor = parseFloat(document.getElementById('editValor').value);
+            const observacao = document.getElementById('editObservacao').value;
+            const vencimento = document.getElementById('editVencimento').value;
+            const servicoEssencial = tipo === 'saida' ? document.getElementById('editServicoEssencial').value : 'nao';
+
+            await atualizarLancamentoNoBanco(id, {
+                descricao,
+                tipo,
+                categoriaId,
+                formaPagamento,
+                valor,
+                observacao,
+                vencimento,
+                servicoEssencial
+            });
+
+            alert('Lançamento (ou parcela de financiamento) atualizado com sucesso!');
+            history.back();
+        }
+    </script>
+</body>
+</html>

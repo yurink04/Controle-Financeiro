@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin | Auditoria | Controle Financeiro</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <header class="app-header">
+        <div class="header-inner">
+            <div class="brand"><span class="brand-title">Controle Financeiro</span><span class="brand-subtitle">Auditoria administrativa</span></div>
+            <span id="usuarioLogadoNome" class="user-chip"></span>
+            <nav class="app-nav" aria-label="Navegação principal">
+                <a href="dashboard.html">Início</a><a href="categorias.html">Categorias</a><a href="cartoes.html">Cartões</a><a href="lancamentos.html">Lançamentos</a><a href="relatorios.html">Relatórios</a><a href="admin-logs.html" class="active nav-admin">Admin</a>
+                <button type="button" onclick="alternarTemaVisual()" class="btn-theme" title="Alternar tema"><img src="imagens/modo_escuro.jpg" alt="Tema"></button>
+                <a href="index.html" onclick="event.preventDefault(); deslogarSistema()">Sair</a>
+            </nav>
+        </div>
+    </header>
+
+    <main class="container">
+        <div class="page-heading"><div><h2>Auditoria e acessos</h2><p>Registro das operações realizadas no sistema.</p></div></div>
+
+        <section id="divLoginAdmin" class="form-card" style="max-width:460px;margin:50px auto;">
+            <div class="login-logo">ADM</div>
+            <h2 style="text-align:center;">Acesso restrito</h2>
+            <p class="muted small" style="text-align:center;margin-bottom:12px;">Informe a senha administrativa para visualizar os registros.</p>
+            <input type="password" id="senhaAdminInput" class="modal-input" placeholder="Senha administrativa" autocomplete="off">
+            <div class="btn-row" style="margin-top:14px;"><button type="button" onclick="autenticarPainelAdmin()">Entrar</button><a href="dashboard.html" class="btn-secondary" style="display:inline-flex;align-items:center;justify-content:center;text-decoration:none;border-radius:10px;padding:10px 15px;font-size:.84rem;font-weight:750;">Voltar</a></div>
+        </section>
+
+        <section id="divConteudoAdmin" style="display:none;">
+            <div class="form-card">
+                <div class="section-title"><div><h2>Logs de auditoria</h2><p id="contadorLogs">0 registros</p></div><div class="toolbar-actions"><input type="search" id="filtroLogs" placeholder="Buscar nos logs..." oninput="carregarTabelaLogs()" style="width:230px;"><button type="button" class="btn-danger" onclick="limparLogsSistemaComSenha()">Limpar logs</button></div></div>
+                <div class="tabela-container">
+                    <table class="tabela"><thead><tr><th>Data / hora</th><th>Usuário</th><th>Ação</th><th>Detalhes</th></tr></thead><tbody id="tabelaLogs"></tbody></table>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <script src="script.js"></script>
+    <script>
+        verificarAutenticacao();
+        if (sessionStorage.getItem('adminLogado') === 'true') liberarPainelAdmin();
+
+        async function autenticarPainelAdmin() {
+            const senha = document.getElementById('senhaAdminInput').value.trim();
+            if (!senha) return;
+            if (senha === SENHA_ADMIN) {
+                sessionStorage.setItem('adminLogado', 'true');
+                const dados = obterDados();
+                registrarLogInterno(dados, 'LOGIN ADMIN', 'Administrador acessou o painel de auditoria');
+                await salvarDados(dados);
+                liberarPainelAdmin();
+            } else {
+                document.getElementById('senhaAdminInput').value = '';
+                await mostrarAlertaModal('Senha administrativa incorreta.');
+            }
+        }
+
+        function liberarPainelAdmin() {
+            document.getElementById('divLoginAdmin').style.display = 'none';
+            document.getElementById('divConteudoAdmin').style.display = 'block';
+            carregarTabelaLogs();
+        }
+
+        function carregarTabelaLogs() {
+            const dados = obterDados();
+            const tbody = document.getElementById('tabelaLogs');
+            const filtro = normalizarTexto(document.getElementById('filtroLogs')?.value || '');
+            let logs = [...(dados.logs || [])].reverse();
+            if (filtro) logs = logs.filter(log => normalizarTexto(`${log.dataHoraFormatada || log.dataHora || ''} ${log.usuario || ''} ${log.acao || ''} ${log.detalhes || ''}`).includes(filtro));
+            document.getElementById('contadorLogs').textContent = `${logs.length} registro(s)`;
+            tbody.innerHTML = '';
+            if (!logs.length) { tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;">Nenhum registro encontrado.</td></tr>'; return; }
+            logs.forEach(log => {
+                const tr = document.createElement('tr');
+                const dt = log.dataHoraFormatada || (log.dataHora ? new Date(log.dataHora).toLocaleString('pt-BR') : '-');
+                tr.innerHTML = `<td>${escaparHTML(dt)}</td><td><strong>${escaparHTML(log.usuario || '-')}</strong></td><td><span class="audit-action">${escaparHTML(log.acao || '-')}</span></td><td>${escaparHTML(log.detalhes || '-')}</td>`;
+                tbody.appendChild(tr);
+            });
+        }
+
+        async function limparLogsSistemaComSenha() {
+            const senha = await mostrarPromptSenha('Confirmar limpeza', 'Digite a senha administrativa para apagar o histórico atual.');
+            if (senha === null) return;
+            if (senha !== SENHA_ADMIN) { await mostrarAlertaModal('Senha administrativa incorreta.'); return; }
+            const confirmar = await mostrarConfirmacaoModal('Apagar todo o histórico de auditoria? Essa operação remove os registros atuais.');
+            if (!confirmar) return;
+            const dados = obterDados();
+            dados.logs = [];
+            adicionarAuditoriaAoObjeto(dados, 'LIMPEZA DE LOGS', 'Histórico de auditoria foi limpo pelo administrador');
+            await salvarDados(dados);
+            carregarTabelaLogs();
+            await mostrarAlertaModal('Logs limpos com sucesso.');
+        }
+
+        document.getElementById('senhaAdminInput').addEventListener('keydown', e => {
+            if (e.key === 'Enter') autenticarPainelAdmin();
+        });
+    </script>
+</body>
+</html>

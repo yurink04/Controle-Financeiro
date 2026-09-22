@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <title>Relatórios - Controle Financeiro</title>
+    <link rel="stylesheet" href="style.css">
+    <!-- Chart.js para os gráficos -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+    <header>
+        <h1>Controle Financeiro</h1>
+        <span id="usuarioLogadoNome"></span>
+        <nav>
+            <a href="dashboard.html">Início</a>
+            <a href="categorias.html">Categorias</a>
+            <a href="cartoes.html">Cartões</a>
+            <a href="lancamentos.html">Lançamentos</a>
+            <a href="relatorios.html" class="active">Relatórios</a>
+            <a href="admin-logs.html" style="color: #ef4444; font-weight: bold;">Admin Logs</a>
+            
+            <button type="button" onclick="alternarTemaVisual()" class="btn-icone-tema" title="Alternar Modo Escuro / Claro">
+                <img src="imagens/modo_escuro.jpg" alt="Modo Escuro">
+            </button>
+
+            <a href="index.html" onclick="localStorage.removeItem('usuarioLogado')">Sair</a>
+        </nav>
+    </header>
+
+    <main class="container">
+        <!-- Filtro de Período Avançado (Mesmo padrão do Dashboard) -->
+        <section class="form-card" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+            <h2>Filtro de Relatório</h2>
+            <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+                <button type="button" onclick="definirFiltroPeriodo('mesAtual')" id="btnMesAtual" style="background-color: var(--primary); padding: 6px 12px; font-size: 0.85rem; width: auto;">Mês Atual</button>
+                <button type="button" onclick="definirFiltroPeriodo('mesPassado')" id="btnMesPassado" style="background-color: #64748b; padding: 6px 12px; font-size: 0.85rem; width: auto;">Mês Passado</button>
+                <button type="button" onclick="definirFiltroPeriodo('todos')" id="btnTodos" style="background-color: #64748b; padding: 6px 12px; font-size: 0.85rem; width: auto;">Período Total</button>
+                
+                <input type="month" id="filtroMesAnoRelatorio" onchange="mudarFiltroMesManual()" style="width: auto; padding: 5px;">
+            </div>
+        </section>
+
+        <!-- 4 Campos de Resumo por Usuário -->
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 15px; margin-top: 20px; margin-bottom: 20px;">
+            <div class="stat-box" style="text-align: left;">
+                <h3 style="font-size: 0.9rem; margin-bottom: 5px;">Entradas - Samuel</h3>
+                <p id="relatorioEntradaSamuel" style="font-size: 1.2rem; font-weight: bold;" class="positivo">R$ 0,00</p>
+            </div>
+            <div class="stat-box" style="text-align: left;">
+                <h3 style="font-size: 0.9rem; margin-bottom: 5px;">Saídas - Samuel</h3>
+                <p id="relatorioSaidaSamuel" style="font-size: 1.2rem; font-weight: bold;" class="negativo">R$ 0,00</p>
+            </div>
+            <div class="stat-box" style="text-align: left;">
+                <h3 style="font-size: 0.9rem; margin-bottom: 5px;">Entradas - Mariana</h3>
+                <p id="relatorioEntradaMariana" style="font-size: 1.2rem; font-weight: bold;" class="positivo">R$ 0,00</p>
+            </div>
+            <div class="stat-box" style="text-align: left;">
+                <h3 style="font-size: 0.9rem; margin-bottom: 5px;">Saídas - Mariana</h3>
+                <p id="relatorioSaidaMariana" style="font-size: 1.2rem; font-weight: bold;" class="negativo">R$ 0,00</p>
+            </div>
+        </div>
+
+    <div class="form-card">
+    <h2>Gráficos e Estatísticas do Período</h2>
+    
+    <div style="margin-bottom: 20px; display: flex; gap: 15px; flex-wrap: wrap; align-items: center;">
+        <div>
+            <label for="filtroUsuarioGraficos">Filtrar Usuário:</label>
+            <select id="filtroUsuarioGraficos" onchange="carregarRelatorios()">
+                <option value="todos">Ambos (Geral)</option>
+                <option value="1">Samuel</option>
+                <option value="2">Mariana</option>
+            </select>
+        </div>
+        <div>
+            <label for="filtroServicoEssencialDashboard">Serviço Essencial:</label>
+            <select id="filtroServicoEssencialDashboard" onchange="carregarRelatorios()">
+                <option value="todos">Todos</option>
+                <option value="sim">Essenciais</option>
+                <option value="nao">Não Essenciais</option>
+            </select>
+        </div>
+    </div>
+
+    <!-- Grade unificada com os gráficos lado a lado -->
+    <div class="stats-grid" style="grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px;">
+        
+        <!-- Gráfico 1: Entradas e Saídas -->
+        <div class="stat-box" style="text-align: center;">
+            <h3 style="margin-bottom: 10px;">Entradas vs Saídas</h3>
+            <div class="grafico-container" style="height: 220px;">
+                <canvas id="graficoRelatorioEntradasSaidas"></canvas>
+            </div>
+        </div>
+
+        <!-- Gráfico 2: Gastos por Categoria -->
+        <div class="stat-box" style="text-align: center;">
+            <h3 style="margin-bottom: 10px;">Gastos por Categoria</h3>
+            <div class="grafico-container" style="height: 220px;">
+                <canvas id="graficoRelatorioCategorias"></canvas>
+            </div>
+        </div>
+
+        <!-- Gráfico 3: Serviços Essenciais -->
+        <div class="stat-box" style="text-align: center;">
+            <h3 style="margin-bottom: 10px;">Serviços Essenciais</h3>
+            <div class="grafico-container" style="height: 220px;">
+                <canvas id="graficoServicosEssenciais"></canvas>
+            </div>
+        </div>
+
+    </div>
+</div>
+        
+        <!-- Indicador de Horas Extras e Resumo por Categoria -->
+        <div class="stats-grid">
+            <div class="stat-box">
+                <h3>Horas Extras no Período</h3>
+                <p id="totalHoraExtraPeriodo" class="positivo">R$ 0,00</p>
+            </div>
+            <div class="stat-box">
+                <h3>Gastos por Categoria (Texto)</h3>
+                <div id="relatorioCategorias" style="margin-top: 8px; font-size: 0.95rem;">
+                    <!-- Preenchido via JS -->
+                </div>
+            </div>
+        </div>
+
+        <!-- Contas, Boletos e Pendências (A Pagar) -->
+        <div class="form-card" style="margin-top: 20px;">
+            <h2>Contas, Boletos e Pendências (A Pagar)</h2>
+            <div class="tabela-container">
+                <table class="tabela">
+                    <thead>
+                        <tr>
+                            <th>Descrição / Fatura</th>
+                            <th>Vencimento</th>
+                            <th>Valor</th>
+                            <th>Ações</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tabelaContasAPagar">
+                        <!-- Preenchido via JS -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Contas do Mês Pagas -->
+        <div class="form-card" style="margin-top: 20px;">
+            <h2>Contas do Mês Pagas</h2>
+            <div class="tabela-container">
+                <table class="tabela">
+                    <thead>
+                        <tr>
+                            <th>Descrição / Fatura</th>
+                            <th>Vencimento</th>
+                            <th>Valor</th>
+                            <th>Ações</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tabelaContasPagas">
+                        <!-- Preenchido via JS -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Seção de Parcelamentos Ativos -->
+        <div class="form-card" style="margin-top: 20px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; flex-wrap: wrap; gap: 10px;">
+                <h3 style="margin: 0;">Parcelamentos Ativos no Período</h3>
+                <select id="filtroCartaoParcelamento" onchange="carregarRelatorios()" style="width: auto; padding: 4px; font-size: 0.85rem;">
+                    <option value="todos">Todos os Cartões</option>
+                    <!-- Preenchido via JS -->
+                </select>
+            </div>
+            
+            <div class="tabela-container">
+                <table class="tabela">
+                    <thead>
+                        <tr>
+                            <th>Descrição</th>
+                            <th>Parcela</th>
+                            <th>Valor</th>
+                            <th>Vencimento</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tabelaParcelamentos">
+                        <!-- Preenchido via JS -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        
+        <!-- Financiamentos e Contratos -->
+        <div class="form-card" style="margin-top: 20px;">
+            <h2>Contratos de Financiamento</h2>
+            <div id="listaFinanciamentos" style="margin-top: 12px;">
+                <!-- Preenchido via JS -->
+            </div>
+        </div>
+    </main>
+
+    <script src="script.js"></script>
+    <script>
+        verificarAutenticacao();
+        definirFiltroPeriodo('mesAtual');
+
+        function definirFiltroPeriodo(tipo) {
+            const inputMes = document.getElementById('filtroMesAnoRelatorio');
+            const dataHoje = new Date();
+
+            document.getElementById('btnMesAtual').style.backgroundColor = '#64748b';
+            document.getElementById('btnMesPassado').style.backgroundColor = '#64748b';
+            document.getElementById('btnTodos').style.backgroundColor = '#64748b';
+
+            if (tipo === 'mesAtual') {
+                document.getElementById('btnMesAtual').style.backgroundColor = 'var(--primary)';
+                const ano = dataHoje.getFullYear();
+                const mes = String(dataHoje.getMonth() + 1).padStart(2, '0');
+                if (inputMes) inputMes.value = `${ano}-${mes}`;
+            } else if (tipo === 'mesPassado') {
+                document.getElementById('btnMesPassado').style.backgroundColor = 'var(--primary)';
+                dataHoje.setMonth(dataHoje.getMonth() - 1);
+                const ano = dataHoje.getFullYear();
+                const mes = String(dataHoje.getMonth() + 1).padStart(2, '0');
+                if (inputMes) inputMes.value = `${ano}-${mes}`;
+            } else if (tipo === 'todos') {
+                document.getElementById('btnTodos').style.backgroundColor = 'var(--primary)';
+                if (inputMes) inputMes.value = '';
+            }
+
+            carregarRelatorios();
+        }
+
+        function mudarFiltroMesManual() {
+            document.getElementById('btnMesAtual').style.backgroundColor = '#64748b';
+            document.getElementById('btnMesPassado').style.backgroundColor = '#64748b';
+            document.getElementById('btnTodos').style.backgroundColor = '#64748b';
+            carregarRelatorios();
+        }
+    </script>
+</body>
+</html>

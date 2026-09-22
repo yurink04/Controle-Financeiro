@@ -2,150 +2,293 @@
 <html lang="pt-BR">
 <head>
     <meta charset="UTF-8">
-    <title>Editar Lançamento - Controle Financeiro</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Editar lançamento | Controle Financeiro</title>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
-    <header>
-        <h1>Controle Financeiro</h1>
-        <span id="usuarioLogadoNome"></span>
-       <nav>
+ <header class="app-header">
+    <div class="header-inner">
+        <!-- Esquerdo: Controle Financeiro + Perfil/Sync -->
+        <div class="header-left">
+            <div class="brand">
+                <span class="brand-title">Controle Financeiro</span>
+                <span class="brand-subtitle">Gestão Inteligente</span>
+            </div>
+            <div class="header-perfil-sync">
+                <span id="usuarioLogadoNome" class="user-chip"></span>
+                <!-- Ícone de Sincronização ou Status -->
+                <span id="syncStatusIcon" title="Sincronizado" style="cursor: pointer; display: flex; align-items: center;">
+                    <img src="imagens/nuvem.png" alt="Sync" style="width: 22px; height: 22px;">
+                </span>
+            </div>
+        </div>
+
+        <!-- Centro: Opções Principais -->
+        <nav class="app-nav-center" aria-label="Navegação principal">
             <a href="dashboard.html">Início</a>
-            <a href="categorias.html">Categorias</a>
-            <a href="cartoes.html">Cartões</a>
+            <div class="nav-dropdown" style="position: relative;">
+                <a href="#" onclick="event.preventDefault();" style="cursor: pointer;">Cadastros ▾</a>
+                <div class="nav-dropdown-content" style="position: absolute; top: 100%; left: 0;">
+                    <a href="cartoes.html">Cartões</a>
+                    <a href="categorias.html">Categorias</a>
+                    <a href="bens.html">Bens</a>
+                    <a href="financiamentos.html">Financiamentos</a>
+                </div>
+            </div>
             <a href="lancamentos.html">Lançamentos</a>
             <a href="relatorios.html">Relatórios</a>
-            <a href="admin-logs.html" style="color: #ef4444; font-weight: bold;">Admin Logs</a>
-            
-            <button type="button" onclick="alternarTemaVisual()" class="btn-icone-tema" title="Alternar Modo Escuro / Claro">
-                <img src="imagens/modo_escuro.jpg" alt="Modo Escuro">
-            </button>
-
-            <a href="index.html" onclick="localStorage.removeItem('usuarioLogado')">Sair</a>
         </nav>
-    </header>
+
+        <!-- Direito: Tema, Configurações, Notificações e Sair separados -->
+        <div class="header-right">
+            <div class="header-tools">
+                <button type="button" onclick="alternarTemaVisual()" title="Alternar tema">
+                    <img src="imagens/modo_escuro.jpg" alt="Tema">
+                </button>
+                <a href="configuracoes.html" title="Configurações">
+                    <img src="imagens/config.png" alt="Configurações">
+                </a>
+                <!-- Ícone de Notificações -->
+                <button type="button" title="Notificações" id="btnNotificacoesHeader">
+                    <img src="imagens/notificacao.png" alt="Notificações" onerror="this.style.display='none'">
+                </button>
+            </div>
+            
+            <div class="header-tools" style="border-left: 1px solid var(--border-color, #e5e7eb); padding-left: 18px;">
+                <a href="index.html" onclick="event.preventDefault(); deslogarSistema()" class="btn-sair-extremo" title="Sair do sistema">
+                    <img src="imagens/exit.png" alt="Sair">
+                </a>
+            </div>
+        </div>
+    </div>
+</header>
 
     <main class="container">
-        <div class="form-card">
-            <h2>Editar Lançamento</h2>
-            <form onsubmit="salvarEdicaoLancamento(event)">
+        <div class="page-heading"><div><h2>Editar lançamento</h2><p>Alterações ficam registradas na auditoria e exigem uma justificativa.</p></div><a href="lancamentos.html" class="text-link">← Voltar</a></div>
+
+        <section class="form-card">
+            <form id="formEditarLancamento" onsubmit="salvarEdicaoLancamento(event)" novalidate>
                 <input type="hidden" id="editId">
-
-                <label>Descrição:</label>
-                <input type="text" id="editDescricao" required>
-
-                <label>Tipo:</label>
-                <select id="editTipo" onchange="tratarMudancaTipoEdicao()">
-                    <option value="saida">Saída (Despesa / Boleto / Financiamento)</option>
-                    <option value="entrada">Entrada (Receita)</option>
-                </select>
-
-                <label>Categoria:</label>
-                <select id="editCategoria" required></select>
-
-                <label>Forma de Pagamento:</label>
-                <select id="editFormaPagamento">
-                    <option value="PIX">PIX</option>
-                    <option value="BOLETO">Boleto</option>
-                    <option value="DINHEIRO">Dinheiro / Outros</option>
-                    <option value="CARTAO">Cartão de Crédito</option>
-                </select>
-
-                <!-- Nova Opção: Serviço Essencial (Apenas visível em Saídas) -->
-                <div id="blocoServicoEssencial" style="margin-top: 12px;">
-                    <label for="editServicoEssencial">Serviço essencial?</label>
-                    <select id="editServicoEssencial">
-                        <option value="nao">Não</option>
-                        <option value="sim">Sim</option>
+                <div class="form-grid-2">
+                    <div class="form-group"><label for="editDescricao">Descrição</label><input type="text" id="editDescricao" maxlength="120" required></div>
+                    <div class="form-group"><label for="editTipo">Tipo</label><select id="editTipo" onchange="tratarMudancaTipoEdicao()"><option value="saida">Saída</option><option value="entrada">Entrada</option></select></div>
+                </div>
+                <div class="form-grid-2">
+                    <div class="form-group"><label for="editCategoria">Categoria</label><select id="editCategoria" required></select></div>
+                    <div class="form-group"><label for="editFormaPagamento">Forma de pagamento</label><select id="editFormaPagamento"><option value="DINHEIRO">Dinheiro / Pix / Débito</option><option value="BOLETO">Boleto / Conta</option><option value="FIXO">Conta fixa</option><option value="CARTAO">Cartão de crédito</option></select></div>
+                </div>
+                <div id="blocoServicoEssencial" class="form-group"><label for="editServicoEssencial">Despesa essencial?</label><select id="editServicoEssencial"><option value="nao">Não</option><option value="sim">Sim</option></select></div>
+                
+                <div id="blocoEditEscopo" class="form-group">
+                    <label for="editEscopo">Escopo do gasto</label>
+                    <select id="editEscopo">
+                        <option value="casal">Casal / Casa</option>
+                        <option value="individual">Individual</option>
                     </select>
                 </div>
 
-                <label>Valor (R$):</label>
-                <input type="number" step="0.01" id="editValor" required>
-
-                <label>Observação (Opcional):</label>
-                <input type="text" id="editObservacao">
-
-                <label>Data de Vencimento:</label>
-                <input type="date" id="editVencimento" required>
-
-                <button type="submit" style="margin-top: 20px;">Salvar Alterações</button>
-                <button type="button" onclick="history.back()" style="background-color: #7f8c8d; margin-top: 10px;">Voltar</button>
+                <div class="form-grid-2">
+                    <div class="form-group"><label for="editValor">Valor (R$)</label><input type="number" step="0.01" min="0.01" id="editValor" required></div>
+                    <div class="form-group"><label for="editVencimento">Data de vencimento / recebimento</label><input type="date" id="editVencimento" required></div>
+                </div>
+                <div class="form-group"><label for="editObservacao">Observação</label><input type="text" id="editObservacao" maxlength="250"></div>
+                <div class="btn-row" style="margin-top:18px;"><button type="submit">Salvar alterações</button><button type="button" class="btn-secondary" onclick="history.back()">Cancelar</button></div>
             </form>
-        </div>
+        </section>
     </main>
 
     <script src="script.js"></script>
     <script>
         verificarAutenticacao();
-        
-        const urlParams = new URLSearchParams(window.location.search);
-        const lancamentoId = parseInt(urlParams.get('id'));
+        const lancamentoId = Number(new URLSearchParams(window.location.search).get('id'));
+        const dadosEdicao = obterDados();
+        const lancamento = dadosEdicao.lancamentos.find(l => Number(l.id) === lancamentoId);
 
-        const dados = obterDados();
-        const lancamento = dados.lancamentos.find(l => Number(l.id) === lancamentoId);
-
-        if (!lancamento) {
-            alert('Lançamento não encontrado!');
-            history.back();
-        } else {
+        function carregarFormulario() {
+            if (!lancamento) {
+                mostrarAlertaModal('Lançamento não encontrado.').then(() => history.back());
+                return;
+            }
             const selectCat = document.getElementById('editCategoria');
-            dados.categorias.forEach(c => {
-                const opt = document.createElement('option');
-                opt.value = c.id;
-                opt.innerText = c.nome;
-                selectCat.appendChild(opt);
+            selectCat.innerHTML = '';
+            dadosEdicao.categorias.forEach(c => {
+                const option = document.createElement('option'); option.value = c.id; option.textContent = c.nome; selectCat.appendChild(option);
             });
-
             document.getElementById('editId').value = lancamento.id;
-            document.getElementById('editDescricao').value = lancamento.descricao;
-            document.getElementById('editTipo').value = lancamento.tipo;
+            document.getElementById('editDescricao').value = lancamento.descricao || '';
+            document.getElementById('editTipo').value = lancamento.tipo || 'saida';
             document.getElementById('editCategoria').value = lancamento.categoriaId;
             document.getElementById('editFormaPagamento').value = lancamento.formaPagamento || 'BOLETO';
             document.getElementById('editValor').value = lancamento.valor;
             document.getElementById('editObservacao').value = lancamento.observacao || '';
-            document.getElementById('editVencimento').value = lancamento.vencimento;
+            document.getElementById('editVencimento').value = lancamento.vencimento || dataLocalYYYYMMDD();
             document.getElementById('editServicoEssencial').value = lancamento.servicoEssencial || 'nao';
-
+            document.getElementById('editEscopo').value = lancamento.escopo || 'casal';
             tratarMudancaTipoEdicao();
         }
 
         function tratarMudancaTipoEdicao() {
-            const tipo = document.getElementById('editTipo').value;
-            const blocoEssencial = document.getElementById('blocoServicoEssencial');
-            if (tipo === 'entrada') {
-                if (blocoEssencial) blocoEssencial.style.display = 'none';
-            } else {
-                if (blocoEssencial) blocoEssencial.style.display = 'block';
-            }
+            const entrada = document.getElementById('editTipo').value === 'entrada';
+            document.getElementById('blocoServicoEssencial').style.display = entrada ? 'none' : 'block';
+            document.getElementById('blocoEditEscopo').style.display = entrada ? 'none' : 'block';
         }
 
         async function salvarEdicaoLancamento(event) {
             event.preventDefault();
-            const id = parseInt(document.getElementById('editId').value);
-            const descricao = document.getElementById('editDescricao').value;
+            if (!lancamento) return;
             const tipo = document.getElementById('editTipo').value;
-            const categoriaId = parseInt(document.getElementById('editCategoria').value);
-            const formaPagamento = document.getElementById('editFormaPagamento').value;
             const valor = parseFloat(document.getElementById('editValor').value);
-            const observacao = document.getElementById('editObservacao').value;
-            const vencimento = document.getElementById('editVencimento').value;
-            const servicoEssencial = tipo === 'saida' ? document.getElementById('editServicoEssencial').value : 'nao';
-
-            await atualizarLancamentoNoBanco(id, {
-                descricao,
+            if (!Number.isFinite(valor) || valor <= 0) { await mostrarAlertaModal('Informe um valor válido.'); return; }
+            const ok = await atualizarLancamentoNoBanco(lancamentoId, {
+                descricao: document.getElementById('editDescricao').value.trim(),
                 tipo,
-                categoriaId,
-                formaPagamento,
+                categoriaId: Number(document.getElementById('editCategoria').value),
+                formaPagamento: document.getElementById('editFormaPagamento').value,
                 valor,
-                observacao,
-                vencimento,
-                servicoEssencial
+                observacao: document.getElementById('editObservacao').value.trim(),
+                vencimento: document.getElementById('editVencimento').value,
+                servicoEssencial: tipo === 'saida' ? document.getElementById('editServicoEssencial').value : 'nao',
+                escopo: tipo === 'saida' ? document.getElementById('editEscopo').value : 'casal',
+                cartaoId: lancamento.cartaoId || null,
+                dataCompra: lancamento.dataCompra || null
             });
+            if (ok) window.location.href = 'dashboard.html';
+        }
 
-            alert('Lançamento (ou parcela de financiamento) atualizado com sucesso!');
-            history.back();
+        carregarFormulario();
+    </script>
+</body>
+</html>
+```[cite: 40]
+
+---
+
+### 2. `relatorios.html` (Completo)
+*Adicionamos um novo filtro na barra de estatísticas (**Escopo**) e o terceiro gráfico agora exibe dinamicamente a divisão entre **Casal / Casa vs. Individual** com base na sua seleção.*
+
+```html
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Relatórios | Controle Financeiro</title>
+    <link rel="stylesheet" href="style.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+    <header class="app-header">
+        <div class="header-inner">
+            <div class="brand"><span class="brand-title">Controle Financeiro</span><span class="brand-subtitle">Relatórios e acompanhamento</span></div>
+            <span id="usuarioLogadoNome" class="user-chip"></span>
+            <nav class="app-nav" aria-label="Navegação principal">
+                <a href="dashboard.html">Início</a><a href="categorias.html">Categorias</a><a href="cartoes.html">Cartões</a><a href="lancamentos.html">Lançamentos</a><a href="relatorios.html" class="active">Relatórios</a><a href="admin-logs.html" class="nav-admin">Admin</a>
+                <button type="button" onclick="alternarTemaVisual()" class="btn-theme" title="Alternar tema"><img src="imagens/modo_escuro.jpg" alt="Tema"></button>
+                <a href="index.html" onclick="event.preventDefault(); deslogarSistema()">Sair</a>
+            </nav>
+        </div>
+    </header>
+
+    <main class="container">
+        <div class="page-heading"><div><h2>Relatórios</h2><p>Compare receitas, despesas, categorias, contas e financiamentos.</p></div></div>
+
+        <section class="form-card filter-bar">
+            <div><div class="section-title" style="margin-bottom:2px;"><h2>Período</h2></div><p class="muted small">Alterne entre mês atual, mês anterior ou todo o histórico.</p></div>
+            <div class="toolbar-actions">
+                <button type="button" id="btnMesAtual" onclick="definirFiltroPeriodo('mesAtual')">Mês atual</button>
+                <button type="button" id="btnMesPassado" class="btn-secondary" onclick="definirFiltroPeriodo('mesPassado')">Mês passado</button>
+                <button type="button" id="btnTodos" class="btn-secondary" onclick="definirFiltroPeriodo('todos')">Período total</button>
+                <input type="month" id="filtroMesAnoRelatorio" onchange="mudarFiltroMesManual()" style="width:auto; min-width:150px;">
+            </div>
+        </section>
+
+        <section class="grid-4" style="margin-bottom:16px;">
+            <div class="stat-box"><div class="stat-label">Entradas · Samuel</div><div id="relatorioEntradaSamuel" class="stat-value positivo">R$ 0,00</div></div>
+            <div class="stat-box"><div class="stat-label">Saídas · Samuel</div><div id="relatorioSaidaSamuel" class="stat-value negativo">R$ 0,00</div></div>
+            <div class="stat-box"><div class="stat-label">Entradas · Mariana</div><div id="relatorioEntradaMariana" class="stat-value positivo">R$ 0,00</div></div>
+            <div class="stat-box"><div class="stat-label">Saídas · Mariana</div><div id="relatorioSaidaMariana" class="stat-value negativo">R$ 0,00</div></div>
+        </section>
+
+        <section class="form-card">
+            <div class="section-title"><div><h2>Gráficos e estatísticas</h2><p>Os filtros abaixo afetam os gráficos do relatório.</p></div></div>
+            <div class="filter-bar" style="margin-bottom:16px; display: flex; flex-wrap: wrap; gap: 12px;">
+                <div class="filter-group"><label for="filtroUsuarioGraficos">Usuário</label><select id="filtroUsuarioGraficos" onchange="carregarRelatorios()" style="width:auto;"><option value="todos">Ambos (geral)</option><option value="1">Samuel</option><option value="2">Mariana</option></select></div>
+                <div class="filter-group"><label for="filtroServicoEssencialDashboard">Serviço essencial</label><select id="filtroServicoEssencialDashboard" onchange="carregarRelatorios()" style="width:auto;"><option value="todos">Todos</option><option value="sim">Essenciais</option><option value="nao">Não essenciais</option></select></div>
+                <div class="filter-group"><label for="filtroEscopoDashboard">Escopo</label><select id="filtroEscopoDashboard" onchange="carregarRelatorios()" style="width:auto;"><option value="todos">Todos</option><option value="casal">Casal / Casa</option><option value="individual">Individual</option></select></div>
+            </div>
+            <div class="grid-3">
+                <article class="stat-box chart-card"><div class="chart-head"><h3>Entradas x saídas</h3></div><div class="chart-container"><canvas id="graficoRelatorioEntradasSaidas"></canvas></div></article>
+                <article class="stat-box chart-card"><div class="chart-head"><h3>Gastos por categoria</h3></div><div class="chart-container"><canvas id="graficoRelatorioCategorias"></canvas></div></article>
+                <article class="stat-box chart-card"><div class="chart-head"><h3>Casal vs Individual</h3></div><div class="chart-container"><canvas id="graficoServicosEssenciais"></canvas></div></article>
+            </div>
+        </section>
+
+        <section class="grid-2">
+            <div class="stat-box"><div class="stat-label">Horas extras no período</div><div id="totalHoraExtraPeriodo" class="stat-value positivo">R$ 0,00</div></div>
+            <div class="stat-box"><div class="section-title"><h3>Resumo por categoria</h3></div><div id="relatorioCategorias" class="muted small"></div></div>
+        </section>
+
+        <section class="form-card" style="margin-top:16px;">
+            <div class="section-title"><div><h2>Contas e faturas a pagar</h2><p>Faturas de cartão são agrupadas por cartão e mês de vencimento.</p></div></div>
+            <div class="tabela-container">
+                <table class="tabela"><thead><tr><th>Descrição / fatura</th><th>Vencimento</th><th>Valor</th><th>Ações</th></tr></thead><tbody id="tabelaContasAPagar"></tbody></table>
+            </div>
+        </section>
+
+        <section class="form-card">
+            <div class="section-title"><div><h2>Contas pagas</h2><p>Histórico de pagamentos do período selecionado.</p></div></div>
+            <div class="tabela-container">
+                <table class="tabela"><thead><tr><th>Descrição / fatura</th><th>Vencimento</th><th>Valor</th><th>Ações</th></tr></thead><tbody id="tabelaContasPagas"></tbody></table>
+            </div>
+        </section>
+
+        <section class="form-card">
+            <div class="section-title">
+                <div><h2>Parcelamentos ativos</h2><p>Compras parceladas identificadas por vínculo de parcelamento.</p></div>
+                <select id="filtroCartaoParcelamento" onchange="carregarRelatorios()" style="width:auto;"><option value="todos">Todos os cartões</option></select>
+            </div>
+            <div class="tabela-container">
+                <table class="tabela"><thead><tr><th>Descrição</th><th>Parcela</th><th>Valor</th><th>Vencimento</th><th>Ações</th></tr></thead><tbody id="tabelaParcelamentos"></tbody></table>
+            </div>
+        </section>
+
+        <section class="form-card">
+            <div class="section-title"><div><h2>Financiamentos</h2><p>Abra um contrato para acompanhar suas parcelas individualmente.</p></div></div>
+            <div id="listaFinanciamentos"></div>
+        </section>
+    </main>
+
+    <script src="script.js"></script>
+    <script>
+        verificarAutenticacao();
+        definirFiltroPeriodo('mesAtual');
+
+        function definirFiltroPeriodo(tipo) {
+            const inputMes = document.getElementById('filtroMesAnoRelatorio');
+            const hoje = new Date();
+            const ids = ['btnMesAtual', 'btnMesPassado', 'btnTodos'];
+            ids.forEach(id => document.getElementById(id)?.classList.remove('period-active'));
+
+            if (tipo === 'mesAtual') {
+                inputMes.value = dataLocalYYYYMMDD(hoje).slice(0, 7);
+                document.getElementById('btnMesAtual')?.classList.add('period-active');
+            } else if (tipo === 'mesPassado') {
+                const passado = adicionarMesesClamped(hoje, -1);
+                inputMes.value = dataParaString(passado).slice(0, 7);
+                document.getElementById('btnMesPassado')?.classList.add('period-active');
+            } else {
+                inputMes.value = '';
+                document.getElementById('btnTodos')?.classList.add('period-active');
+            }
+            carregarRelatorios();
+        }
+
+        function mudarFiltroMesManual() {
+            ['btnMesAtual', 'btnMesPassado', 'btnTodos'].forEach(id => document.getElementById(id)?.classList.remove('period-active'));
+            carregarRelatorios();
         }
     </script>
 </body>
 </html>
+```[cite: 41]

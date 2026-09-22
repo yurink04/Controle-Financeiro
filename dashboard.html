@@ -2,128 +2,195 @@
 <html lang="pt-BR">
 <head>
     <meta charset="UTF-8">
-    <title>Início - Controle Financeiro</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#2563eb">
+    <title>Dashboard | Controle Financeiro</title>
     <link rel="stylesheet" href="style.css">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
-    <header>
-        <h1>Controle Financeiro</h1>
-        <span id="usuarioLogadoNome"></span>
-        <nav>
-            <a href="dashboard.html" class="active">Início</a>
-            <a href="categorias.html">Categorias</a>
-            <a href="cartoes.html">Cartões</a>
+<header class="app-header">
+    <div class="header-inner">
+        <!-- Esquerdo: Título e Perfil/Sincronização afastados -->
+        <div class="header-left">
+            <div class="brand">
+                <span class="brand-title">Controle Financeiro</span>
+                <span class="brand-subtitle">Gestão Inteligente</span>
+            </div>
+            <div class="header-perfil-sync" style="margin-left: 28px;">
+                <span id="usuarioLogadoNome" class="user-chip"></span>
+                <span id="syncStatusIcon" title="Sincronizado" style="cursor: pointer; display: flex; align-items: center;">
+                    <img src="imagens/nuvem.png" alt="Sync" style="width: 22px; height: 22px;">
+                </span>
+            </div>
+        </div>
+
+        <!-- Centro: Navegação Principal -->
+        <nav class="app-nav-center" aria-label="Navegação principal">
+            <a href="dashboard.html">Início</a>
+            <div class="nav-dropdown" style="position: relative;">
+                <a href="#" onclick="event.preventDefault();" style="cursor: pointer;">Cadastros ▾</a>
+                <div class="nav-dropdown-content" style="position: absolute; top: 100%; left: 0;">
+                    <a href="cartoes.html">Cartões</a>
+                    <a href="categorias.html">Categorias</a>
+                    <a href="bens.html">Bens</a>
+                    <a href="financiamentos.html">Financiamentos</a>
+                </div>
+            </div>
             <a href="lancamentos.html">Lançamentos</a>
             <a href="relatorios.html">Relatórios</a>
-            <a href="admin-logs.html" style="color: #ef4444; font-weight: bold;">Admin Logs</a>
-            
-            <button type="button" onclick="alternarTemaVisual()" class="btn-icone-tema" title="Alternar Modo Escuro / Claro">
-                <img src="imagens/modo_escuro.jpg" alt="Modo Escuro">
-            </button>
-
-            <a href="index.html" onclick="localStorage.removeItem('usuarioLogado')">Sair</a>
         </nav>
-    </header>
 
+        <!-- Direito: Tema, Configurações, Notificações (Sino) e Sair -->
+        <div class="header-right">
+            <div class="header-tools">
+                <button type="button" onclick="alternarTemaVisual()" title="Alternar tema">
+                    <img src="imagens/modo_escuro.jpg" alt="Tema">
+                </button>
+                <a href="configuracoes.html" title="Configurações">
+                    <img src="imagens/config.png" alt="Configurações">
+                </a>
+                <button type="button" title="Notificações" id="btnNotificacoesHeader">
+                    <img src="imagens/notificacao.png" alt="Notificações" onerror="this.style.display='none'">
+                </button>
+            </div>
+            
+            <div class="header-tools" style="border-left: 1px solid var(--border); padding-left: 18px;">
+                <a href="index.html" onclick="event.preventDefault(); deslogarSistema()" class="btn-sair-extremo" title="Sair do sistema">
+                    <img src="imagens/exit.png" alt="Sair">
+                </a>
+            </div>
+        </div>
+    </div>
+</header>
     <main class="container">
-        <!-- Filtro de Mês -->
-        <section class="form-card" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
-            <h2>Resumo Mensal</h2>
-            <div style="display: flex; align-items: center; gap: 8px;">
-                <label for="filtroMesAno" style="font-weight: bold;">Mês / Ano:</label>
-                <input type="month" id="filtroMesAno" onchange="carregarDashboard()" style="width: auto;">
+        <div class="page-heading">
+            <div>
+                <h2>Visão geral</h2>
+                <p>Acompanhe entradas, despesas, patrimônio e compromissos ativos do mês.</p>
+            </div>
+            <div class="toolbar-actions">
+                <a class="text-link" href="lancamentos.html">+ Novo lançamento</a>
+            </div>
+        </div>
+
+        <section class="form-card filter-bar">
+            <div>
+                <div class="section-title" style="margin-bottom: 2px;"><h2>Resumo mensal</h2></div>
+                <p class="muted small">Use os filtros para analisar por período e escopo.</p>
+            </div>
+            <div style="display: flex; gap: 12px; flex-wrap: wrap;">
+                <div class="filter-group">
+                    <label for="filtroEscopoDashboardGeral">Escopo</label>
+                    <select id="filtroEscopoDashboardGeral" onchange="carregarDashboard()" style="width:auto; min-width:140px;">
+                        <option value="todos">Todos</option>
+                        <option value="casal">Casal / Casa</option>
+                        <option value="individual">Individual</option>
+                    </select>
+                </div>
+                <div class="filter-group">
+                    <label for="filtroMesAno">Mês / Ano</label>
+                    <input type="month" id="filtroMesAno" onchange="carregarDashboard()" style="width:auto; min-width:150px;">
+                </div>
             </div>
         </section>
-        
-       <!-- Indicadores Numéricos -->
-        <div class="stats-grid">
-            <div class="stat-box">
-                <h3>Total Entradas</h3>
-                <p id="totalEntradas" class="positivo">R$ 0,00</p>
-            </div>
-            <div class="stat-box" style="text-align: left;">
-                <h3 style="text-align: center; margin-bottom: 8px;">Total Saídas</h3>
-                <p id="totalSaidas" class="negativo" style="text-align: center; font-size: 1.4rem; margin-bottom: 10px;">R$ 0,00</p>
-                <div style="font-size: 0.85rem; border-top: 1px solid var(--border); padding-top: 8px; display: flex; flex-direction: column; gap: 4px;">
-                    <span style="display: flex; justify-content: space-between;"><span>Cartão de Crédito:</span> <strong id="saidasCartao" class="negativo">R$ 0,00</strong></span>
-                    <span style="display: flex; justify-content: space-between;"><span>Outras Despesas:</span> <strong id="saidasOutros" class="negativo">R$ 0,00</strong></span>
-                </div>
-            </div>
-            <div class="stat-box">
-                <h3>Saldo Geral</h3>
-                <p id="saldoGeral">R$ 0,00</p>
-            </div>
-        </div>
 
-     <!-- Gráficos de Pizza -->
-        <div class="stats-grid" style="grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); margin-top: 20px;">
-            <div class="form-card" style="margin-top: 0; text-align: center;">
-                <h3 style="margin-bottom: 12px;">Entradas vs Saídas</h3>
-                <div style="position: relative; height: 220px; width: 100%;">
-                    <canvas id="graficoEntradasSaidas"></canvas>
-                </div>
+        <!-- Grade de KPIs Principais (Incluindo Patrimônio de Bens) -->
+        <section class="stat-grid" id="gridKpiDashboard" style="grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));">
+            <div class="stat-box kpi-card">
+                <span class="kpi-accent success"></span>
+                <div class="stat-label">Total entradas</div>
+                <div id="totalEntradas" class="stat-value positivo">R$ 0,00</div>
             </div>
+            <div class="stat-box kpi-card">
+                <span class="kpi-accent danger"></span>
+                <div class="stat-label">Total saídas</div>
+                <div id="totalSaidas" class="stat-value negativo">R$ 0,00</div>
+            </div>
+            <div class="stat-box kpi-card">
+                <span class="kpi-accent"></span>
+                <div class="stat-label">Saldo geral</div>
+                <div id="saldoGeral" class="stat-value">R$ 0,00</div>
+                <div class="stat-detail">Entradas menos saídas</div>
+            </div>
+            <div class="stat-box kpi-card" style="cursor: pointer;" onclick="window.location.href='bens.html'" title="Ver Bens">
+                <span class="kpi-accent" style="background: var(--accent);"></span>
+                <div class="stat-label">Patrimônio / Bens</div>
+                <div id="totalPatrimonioBens" class="stat-value" style="color: var(--accent);">R$ 0,00</div>
+                <div class="stat-detail">Bens e compartilhados ↗</div>
+            </div>
+            <div class="stat-box kpi-card" id="kpiCardFaturas" style="display: none;">
+                <span class="kpi-accent warning"></span>
+                <div class="stat-label">Faturas de Cartão</div>
+                <div id="totalFaturasMes" class="stat-value warning">R$ 0,00</div>
+                <div class="stat-detail">Lançadas no período</div>
+            </div>
+            <div class="stat-box kpi-card" id="kpiCardFinanciamentos" style="display: none;">
+                <span class="kpi-accent"></span>
+                <div class="stat-label">Financiamentos / Parcelas</div>
+                <div id="totalFinanciamentosMes" class="stat-value">R$ 0,00</div>
+                <div class="stat-detail">Compromissos ativos</div>
+            </div>
+        </section>
 
-          <div class="form-card" style="margin-top: 0; text-align: center;">
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; gap: 8px;">
-                    <h3 style="margin: 0; font-size: 1rem;">Gastos por Categoria</h3>
-                    <select id="filtroCategoriaDashboard" onchange="carregarDashboard()" style="width: auto; padding: 4px; font-size: 0.85rem;">
-                        <option value="todas">Todas as Categorias</option>
+        <!-- Gráficos -->
+        <section class="grid-2" style="margin-top:16px;">
+            <article class="form-card chart-card">
+                <div class="chart-head">
+                    <div><h3>Entradas x saídas</h3><span class="muted small">Comparação do período selecionado</span></div>
+                </div>
+                <div class="chart-container"><canvas id="graficoEntradasSaidas"></canvas></div>
+            </article>
+
+            <article class="form-card chart-card" id="cardGraficoCategorias">
+                <div class="chart-head">
+                    <div><h3>Gastos por categoria</h3><span class="muted small">Distribuição das despesas</span></div>
+                    <select id="filtroCategoriaDashboard" onchange="carregarDashboard()">
+                        <option value="todas">Todas</option>
                     </select>
-                </div>    
-                
-                <div style="position: relative; height: 220px; width: 100%;">
-                    <canvas id="graficoGastosCategorias"></canvas>
                 </div>
-            </div>
+                <div class="chart-container"><canvas id="graficoGastosCategorias"></canvas></div>
+            </article>
 
-            <div class="form-card" style="margin-top: 20px;">
-    <h2>Serviços Essenciais vs. Não Essenciais</h2>
-    <div style="margin-bottom: 12px;">
-        <label for="filtroServicoEssencialDashboard">Filtrar:</label>
-        <select id="filtroServicoEssencialDashboard" onchange="carregarDashboard()">
-            <option value="todos">Todos</option>
-            <option value="sim">Essenciais</option>
-            <option value="nao">Não Essenciais</option>
-        </select>
-    </div>
-    <div class="grafico-container">
-        <canvas id="graficoServicosEssenciais"></canvas>
-    </div>
-</div>
+            <article class="form-card chart-card" id="cardGraficoEssenciais">
+                <div class="chart-head">
+                    <div><h3>Essenciais x não essenciais</h3><span class="muted small">Classificação das saídas</span></div>
+                    <select id="filtroServicoEssencialDashboard" onchange="carregarDashboard()">
+                        <option value="todos">Todos</option>
+                        <option value="sim">Essenciais</option>
+                        <option value="nao">Não essenciais</option>
+                    </select>
+                </div>
+                <div class="chart-container"><canvas id="graficoServicosEssenciais"></canvas></div>
+            </article>
 
-            <div class="form-card" style="margin-top: 0; text-align: center;">
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
-                    <h3 style="margin: 0;">Limite do Cartão</h3>
-                    <select id="filtroGraficoCartao" onchange="carregarDashboard()" style="width: auto; padding: 4px; font-size: 0.85rem;">
+            <article class="form-card chart-card" id="cardGraficoCartoes">
+                <div class="chart-head">
+                    <div><h3>Limite dos cartões</h3><span class="muted small">Uso atual dos cartões ativos</span></div>
+                    <select id="filtroGraficoCartao" onchange="carregarDashboard()">
                         <option value="todos">Todos</option>
                     </select>
                 </div>
-                <div style="position: relative; height: 220px; width: 100%;">
-                    <canvas id="graficoCartoesLimite"></canvas>
-                </div>
+                <div class="chart-container"><canvas id="graficoCartoesLimite"></canvas></div>
+            </article>
+        </section>
+
+        <section class="form-card" id="secaoProximosPagamentos" style="margin-top:16px; display: none;">
+            <div class="section-title">
+                <div><h2>Próximos pagamentos</h2><p>Contas e faturas pendentes nos próximos 30 dias.</p></div>
             </div>
-        </div>
+            <ul id="listaProximosPagamentos" class="lista-simples"></ul>
+        </section>
 
-        <!-- Lembrete de Pagamentos (Próximos 30 dias) -->
-        <div class="form-card" style="margin-top: 20px;">
-            <h2>Lembrete: Próximos Pagamentos (30 dias)</h2>
-            <ul id="listaProximosPagamentos" class="lista-simples">
-                <!-- Preenchido via JS -->
-            </ul>
-        </div>
-
-        <!-- Tabela de Últimos Lançamentos com Filtro de Tipo -->
-        <div class="form-card" style="margin-top: 20px;">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; flex-wrap: wrap; gap: 10px;">
-                <h2 style="margin: 0;">Últimos Lançamentos do Mês</h2>
-                <div style="display: flex; align-items: center; gap: 8px;">
-                    <label for="filtroTipoUltimosLancamentos" style="font-size: 0.9rem; font-weight: bold; margin: 0;">Exibir:</label>
-                    <select id="filtroTipoUltimosLancamentos" onchange="carregarDashboard()" style="width: auto; padding: 6px; font-size: 0.85rem;">
+        <section class="form-card" style="margin-top: 16px;">
+            <div class="section-title">
+                <div><h2>Últimos lançamentos do mês</h2><p>Use o filtro para visualizar somente entradas ou saídas.</p></div>
+                <div class="filter-group">
+                    <label for="filtroTipoUltimosLancamentos">Exibir</label>
+                    <select id="filtroTipoUltimosLancamentos" onchange="carregarDashboard()" style="width:auto;">
                         <option value="todos">Todos</option>
-                        <option value="entrada">Apenas Entradas</option>
-                        <option value="saida">Apenas Saídas</option>
+                        <option value="entrada">Entradas</option>
+                        <option value="saida">Saídas</option>
                     </select>
                 </div>
             </div>
@@ -131,21 +198,13 @@
                 <table class="tabela">
                     <thead>
                         <tr>
-                            <th>Usuário</th>
-                            <th>Descrição</th>
-                            <th>Categoria</th>
-                            <th>Pagamento</th>
-                            <th>Vencimento</th>
-                            <th>Valor</th>
-                            <th>Ações</th>
+                            <th>Usuário</th><th>Descrição</th><th>Categoria</th><th>Pagamento</th><th>Vencimento</th><th>Valor</th><th>Ações</th>
                         </tr>
                     </thead>
-                    <tbody id="tabelaUltimosLancamentos">
-                        <!-- Preenchido via JS -->
-                    </tbody>
+                    <tbody id="tabelaUltimosLancamentos"></tbody>
                 </table>
             </div>
-        </div>
+        </section>
     </main>
 
     <script src="script.js"></script>
@@ -154,14 +213,114 @@
         definirMesAtualDashboard();
 
         function definirMesAtualDashboard() {
-            const dataHoje = new Date();
-            const ano = dataHoje.getFullYear();
-            const mes = String(dataHoje.getMonth() + 1).padStart(2, '0');
-            const inputMes = document.getElementById('filtroMesAno');
-            if (inputMes) {
-                inputMes.value = `${ano}-${mes}`;
-            }
+            const input = document.getElementById('filtroMesAno');
+            if (input) input.value = dataLocalYYYYMMDD().slice(0, 7);
             carregarDashboard();
+        }
+
+        function carregarDashboard() {
+            const mesAno = document.getElementById('filtroMesAno').value;
+            const escopo = document.getElementById('filtroEscopoDashboardGeral').value;
+            const tipoFiltroLanc = document.getElementById('filtroTipoUltimosLancamentos').value;
+
+            const dados = obterDados();
+            const usuarioId = localStorage.getItem('usuarioLogado');
+            const usuario = dados.usuarios.find(u => Number(u.id) === Number(usuarioId)) || {};
+            const lancamentos = dados.lancamentos || [];
+            const categorias = dados.categorias || [];
+            const cartoes = (dados.cartoes || []).filter(c => c.ativo !== false);
+
+            // Cálculo do Patrimônio Total de Bens (próprios + compartilhados se houver parceiro)
+            const bens = dados.bens || [];
+            const bensValidos = bens.filter(b => {
+                if (b.ativo === false) return false;
+                const eSeu = Number(b.usuarioId) === Number(usuarioId) || !b.usuarioId;
+                const eCompartilhado = b.compartilhado && usuario.parceiroId;
+                return eSeu || eCompartilhado;
+            });
+            const valorTotalPatrimonio = bensValidos.reduce((acc, b) => acc + Number(b.valor || 0), 0);
+            document.getElementById('totalPatrimonioBens').textContent = `R$ ${valorTotalPatrimonio.toLocaleString('pt-BR', {minimumFractionDigits: 2})}`;
+
+            // Filtro por mês/ano
+            const filtrados = lancamentos.filter(l => {
+                const dataOk = (l.data || l.vencimento || '').startsWith(mesAno);
+                return dataOk;
+            });
+
+            let totalEntradas = 0;
+            let totalSaidas = 0;
+            let totalFaturas = 0;
+            let totalFinanciamentos = 0;
+
+            filtrados.forEach(l => {
+                const val = Number(l.valor || 0);
+                const descLower = (l.descricao || '').toLowerCase();
+
+                if (l.tipo === 'entrada') {
+                    totalEntradas += val;
+                } else {
+                    totalSaidas += val;
+                    if (descLower.includes('fatura') || descLower.includes('cartão')) {
+                        totalFaturas += val;
+                    } else if (l.financiamentoId || descLower.includes('financiamento') || descLower.includes('parcela')) {
+                        totalFinanciamentos += val;
+                    }
+                }
+            });
+
+            const saldoGeral = totalEntradas - totalSaidas;
+
+            document.getElementById('totalEntradas').textContent = `R$ ${totalEntradas.toLocaleString('pt-BR', {minimumFractionDigits: 2})}`;
+            document.getElementById('totalSaidas').textContent = `R$ ${totalSaidas.toLocaleString('pt-BR', {minimumFractionDigits: 2})}`;
+            
+            const elSaldo = document.getElementById('saldoGeral');
+            elSaldo.textContent = `R$ ${saldoGeral.toLocaleString('pt-BR', {minimumFractionDigits: 2})}`;
+            elSaldo.className = `stat-value ${saldoGeral >= 0 ? 'positivo' : 'negativo'}`;
+
+            const kpiFaturas = document.getElementById('kpiCardFaturas');
+            if (totalFaturas > 0) {
+                document.getElementById('totalFaturasMes').textContent = `R$ ${totalFaturas.toLocaleString('pt-BR', {minimumFractionDigits: 2})}`;
+                kpiFaturas.style.display = 'block';
+            } else {
+                kpiFaturas.style.display = 'none';
+            }
+
+            const kpiFinanciamentos = document.getElementById('kpiCardFinanciamentos');
+            if (totalFinanciamentos > 0) {
+                document.getElementById('totalFinanciamentosMes').textContent = `R$ ${totalFinanciamentos.toLocaleString('pt-BR', {minimumFractionDigits: 2})}`;
+                kpiFinanciamentos.style.display = 'block';
+            } else {
+                kpiFinanciamentos.style.display = 'none';
+            }
+
+            const cardCartoes = document.getElementById('cardGraficoCartoes');
+            if (cardCartoes) {
+                cardCartoes.style.display = cartoes.length === 0 ? 'none' : 'flex';
+            }
+
+            const tbodyLanc = document.getElementById('tabelaUltimosLancamentos');
+            tbodyLanc.innerHTML = '';
+
+            const lancamentosTabela = filtrados.filter(l => tipoFiltroLanc === 'todos' || l.tipo === tipoFiltroLanc);
+
+            if (lancamentosTabela.length === 0) {
+                tbodyLanc.innerHTML = `<tr><td colspan="7" style="text-align: center;">Nenhum lançamento encontrado.</td></tr>`;
+            } else {
+                lancamentosTabela.forEach(l => {
+                    const catObj = categorias.find(c => Number(c.id) === Number(l.categoriaId)) || { nome: 'Geral' };
+                    const tr = document.createElement('tr');
+                    tr.innerHTML = `
+                        <td>${l.usuario || 'Sistema'}</td>
+                        <td><strong>${l.descricao}</strong></td>
+                        <td>${catObj.nome}</td>
+                        <td>${l.data ? l.data.split('-').reverse().join('/') : '-'}</td>
+                        <td>${l.vencimento ? l.vencimento.split('-').reverse().join('/') : '-'}</td>
+                        <td class="${l.tipo === 'entrada' ? 'positivo' : 'negativo'}">R$ ${Number(l.valor || 0).toLocaleString('pt-BR', {minimumFractionDigits: 2})}</td>
+                        <td>-</td>
+                    `;
+                    tbodyLanc.appendChild(tr);
+                });
+            }
         }
     </script>
 </body>

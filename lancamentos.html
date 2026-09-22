@@ -2,391 +2,280 @@
 <html lang="pt-BR">
 <head>
     <meta charset="UTF-8">
-    <title>Lançamentos - Controle Financeiro</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lançamentos | Controle Financeiro</title>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
-    <header>
-        <h1>Controle Financeiro</h1>
-        <span id="usuarioLogadoNome"></span>
-        <nav>
-            <a href="dashboard.html">Início</a>
-            <a href="categorias.html">Categorias</a>
-            <a href="cartoes.html">Cartões</a>
-            <a href="lancamentos.html" class="active">Lançamentos</a>
-            <a href="relatorios.html">Relatórios</a>
-            <a href="admin-logs.html" style="color: #ef4444; font-weight: bold;">Admin Logs</a>
-            
-            <button type="button" onclick="alternarTemaVisual()" class="btn-icone-tema" title="Alternar Modo Escuro / Claro">
-                <img src="imagens/modo_escuro.jpg" alt="Modo Escuro">
-            </button>
+   <header class="app-header">
+    <div class="header-inner">
+        <!-- Esquerdo: Controle Financeiro + Perfil/Sync -->
+        <div class="header-left">
+            <div class="brand">
+                <span class="brand-title">Controle Financeiro</span>
+                <span class="brand-subtitle">Gestão Inteligente</span>
+            </div>
+            <div class="header-perfil-sync">
+                <span id="usuarioLogadoNome" class="user-chip"></span>
+                <!-- Ícone de Sincronização ou Status -->
+                <span id="syncStatusIcon" title="Sincronizado" style="cursor: pointer; display: flex; align-items: center;">
+                    <img src="imagens/nuvem.png" alt="Sync" style="width: 22px; height: 22px;">
+                </span>
+            </div>
+        </div>
 
-            <a href="index.html" onclick="localStorage.removeItem('usuarioLogado')">Sair</a>
+        <!-- Centro: Opções Principais -->
+        <nav class="app-nav-center" aria-label="Navegação principal">
+            <a href="dashboard.html">Início</a>
+            <div class="nav-dropdown" style="position: relative;">
+                <a href="#" onclick="event.preventDefault();" style="cursor: pointer;">Cadastros ▾</a>
+                <div class="nav-dropdown-content" style="position: absolute; top: 100%; left: 0;">
+                    <a href="cartoes.html">Cartões</a>
+                    <a href="categorias.html">Categorias</a>
+                    <a href="bens.html">Bens</a>
+                    <a href="financiamentos.html">Financiamentos</a>
+                </div>
+            </div>
+            <a href="lancamentos.html">Lançamentos</a>
+            <a href="relatorios.html">Relatórios</a>
         </nav>
-    </header>
+
+        <!-- Direito: Tema, Configurações, Notificações e Sair separados -->
+        <div class="header-right">
+            <div class="header-tools">
+                <button type="button" onclick="alternarTemaVisual()" title="Alternar tema">
+                    <img src="imagens/modo_escuro.jpg" alt="Tema">
+                </button>
+                <a href="configuracoes.html" title="Configurações">
+                    <img src="imagens/config.png" alt="Configurações">
+                </a>
+                <!-- Ícone de Notificações -->
+                <button type="button" title="Notificações" id="btnNotificacoesHeader">
+                    <img src="imagens/notificacao.png" alt="Notificações" onerror="this.style.display='none'">
+                </button>
+            </div>
+            
+            <div class="header-tools" style="border-left: 1px solid var(--border-color, #e5e7eb); padding-left: 18px;">
+                <a href="index.html" onclick="event.preventDefault(); deslogarSistema()" class="btn-sair-extremo" title="Sair do sistema">
+                    <img src="imagens/exit.png" alt="Sair">
+                </a>
+            </div>
+        </div>
+    </div>
+</header>
 
     <main class="container">
-        <!-- 1. Formulário de Novo Lançamento -->
-        <div class="form-card">
-            <h2>Novo Lançamento</h2>
-            <form id="formLancamento" onsubmit="salvarLancamentoForm(event)">
-                <label>Tipo de Lançamento:</label>
-                <select id="tipoLancamento" onchange="tratarMudancaTipoLancamento()">
-                    <option value="saida">Saída (Despesa / Boleto / Cartão)</option>
-                    <option value="entrada">Entrada (Receita / Salário)</option>
-                </select>
+        <div class="page-heading"><div><h2>Lançamentos</h2><p>Cadastre receitas, despesas, compras parceladas e contas recorrentes.</p></div></div>
 
-                <label>Descrição:</label>
-                <input type="text" id="descricaoLancamento" placeholder="Ex: Mercado, Uber, Salário" required>
-
-                <div id="blocoValorTotal">
-                    <label>Valor Total (R$):</label>
-                    <input type="number" step="0.01" id="valorTotalLancamento" placeholder="Ex: 1800.00" required>
+        <section class="form-card">
+            <div class="section-title"><div><h2>Novo lançamento</h2><p>O sistema gera parcelas e calcula o vencimento do cartão automaticamente.</p></div></div>
+            <form id="formLancamento" onsubmit="salvarLancamentoForm(event)" novalidate>
+                <div class="form-grid-3">
+                    <div class="form-group"><label for="tipoLancamento">Tipo</label><select id="tipoLancamento" onchange="tratarMudancaTipoPersonalizado()"><option value="saida">Saída</option><option value="entrada">Entrada</option></select></div>
+                    <div class="form-group"><label for="categoriaLancamento">Categoria</label><select id="categoriaLancamento" onchange="verificarCategoriaSalario()" required></select></div>
+                    <div class="form-group"><label for="descricaoLancamento">Descrição</label><input type="text" id="descricaoLancamento" maxlength="120" placeholder="Ex.: Mercado, Salário, Uber" required></div>
                 </div>
 
-                <div id="blocoHoraExtra" style="display: none;">
-                    <label>Valor de Hora Extra Embutido (R$):</label>
-                    <input type="number" step="0.01" id="valorHoraExtra" placeholder="Ex: 300.00" value="0">
-                </div>
-
-                <label>Categoria:</label>
-                <select id="categoriaLancamento" required>
-                    <!-- Preenchido via JS -->
-                </select>
-
-                <!-- Bloco de Forma de Pagamento (Ocultado automaticamente em Entradas) -->
-                <div id="blocoFormaPagamentoContainer">
-                    <label>Forma de Pagamento:</label>
-                    <select id="formaPagamento" onchange="tratarMudancaFormaPagamento()">
-                        <option value="DINHEIRO">Dinheiro / Pix / Débito</option>
-                        <option value="BOLETO">Boleto / Conta</option>
-                        <option value="FIXO">Conta Fixa / Mensal (Faculdade, Internet...)</option>
-                        <option value="CARTAO">Cartão de Crédito</option>
-                    </select>
-                </div>
-
-                <div id="blocoCartao" style="display: none;">
-                    <label>Cartão:</label>
-                    <select id="cartaoLancamento">
-                        <!-- Preenchido via JS -->
-                    </select>
-
-                    <label>Data da Compra:</label>
-                    <input type="date" id="dataCompraCartao">
-
-                    <label>Quantidade de Parcelas:</label>
-                    <input type="number" min="1" max="48" id="qtdParcelas" value="1" required>
-                </div>
-
-                <!-- Nova Opção: Serviço Essencial (Apenas visível em Saídas) -->
-                <div id="blocoServicoEssencial" style="margin-top: 12px;">
-                    <label for="servicoEssencial">Serviço essencial?</label>
-                    <select id="servicoEssencial">
-                        <option value="nao">Não</option>
-                        <option value="sim">Sim</option>
-                    </select>
-                </div>
-
-                <div id="blocoVencimento">
-                    <label id="labelDataReferencia">Data de Vencimento / Referência:</label>
-                    <input type="date" id="vencimentoLancamento" required>
-                </div>
-                
-                <label>Observação (Opcional):</label>
-                <input type="text" id="observacaoLancamento" placeholder="Detalhes adicionais">
-
-                <button type="submit" style="margin-top: 20px; width: 100%;">Salvar Lançamento</button>
-            </form>
-        </div>
-
-        <!-- 2. Formulário de Contrato de Financiamento -->
-        <div class="form-card" style="margin-top: 20px;">
-            <h2>Cadastrar Contrato de Financiamento</h2>
-            <form id="formFinanciamento" onsubmit="salvarFinanciamentoForm(event)">
-                <label>Nome do Contrato / Financiamento:</label>
-                <input type="text" id="nomeFinanciamento" placeholder="Ex: Financiamento Carro / Imóvel" required>
-
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
-                    <div>
-                        <label>Valor da Parcela (R$):</label>
-                        <input type="number" step="0.01" id="valorParcelaFin" placeholder="Ex: 850.00" required>
-                    </div>
-                    <div>
-                        <label>Quantidade de Meses:</label>
-                        <input type="number" min="1" max="360" id="qtdMesesFin" placeholder="Ex: 48" required>
+                <div class="form-grid-3" style="margin-top: 12px;">
+                    <div id="blocoValorTotal" class="form-group"><label for="valorTotalLancamento">Valor total (R$)</label><input type="number" step="0.01" min="0.01" id="valorTotalLancamento" placeholder="0,00" required></div>
+                    <div id="blocoHoraExtra" class="form-group" style="display:none;"><label for="valorHoraExtra">Hora extra inclusa (R$)</label><input type="number" step="0.01" min="0" id="valorHoraExtra" placeholder="0,00" value="0"></div>
+                    <div id="blocoServicoEssencial" class="form-group"><label for="servicoEssencial">Despesa essencial?</label><select id="servicoEssencial"><option value="nao">Não</option><option value="sim">Sim</option></select></div>
+                    <div id="blocoEscopo" class="form-group">
+                        <label for="escopoLancamento">Escopo do gasto</label>
+                        <select id="escopoLancamento">
+                            <option value="casal">Casal / Casa</option>
+                            <option value="individual">Individual</option>
+                        </select>
                     </div>
                 </div>
 
-                <label>Categoria:</label>
-                <select id="categoriaFinanciamento" required>
-                    <!-- Preenchido via JS -->
-                </select>
+                <div id="blocoFormaPagamentoContainer" class="form-group" style="margin-top: 12px;"><label for="formaPagamento">Forma de pagamento</label><select id="formaPagamento"><option value="DINHEIRO">Dinheiro / Pix / Débito</option><option value="BOLETO">Boleto / Conta</option><option value="FIXO">Conta fixa / mensal</option><option value="CARTAO">Cartão de crédito</option></select></div>
 
-                <label>Data do Primeiro Vencimento:</label>
-                <input type="date" id="primeiroVencimentoFin" required>
+                <div id="blocoCartao" class="form-card nested-card" style="display:none; margin-top:14px; margin-bottom:0; background:var(--surface-2); box-shadow:none;">
+                    <div class="section-title"><div><h3>Compra no cartão</h3><p>O vencimento da primeira fatura será calculado pelo fechamento.</p></div></div>
+                    <div class="form-grid-3">
+                        <div class="form-group"><label for="cartaoLancamento">Cartão</label><select id="cartaoLancamento"></select></div>
+                        <div class="form-group"><label for="dataCompraCartao">Data da compra</label><input type="date" id="dataCompraCartao"></div>
+                        <div class="form-group"><label for="qtdParcelas">Parcelas</label><input type="number" min="1" max="48" id="qtdParcelas" value="1"></div>
+                    </div>
+                </div>
 
-                <button type="submit" style="margin-top: 20px; width: 100%; background-color: #3b82f6;">Criar Contrato de Financiamento</button>
+                <div class="form-grid-2" style="margin-top: 12px;">
+                    <div id="blocoVencimento" class="form-group"><label id="labelDataReferencia" for="vencimentoLancamento">Data de vencimento / referência</label><input type="date" id="vencimentoLancamento" required></div>
+                    <div class="form-group"><label for="observacaoLancamento">Observação (opcional)</label><input type="text" id="observacaoLancamento" maxlength="250" placeholder="Detalhes adicionais"></div>
+                </div>
+
+                <button type="submit" class="btn-full" style="margin-top:16px;">Salvar lançamento</button>
             </form>
-        </div>
+        </section>
 
-       <!-- 3. Formulário de Contas Recorrentes Retroativas / Em Lote -->
-        <div class="form-card" style="margin-top: 20px;">
-            <h2>Cadastrar Contas em Lote (Meses Passados até o Atual)</h2>
+        <section class="form-card">
+            <div class="section-title"><div><h2>Contas em lote</h2><p>Gera uma conta por mês entre as datas informadas. Meses passados ficam como atrasados, não como pagos.</p></div></div>
             <form id="formContaLote" onsubmit="salvarContaLoteForm(event)">
-                <label>Descrição da Conta:</label>
-                <input type="text" id="descricaoLote" placeholder="Ex: Seguro do Carro, Mensalidade..." required>
-
-                <label>Valor da Conta (R$):</label>
-                <input type="number" step="0.01" id="valorParcelaLote" placeholder="Ex: 150.00" required>
-
-                <label>Categoria:</label>
-                <select id="categoriaLote" required>
-                    <!-- Preenchido via JS -->
-                </select>
-
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
-                    <div>
-                        <label>Data do Primeiro Vencimento (Início):</label>
-                        <input type="date" id="primeiroVencimentoLote" required>
-                    </div>
-                    <div>
-                        <label>Data do Último Vencimento (Fim):</label>
-                        <input type="date" id="ultimoVencimentoLote" required>
-                    </div>
+                <div class="form-grid-2">
+                    <div class="form-group"><label for="descricaoLote">Descrição</label><input type="text" id="descricaoLote" maxlength="120" placeholder="Ex.: Seguro do carro" required></div>
+                    <div class="form-group"><label for="valorParcelaLote">Valor mensal (R$)</label><input type="number" step="0.01" min="0.01" id="valorParcelaLote" placeholder="150,00" required></div>
                 </div>
-
-                <button type="submit" style="margin-top: 20px; width: 100%; background-color: #10b981;">Gerar Contas em Lote</button>
+                <div class="form-group"><label for="categoriaLote">Categoria</label><select id="categoriaLote" required></select></div>
+                <div class="form-grid-2">
+                    <div class="form-group"><label for="primeiroVencimentoLote">Primeiro vencimento</label><input type="date" id="primeiroVencimentoLote" required></div>
+                    <div class="form-group"><label for="ultimoVencimentoLote">Último vencimento</label><input type="date" id="ultimoVencimentoLote" required></div>
+                </div>
+                <button type="submit" class="btn-success btn-full" style="margin-top:16px;">Gerar contas em lote</button>
             </form>
-        </div>
+        </section>
     </main>
 
     <script src="script.js"></script>
     <script>
         verificarAutenticacao();
         popularSelectsLancamento();
-        popularSelectCategoriaFinanciamento();
+        popularSelectCategoriaLote();
 
-        const hojeStr = new Date().toISOString().split('T')[0];
+        const hojeStr = dataLocalYYYYMMDD();
         document.getElementById('vencimentoLancamento').value = hojeStr;
-        document.getElementById('primeiroVencimentoFin').value = hojeStr;
-        const inputDataCompra = document.getElementById('dataCompraCartao');
-        if(inputDataCompra) inputDataCompra.value = hojeStr;
+        document.getElementById('dataCompraCartao').value = hojeStr;
+        const doisMeses = adicionarMesesClamped(criarDataLocal(hojeStr), -2);
+        document.getElementById('primeiroVencimentoLote').value = dataParaString(doisMeses);
+        document.getElementById('ultimoVencimentoLote').value = hojeStr;
 
-        function popularSelectCategoriaFinanciamento() {
-            const dados = obterDados();
-            const selectCatFin = document.getElementById('categoriaFinanciamento');
-            if (!selectCatFin) return;
+        inicializarControlesLancamento();
 
-            selectCatFin.innerHTML = '';
-            const categoriasSaida = dados.categorias.filter(c => c.tipo === 'saida');
-            
-            if (categoriasSaida.length === 0) {
-                const opt = document.createElement('option');
-                opt.value = "";
-                opt.innerText = "Nenhuma categoria de saída cadastrada";
-                selectCatFin.appendChild(opt);
-                return;
-            }
-
-            categoriasSaida.forEach(cat => {
-                const opt = document.createElement('option');
-                opt.value = cat.id;
-                opt.innerText = cat.nome;
-                selectCatFin.appendChild(opt);
-            });
-        }
-
-        function tratarMudancaTipoLancamento() {
+        function verificarCategoriaSalario() {
             const tipo = document.getElementById('tipoLancamento').value;
-            atualizarFiltroCategoriasPorTipo(tipo);
+            const selectCat = document.getElementById('categoriaLancamento');
+            const blocoHoraExtra = document.getElementById('blocoHoraExtra');
             
-            const blocoHE = document.getElementById('blocoHoraExtra');
-            const blocoFormaPgto = document.getElementById('blocoFormaPagamentoContainer');
-            const blocoCartao = document.getElementById('blocoCartao');
-            const blocoEssencial = document.getElementById('blocoServicoEssencial');
-            const labelData = document.getElementById('labelDataReferencia');
-
             if (tipo === 'entrada') {
-                if (blocoHE) blocoHE.style.display = 'block';
-                if (blocoFormaPgto) blocoFormaPgto.style.display = 'none';
-                if (blocoCartao) blocoCartao.style.display = 'none';
-                if (blocoEssencial) blocoEssencial.style.display = 'none';
-                if (labelData) labelData.innerText = 'Data de Recebimento:';
+                const dados = obterDados();
+                const catSelecionada = dados.categorias.find(c => String(c.id) === String(selectCat.value));
+                const nomeCat = catSelecionada ? catSelecionada.nome.toLowerCase() : '';
+                
+                if (nomeCat.includes('salário') || nomeCat.includes('salario')) {
+                    blocoHoraExtra.style.display = 'block';
+                } else {
+                    blocoHoraExtra.style.display = 'none';
+                    document.getElementById('valorHoraExtra').value = '0';
+                }
             } else {
-                if (blocoHE) blocoHE.style.display = 'none';
-                const inputHE = document.getElementById('valorHoraExtra');
-                if (inputHE) inputHE.value = '0';
-                if (blocoFormaPgto) blocoFormaPgto.style.display = 'block';
-                if (blocoEssencial) blocoEssencial.style.display = 'block';
-                if (labelData) labelData.innerText = 'Data de Vencimento / Referência:';
-                tratarMudancaFormaPagamento();
+                blocoHoraExtra.style.display = 'none';
             }
         }
 
-        function tratarMudancaFormaPagamento() {
-            const forma = document.getElementById('formaPagamento').value;
-            const blocoCartao = document.getElementById('blocoCartao');
-            const blocoVencimento = document.getElementById('blocoVencimento');
-
-            if (forma === 'CARTAO') {
-                if (blocoCartao) blocoCartao.style.display = 'block';
-                if (blocoVencimento) blocoVencimento.style.display = 'none';
-            } else {
-                if (blocoCartao) blocoCartao.style.display = 'none';
-                if (blocoVencimento) blocoVencimento.style.display = 'block';
+        function tratarMudancaTipoPersonalizado() {
+            if (typeof tratarMudancaTipoLancamento === 'function') {
+                tratarMudancaTipoLancamento();
             }
+            const tipo = document.getElementById('tipoLancamento').value;
+            const isEntrada = tipo === 'entrada';
+            
+            document.getElementById('blocoEscopo').style.display = isEntrada ? 'none' : 'block';
+            verificarCategoriaSalario();
+        }
+
+        document.getElementById('tipoLancamento').addEventListener('change', tratarMudancaTipoPersonalizado);
+        document.getElementById('categoriaLancamento').addEventListener('change', verificarCategoriaSalario);
+
+        function popularSelectCategoriaLote() {
+            const dados = obterDados();
+            const select = document.getElementById('categoriaLote');
+            if (!select) return;
+            select.innerHTML = '';
+            dados.categorias.filter(c => c.tipo === 'saida').forEach(c => {
+                const option = document.createElement('option'); option.value = c.id; option.textContent = c.nome; select.appendChild(option);
+            });
+            if (!select.options.length) select.innerHTML = '<option value="">Cadastre uma categoria de saída primeiro</option>';
+        }
+
+        function calcularPrimeiroVencimentoCartao(cartao, dataCompra) {
+            const compra = criarDataLocal(dataCompra);
+            if (!cartao || !compra) return dataCompra;
+            const diaCompra = compra.getDate();
+            const ultimoDiaFechamento = new Date(compra.getFullYear(), compra.getMonth() + 1, 0).getDate();
+            const fechamento = Math.min(Number(cartao.fechamento) || 1, ultimoDiaFechamento);
+            let venc = new Date(compra.getFullYear(), compra.getMonth(), 1);
+            if (diaCompra >= fechamento) venc.setMonth(venc.getMonth() + 1);
+            const diaVenc = Math.min(Number(cartao.vencimento) || 1, new Date(venc.getFullYear(), venc.getMonth() + 1, 0).getDate());
+            venc.setDate(diaVenc);
+            return dataParaString(venc);
         }
 
         async function salvarLancamentoForm(event) {
             event.preventDefault();
-            
-            const descricao = document.getElementById('descricaoLancamento').value;
+            const descricao = document.getElementById('descricaoLancamento').value.trim();
             const tipo = document.getElementById('tipoLancamento').value;
-            const categoriaId = parseInt(document.getElementById('categoriaLancamento').value);
-            const formaPagamento = tipo === 'entrada' ? 'DINHEIRO' : document.getElementById('formaPagamento').value;
-            const observacao = document.getElementById('observacaoLancamento').value;
+            const categoriaId = document.getElementById('categoriaLancamento').value;
+            const formaOriginal = tipo === 'entrada' ? 'DINHEIRO' : document.getElementById('formaPagamento').value;
             const valorTotal = parseFloat(document.getElementById('valorTotalLancamento').value);
-            const horaExtra = tipo === 'entrada' ? (parseFloat(document.getElementById('valorHoraExtra').value) || 0) : 0;
+            const horaExtra = (tipo === 'entrada' && document.getElementById('blocoHoraExtra').style.display !== 'none') ? (parseFloat(document.getElementById('valorHoraExtra').value) || 0) : 0;
             const servicoEssencial = tipo === 'saida' ? document.getElementById('servicoEssencial').value : 'nao';
-
+            const escopo = tipo === 'saida' ? document.getElementById('escopoLancamento').value : 'casal';
+            const observacao = document.getElementById('observacaoLancamento').value.trim();
             let vencimento = document.getElementById('vencimentoLancamento').value;
-            let qtdParcelas = 1;
             let cartaoId = null;
+            let qtdParcelas = 1;
+            let dataCompra = null;
 
-            if (tipo === 'saida' && formaPagamento === 'CARTAO') {
-                cartaoId = parseInt(document.getElementById('cartaoLancamento').value);
-                qtdParcelas = parseInt(document.getElementById('qtdParcelas').value) || 1;
-                const dataCompra = document.getElementById('dataCompraCartao').value;
-
-                const dados = obterDados();
-                const cartao = dados.cartoes.find(c => Number(c.id) === Number(cartaoId));
-                
-                if (cartao && dataCompra) {
-                    const [anoC, mesC, diaC] = dataCompra.split('-').map(Number);
-                    const ultimoDiaDoMes = new Date(anoC, mesC, 0).getDate();
-                    let diaFechamentoEfetivo = Number(cartao.fechamento);
-                    if (diaFechamentoEfetivo > ultimoDiaDoMes) diaFechamentoEfetivo = ultimoDiaDoMes;
-
-                    let mesVenc = mesC;
-                    let anoVenc = anoC;
-
-                    if (diaC >= diaFechamentoEfetivo) {
-                        mesVenc += 1;
-                        if (mesVenc > 12) {
-                            mesVenc = 1;
-                            anoVenc += 1;
-                        }
-                    }
-
-                    const diaPgto = String(cartao.vencimento).padStart(2, '0');
-                    vencimento = `${anoVenc}-${String(mesVenc).padStart(2, '0')}-${diaPgto}`;
-                }
-            } else if (tipo === 'saida' && formaPagamento === 'FIXO') {
-                qtdParcelas = 12; 
-            }
-
-            const dadosForm = {
-                descricao,
-                tipo,
-                categoriaId,
-                formaPagamento: formaPagamento === 'FIXO' ? 'BOLETO' : formaPagamento,
-                cartaoId,
-                valorTotal,
-                qtdParcelas,
-                vencimento,
-                observacao,
-                horaExtra,
-                servicoEssencial
-            };
-
-            await adicionarLancamentoComParcelas(dadosForm);
-            
-            await mostrarAlertaModal('Lançamento cadastrado com sucesso!');
-            document.getElementById('formLancamento').reset();
-            
-            const hojeStr = new Date().toISOString().split('T')[0];
-            document.getElementById('vencimentoLancamento').value = hojeStr;
-            tratarMudancaTipoLancamento();
-        }
-
-        // Popula as categorias no select do formulário em lote
-        function popularSelectCategoriaLote() {
-            const dados = obterDados();
-            const selectCatLote = document.getElementById('categoriaLote');
-            if (!selectCatLote) return;
-
-            selectCatLote.innerHTML = '';
-            const categoriasSaida = dados.categorias.filter(c => c.tipo === 'saida');
-            
-            if (categoriasSaida.length === 0) {
-                const opt = document.createElement('option');
-                opt.value = "";
-                opt.innerText = "Nenhuma categoria de saída cadastrada";
-                selectCatLote.appendChild(opt);
+            if (!descricao || !categoriaId || !Number.isFinite(valorTotal) || valorTotal <= 0) {
+                await mostrarAlertaModal('Informe descrição, categoria e um valor maior que zero.');
                 return;
             }
 
-            categoriasSaida.forEach(cat => {
-                const opt = document.createElement('option');
-                opt.value = cat.id;
-                opt.innerText = cat.nome;
-                selectCatLote.appendChild(opt);
+            if (tipo === 'saida' && formaOriginal === 'CARTAO') {
+                cartaoId = document.getElementById('cartaoLancamento').value || null;
+                dataCompra = document.getElementById('dataCompraCartao').value;
+                qtdParcelas = Math.min(48, Math.max(1, parseInt(document.getElementById('qtdParcelas').value, 10) || 1));
+                const dados = obterDados();
+                const cartao = dados.cartoes.find(c => String(c.id) === String(cartaoId) && c.ativo !== false);
+                if (!cartao) { await mostrarAlertaModal('Selecione um cartão válido.'); return; }
+                if (!dataCompra) { await mostrarAlertaModal('Informe a data da compra.'); return; }
+                vencimento = calcularPrimeiroVencimentoCartao(cartao, dataCompra);
+            } else if (tipo === 'saida' && formaOriginal === 'FIXO') {
+                qtdParcelas = 12;
+            }
+
+            await adicionarLancamentoComParcelas({
+                descricao,
+                tipo,
+                categoriaId,
+                formaPagamento: formaOriginal,
+                cartaoId,
+                dataCompra,
+                qtdParcelas,
+                valorTotal,
+                vencimento,
+                observacao,
+                horaExtra,
+                servicoEssencial,
+                escopo
             });
-        }
 
-        popularSelectCategoriaLote();
-        
-        const dataHojeObj = new Date();
-        const anoAtualStr = dataHojeObj.getFullYear();
-        const mesAtualStr = String(dataHojeObj.getMonth() + 1).padStart(2, '0');
-        const diaAtualStr = String(dataHojeObj.getDate()).padStart(2, '0');
-        
-        const inputUltimoVenc = document.getElementById('ultimoVencimentoLote');
-        if(inputUltimoVenc) inputUltimoVenc.value = `${anoAtualStr}-${mesAtualStr}-${diaAtualStr}`;
-
-        const inputPrimeiroVenc = document.getElementById('primeiroVencimentoLote');
-        if(inputPrimeiroVenc) {
-            const dataPassada = new Date();
-            dataPassada.setMonth(dataPassada.getMonth() - 2);
-            inputPrimeiroVenc.value = `${dataPassada.getFullYear()}-${String(dataPassada.getMonth() + 1).padStart(2, '0')}-${diaAtualStr}`;
+            document.getElementById('formLancamento').reset();
+            document.getElementById('vencimentoLancamento').value = dataLocalYYYYMMDD();
+            document.getElementById('dataCompraCartao').value = dataLocalYYYYMMDD();
+            document.getElementById('qtdParcelas').value = '1';
+            tratarMudancaTipoPersonalizado();
         }
 
         async function salvarContaLoteForm(event) {
             event.preventDefault();
-
-            const descricao = document.getElementById('descricaoLote').value;
-            const valorParcela = parseFloat(document.getElementById('valorParcelaLote').value);
-            const categoriaId = parseInt(document.getElementById('categoriaLote').value);
-            const primeiroVencimento = document.getElementById('primeiroVencimentoLote').value;
-            const ultimoVencimento = document.getElementById('ultimoVencimentoLote').value;
-
-            if (!descricao || isNaN(valorParcela) || !primeiroVencimento || !ultimoVencimento) {
-                await mostrarAlertaModal('Preencha todos os campos corretamente.');
-                return;
+            const descricao = document.getElementById('descricaoLote').value.trim();
+            const valor = parseFloat(document.getElementById('valorParcelaLote').value);
+            const categoriaId = document.getElementById('categoriaLote').value;
+            const inicio = document.getElementById('primeiroVencimentoLote').value;
+            const fim = document.getElementById('ultimoVencimentoLote').value;
+            const dataInicio = criarDataLocal(inicio);
+            const dataFim = criarDataLocal(fim);
+            if (!descricao || !Number.isFinite(valor) || valor <= 0 || !dataInicio || !dataFim) {
+                await mostrarAlertaModal('Preencha os dados do lote corretamente.'); return;
             }
-
-            const [anoI, mesI, diaI] = primeiroVencimento.split('-').map(Number);
-            const [anoF, mesF, diaF] = ultimoVencimento.split('-').map(Number);
-
-            const dataInicio = new Date(anoI, mesI - 1, diaI);
-            const dataFim = new Date(anoF, mesF - 1, diaF);
-
-            if (dataInicio > dataFim) {
-                await mostrarAlertaModal('A data do primeiro vencimento não pode ser posterior à data final.');
-                return;
-            }
-
+            if (dataInicio > dataFim) { await mostrarAlertaModal('A data inicial não pode ser posterior à final.'); return; }
             const qtdMeses = (dataFim.getFullYear() - dataInicio.getFullYear()) * 12 + (dataFim.getMonth() - dataInicio.getMonth()) + 1;
-
-            if (qtdMeses <= 0 || qtdMeses > 120) {
-                await mostrarAlertaModal('O intervalo de meses é inválido ou muito longo.');
-                return;
-            }
-
-            await adicionarContaLotePorPeriodo(descricao, valorParcela, dataInicio, qtdMeses, categoriaId);
-            
-            await mostrarAlertaModal(`${qtdMeses} contas geradas e adicionadas com sucesso!`);
+            if (qtdMeses < 1 || qtdMeses > 120) { await mostrarAlertaModal('O intervalo deve ter entre 1 e 120 meses.'); return; }
+            await adicionarContaLotePorPeriodo(descricao, valor, dataInicio, qtdMeses, categoriaId);
             document.getElementById('formContaLote').reset();
+            document.getElementById('ultimoVencimentoLote').value = dataLocalYYYYMMDD();
+            document.getElementById('primeiroVencimentoLote').value = dataParaString(adicionarMesesClamped(criarDataLocal(dataLocalYYYYMMDD()), -2));
             popularSelectCategoriaLote();
         }
     </script>

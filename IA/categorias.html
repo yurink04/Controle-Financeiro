@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Categorias | Controle Financeiro</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <header class="app-header">
+        <div class="header-inner">
+            <div class="brand"><span class="brand-title">Controle Financeiro</span><span class="brand-subtitle">Organização das categorias</span></div>
+            <span id="usuarioLogadoNome" class="user-chip"></span>
+            <nav class="app-nav" aria-label="Navegação principal">
+                <a href="dashboard.html">Início</a><a href="categorias.html" class="active">Categorias</a><a href="cartoes.html">Cartões</a><a href="lancamentos.html">Lançamentos</a><a href="relatorios.html">Relatórios</a><a href="admin-logs.html" class="nav-admin">Admin</a>
+                <button type="button" onclick="alternarTemaVisual()" class="btn-theme" title="Alternar tema"><img src="imagens/modo_escuro.jpg" alt="Tema"></button>
+                <a href="index.html" onclick="event.preventDefault(); deslogarSistema()">Sair</a>
+            </nav>
+        </div>
+    </header>
+
+    <main class="container">
+        <div class="page-heading"><div><h2>Categorias</h2><p>Organize receitas e despesas por tipo.</p></div></div>
+
+        <section class="form-card">
+            <div class="section-title"><div><h2 id="tituloFormCategoria">Nova categoria</h2><p>Os nomes repetidos no mesmo tipo são bloqueados.</p></div></div>
+            <form id="formCategoria" onsubmit="salvarCategoriaForm(event)">
+                <input type="hidden" id="catIdEdit">
+                <div class="form-grid-2">
+                    <div class="form-group"><label for="nomeCategoria">Nome da categoria</label><input type="text" id="nomeCategoria" maxlength="80" placeholder="Ex.: Alimentação" required></div>
+                    <div class="form-group"><label for="tipoCategoria">Tipo</label><select id="tipoCategoria"><option value="saida">Saída</option><option value="entrada">Entrada</option></select></div>
+                </div>
+                <div class="btn-row" style="margin-top:16px;">
+                    <button type="submit" id="btnSalvarCat">Salvar categoria</button>
+                    <button type="button" id="btnCancelarCat" class="btn-secondary" onclick="cancelarEdicaoCategoria()" style="display:none;">Cancelar edição</button>
+                </div>
+            </form>
+        </section>
+
+        <section class="form-card">
+            <div class="section-title">
+                <div><h2>Categorias cadastradas</h2><p>Edite ou remova categorias que não estejam em uso.</p></div>
+                <div class="filter-group"><label for="filtroTipoCategoria">Filtrar</label><select id="filtroTipoCategoria" onchange="renderizarCategorias()" style="width:auto;"><option value="todos">Todas</option><option value="saida">Saídas</option><option value="entrada">Entradas</option></select></div>
+            </div>
+            <ul id="listaCategorias" class="lista-simples"></ul>
+        </section>
+    </main>
+
+    <script src="script.js"></script>
+    <script>
+        verificarAutenticacao();
+        renderizarCategorias();
+
+        async function salvarCategoriaForm(event) {
+            event.preventDefault();
+            const idEdit = document.getElementById('catIdEdit').value;
+            const nome = document.getElementById('nomeCategoria').value.trim();
+            const tipo = document.getElementById('tipoCategoria').value;
+            const ok = idEdit ? await atualizarCategoria(idEdit, nome, tipo) : await adicionarCategoria(nome, tipo);
+            if (ok) cancelarEdicaoCategoria();
+        }
+
+        function prepararEdicaoCategoria(id, nome, tipo) {
+            document.getElementById('catIdEdit').value = id;
+            document.getElementById('nomeCategoria').value = nome;
+            document.getElementById('tipoCategoria').value = tipo;
+            document.getElementById('tituloFormCategoria').textContent = 'Editar categoria';
+            document.getElementById('btnSalvarCat').textContent = 'Atualizar categoria';
+            document.getElementById('btnCancelarCat').style.display = 'inline-flex';
+            document.getElementById('nomeCategoria').focus();
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+
+        function cancelarEdicaoCategoria() {
+            document.getElementById('catIdEdit').value = '';
+            document.getElementById('formCategoria').reset();
+            document.getElementById('tipoCategoria').value = 'saida';
+            document.getElementById('tituloFormCategoria').textContent = 'Nova categoria';
+            document.getElementById('btnSalvarCat').textContent = 'Salvar categoria';
+            document.getElementById('btnCancelarCat').style.display = 'none';
+        }
+
+        async function excluirCategoriaPrompt(id) {
+            const ok = await mostrarConfirmacaoModal('Deseja realmente excluir esta categoria?');
+            if (ok) await excluirCategoria(id);
+        }
+    </script>
+</body>
+</html>

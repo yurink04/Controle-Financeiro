@@ -1,53 +1,675 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
+
 <head>
     <meta charset="UTF-8">
-    <title>Login - Controle Financeiro</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#8b5e3c">
+
+    <title>Controle Financeiro | Acesso</title>
+
     <link rel="stylesheet" href="style.css">
 </head>
-<body style="display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0;">
 
-    <div class="form-card" style="width: 100%; max-width: 400px; text-align: center; padding: 32px;">
-        <h1 style="font-size: 1.5rem; margin-bottom: 8px; color: var(--accent);">Controle Financeiro</h1>
-        <p style="color: var(--text-muted); margin-bottom: 24px; font-size: 0.9rem;">Selecione o seu perfil para acessar</p>
+<body class="login-page">
 
-        <form onsubmit="realizarLogin(event)">
-            <label for="selectUsuario" style="text-align: left;">Usuário:</label>
-            <select id="selectUsuario" style="margin-bottom: 24px;" required>
-                <!-- Preenchido via JS -->
-            </select>
+    <!-- =========================================================
+         BOTÃO DE TEMA
+         ========================================================= -->
 
-            <button type="submit" style="width: 100%;">Entrar no Sistema</button>
-        </form>
-    </div>
+    <button
+        type="button"
+        class="login-theme-toggle"
+        id="loginThemeToggle"
+        onclick="alternarTemaVisual()"
+        aria-label="Alternar modo escuro"
+        title="Ativar modo escuro"
+    >
+        <span class="theme-icon" id="themeIcon">☾</span>
+    </button>
+
+
+    <!-- =========================================================
+         TELA DE LOGIN
+         ========================================================= -->
+
+    <main class="login-screen">
+
+        <!-- =====================================================
+             PAINEL ESQUERDO
+             ===================================================== -->
+
+        <section class="login-brand-panel">
+
+            <div class="login-brand-content">
+
+                <div class="login-brand-logo">
+                    R$
+                </div>
+
+                <div class="login-brand-label">
+                    CONTROLE FINANCEIRO
+                </div>
+
+                <h1>
+                    Seu dinheiro.
+                    <br>
+                    <span>Sob controle.</span>
+                </h1>
+
+                <p class="login-brand-description">
+                    Organize suas receitas, despesas, cartões
+                    e financiamentos em um só lugar.
+                </p>
+
+
+                <!-- =================================================
+                     CARDS DECORATIVOS
+                     ================================================= -->
+
+                <div class="login-finance-preview">
+
+                    <div class="finance-preview-card">
+
+                        <span>
+                            Receitas
+                        </span>
+
+                        <strong class="finance-positive">
+                            R$ 4.850,00
+                        </strong>
+
+                        <small>
+                            Este mês
+                        </small>
+
+                    </div>
+
+
+                    <div class="finance-preview-card">
+
+                        <span>
+                            Despesas
+                        </span>
+
+                        <strong class="finance-negative">
+                            R$ 2.730,00
+                        </strong>
+
+                        <small>
+                            Este mês
+                        </small>
+
+                    </div>
+
+
+                    <div class="finance-preview-card finance-preview-highlight">
+
+                        <span>
+                            Saldo disponível
+                        </span>
+
+                        <strong>
+                            R$ 2.120,00
+                        </strong>
+
+                        <small>
+                            Controle em dia
+                        </small>
+
+                    </div>
+
+                </div>
+
+
+                <!-- =================================================
+                     RODAPÉ DO PAINEL
+                     ================================================= -->
+
+                <div class="login-brand-footer">
+
+                    <span class="login-footer-dot"></span>
+
+                    Sistema de controle pessoal
+
+                </div>
+
+            </div>
+
+        </section>
+
+
+        <!-- =====================================================
+             PAINEL DIREITO
+             ===================================================== -->
+
+        <section class="login-form-panel">
+
+            <div class="login-form-wrapper">
+
+                <!-- Logo para telas menores -->
+
+                <div class="login-mobile-logo">
+                    R$
+                </div>
+
+
+                <!-- =================================================
+                     CABEÇALHO
+                     ================================================= -->
+
+                <div class="login-heading">
+
+                    <span class="login-eyebrow">
+                        BEM-VINDO DE VOLTA
+                    </span>
+
+                    <h2>
+                        Acesse sua conta
+                    </h2>
+
+                    <p>
+                        Selecione seu perfil para continuar.
+                    </p>
+
+                </div>
+
+
+                <!-- =================================================
+                     FORMULÁRIO
+                     ================================================= -->
+
+                <form
+                    id="formLogin"
+                    onsubmit="realizarLogin(event)"
+                >
+
+                    <!-- Campo usuário -->
+
+                    <div class="login-field">
+
+                        <label for="selectUsuario">
+                            Usuário
+                        </label>
+
+                        <div class="login-select-wrapper">
+
+                            <span class="login-field-icon">
+                                👤
+                            </span>
+
+                            <select
+                                id="selectUsuario"
+                                required
+                            >
+
+                                <option value="">
+                                    Selecione seu usuário
+                                </option>
+
+                            </select>
+
+                            <span class="login-select-arrow">
+                                ⌄
+                            </span>
+
+                        </div>
+
+                    </div>
+
+
+                    <!-- =================================================
+                         BOTÃO ENTRAR
+                         ================================================= -->
+
+                    <button
+                        type="submit"
+                        class="login-submit"
+                        id="loginSubmit"
+                    >
+
+                        <span class="login-submit-content">
+
+                            <span class="login-submit-text">
+                                Entrar no Sistema
+                            </span>
+
+                            <span class="login-submit-arrow">
+                                →
+                            </span>
+
+                        </span>
+
+                    </button>
+
+                </form>
+
+
+                <!-- =================================================
+                     AVISO DE SEGURANÇA
+                     ================================================= -->
+
+                <div class="login-security">
+
+                    <div class="login-security-icon">
+                        🔒
+                    </div>
+
+                    <div>
+
+                        <strong>
+                            Acesso protegido
+                        </strong>
+
+                        <p>
+                            Um PIN de segurança será solicitado
+                            antes de entrar no sistema.
+                        </p>
+
+                    </div>
+
+                </div>
+
+
+                <!-- =================================================
+                     RODAPÉ
+                     ================================================= -->
+
+                <div class="login-form-footer">
+
+                    <span>
+                        Controle Financeiro
+                    </span>
+
+                    <span>
+                        •
+                    </span>
+
+                    <span>
+                        Acesso seguro
+                    </span>
+
+                </div>
+
+            </div>
+
+        </section>
+
+    </main>
+
+
+    <!-- =========================================================
+         SCRIPT PRINCIPAL
+         ========================================================= -->
 
     <script src="script.js"></script>
+
+
+    <!-- =========================================================
+         SCRIPT DA PÁGINA DE LOGIN
+         ========================================================= -->
+
     <script>
-        document.addEventListener("DOMContentLoaded", async () => {
-            await inicializarBanco();
-            const dados = obterDados();
-            const select = document.getElementById('selectUsuario');
-            
-            if (select && dados.usuarios) {
-                select.innerHTML = '';
-                dados.usuarios.forEach(u => {
-                    const opt = document.createElement('option');
-                    opt.value = u.id;
-                    opt.innerText = u.nome;
-                    select.appendChild(opt);
-                });
+
+        /* =========================================================
+           CARREGAR USUÁRIOS
+           ========================================================= */
+
+        document.addEventListener(
+            "DOMContentLoaded",
+            async () => {
+
+                try {
+
+                    await inicializarBanco();
+
+                    const dados = obterDados();
+
+                    const select =
+                        document.getElementById(
+                            "selectUsuario"
+                        );
+
+                    if (!select) {
+                        return;
+                    }
+
+                    select.innerHTML = "";
+
+
+                    /* -------------------------------------------------
+                       Existem usuários cadastrados
+                       ------------------------------------------------- */
+
+                    if (
+                        dados &&
+                        Array.isArray(dados.usuarios) &&
+                        dados.usuarios.length > 0
+                    ) {
+
+                        const primeiraOpcao =
+                            document.createElement("option");
+
+                        primeiraOpcao.value = "";
+
+                        primeiraOpcao.textContent =
+                            "Selecione seu usuário";
+
+                        primeiraOpcao.disabled = true;
+
+                        primeiraOpcao.selected = true;
+
+                        select.appendChild(
+                            primeiraOpcao
+                        );
+
+
+                        dados.usuarios.forEach(
+                            usuario => {
+
+                                const option =
+                                    document.createElement(
+                                        "option"
+                                    );
+
+                                option.value =
+                                    usuario.id;
+
+                                option.textContent =
+                                    usuario.nome;
+
+                                select.appendChild(
+                                    option
+                                );
+
+                            }
+                        );
+
+                    }
+
+
+                    /* -------------------------------------------------
+                       Nenhum usuário cadastrado
+                       ------------------------------------------------- */
+
+                    else {
+
+                        const option =
+                            document.createElement(
+                                "option"
+                            );
+
+                        option.value = "";
+
+                        option.textContent =
+                            "Nenhum usuário cadastrado";
+
+                        option.disabled = true;
+
+                        option.selected = true;
+
+                        select.appendChild(
+                            option
+                        );
+
+                    }
+
+                }
+
+                catch (erro) {
+
+                    console.error(
+                        "Erro ao carregar usuários:",
+                        erro
+                    );
+
+
+                    const select =
+                        document.getElementById(
+                            "selectUsuario"
+                        );
+
+                    if (!select) {
+                        return;
+                    }
+
+
+                    select.innerHTML = "";
+
+
+                    const option =
+                        document.createElement(
+                            "option"
+                        );
+
+                    option.value = "";
+
+                    option.textContent =
+                        "Erro ao carregar usuários";
+
+                    option.disabled = true;
+
+                    option.selected = true;
+
+                    select.appendChild(
+                        option
+                    );
+
+                }
+
             }
-        });
+        );
+
+
+        /* =========================================================
+           LOGIN
+           ========================================================= */
 
         async function realizarLogin(event) {
+
             event.preventDefault();
-            const usuarioId = document.getElementById('selectUsuario').value;
-            
-            // Chama a função centralizada no script.js que valida a senha da coluna C
-            await selecionarUsuario(usuarioId);
-            
-            await registrarLog("LOGIN", "Usuário acessou o sistema");
+
+
+            const select =
+                document.getElementById(
+                    "selectUsuario"
+                );
+
+            const botao =
+                document.getElementById(
+                    "loginSubmit"
+                );
+
+
+            if (
+                !select ||
+                !select.value
+            ) {
+
+                return;
+
+            }
+
+
+            /* -----------------------------------------------------
+               Ativa animação do botão
+               ----------------------------------------------------- */
+
+            if (botao) {
+
+                botao.classList.add(
+                    "loading"
+                );
+
+            }
+
+
+            try {
+
+                /*
+                 * IMPORTANTE:
+                 *
+                 * selecionarUsuario() já faz:
+                 *
+                 * - localização do usuário;
+                 * - validação do PIN;
+                 * - registro do login;
+                 * - salvamento;
+                 * - redirecionamento para dashboard.
+                 *
+                 * Portanto NÃO chamamos registrarLog()
+                 * aqui para evitar registro duplicado.
+                 */
+
+                await selecionarUsuario(
+                    select.value
+                );
+
+            }
+
+            catch (erro) {
+
+                console.error(
+                    "Erro ao realizar login:",
+                    erro
+                );
+
+
+                /*
+                 * Caso ocorra algum erro antes
+                 * do redirecionamento, devolvemos
+                 * o botão ao estado normal.
+                 */
+
+                if (botao) {
+
+                    botao.classList.remove(
+                        "loading"
+                    );
+
+                }
+
+            }
+
         }
+
+
+        /* =========================================================
+           ÍCONE DO TEMA
+           ========================================================= */
+
+        function atualizarIconeTemaLogin() {
+
+            const icon =
+                document.getElementById(
+                    "themeIcon"
+                );
+
+            const botao =
+                document.getElementById(
+                    "loginThemeToggle"
+                );
+
+
+            if (!icon) {
+                return;
+            }
+
+
+            const escuro =
+                document.body.classList.contains(
+                    "dark-mode"
+                );
+
+
+            /*
+             * Modo escuro ativo:
+             * mostra sol.
+             *
+             * Modo claro ativo:
+             * mostra lua.
+             */
+
+            icon.textContent =
+                escuro
+                    ? "☀"
+                    : "☾";
+
+
+            if (botao) {
+
+                botao.setAttribute(
+                    "title",
+                    escuro
+                        ? "Ativar modo claro"
+                        : "Ativar modo escuro"
+                );
+
+                botao.setAttribute(
+                    "aria-label",
+                    escuro
+                        ? "Ativar modo claro"
+                        : "Ativar modo escuro"
+                );
+
+            }
+
+        }
+
+
+        /* =========================================================
+           INICIALIZAÇÃO DO ÍCONE
+           ========================================================= */
+
+        document.addEventListener(
+            "DOMContentLoaded",
+            () => {
+
+                atualizarIconeTemaLogin();
+
+            }
+        );
+
+
+        /* =========================================================
+           ATUALIZAÇÃO DO ÍCONE AO TROCAR O TEMA
+           ========================================================= */
+
+        const alternarTemaOriginal =
+            window.alternarTemaVisual;
+
+
+        window.alternarTemaVisual =
+            function () {
+
+                if (
+                    typeof alternarTemaOriginal ===
+                    "function"
+                ) {
+
+                    alternarTemaOriginal();
+
+                }
+
+
+                /*
+                 * Pequeno atraso para garantir
+                 * que a classe dark-mode já foi
+                 * aplicada ao body.
+                 */
+
+                requestAnimationFrame(
+                    () => {
+
+                        atualizarIconeTemaLogin();
+
+                    }
+                );
+
+            };
+
     </script>
+
 </body>
+
 </html>

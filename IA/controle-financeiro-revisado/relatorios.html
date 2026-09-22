@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Relatórios | Controle Financeiro</title>
+    <link rel="stylesheet" href="style.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+    <header class="app-header">
+        <div class="header-inner">
+            <div class="brand"><span class="brand-title">Controle Financeiro</span><span class="brand-subtitle">Relatórios e acompanhamento</span></div>
+            <span id="usuarioLogadoNome" class="user-chip"></span>
+            <nav class="app-nav" aria-label="Navegação principal">
+                <a href="dashboard.html">Início</a><a href="categorias.html">Categorias</a><a href="cartoes.html">Cartões</a><a href="lancamentos.html">Lançamentos</a><a href="relatorios.html" class="active">Relatórios</a><a href="admin-logs.html" class="nav-admin">Admin</a>
+                <button type="button" onclick="alternarTemaVisual()" class="btn-theme" title="Alternar tema"><img src="imagens/modo_escuro.jpg" alt="Tema"></button>
+                <a href="index.html" onclick="event.preventDefault(); deslogarSistema()">Sair</a>
+            </nav>
+        </div>
+    </header>
+
+    <main class="container">
+        <div class="page-heading"><div><h2>Relatórios</h2><p>Compare receitas, despesas, categorias, contas e financiamentos.</p></div></div>
+
+        <section class="form-card filter-bar">
+            <div><div class="section-title" style="margin-bottom:2px;"><h2>Período</h2></div><p class="muted small">Alterne entre mês atual, mês anterior ou todo o histórico.</p></div>
+            <div class="toolbar-actions">
+                <button type="button" id="btnMesAtual" onclick="definirFiltroPeriodo('mesAtual')">Mês atual</button>
+                <button type="button" id="btnMesPassado" class="btn-secondary" onclick="definirFiltroPeriodo('mesPassado')">Mês passado</button>
+                <button type="button" id="btnTodos" class="btn-secondary" onclick="definirFiltroPeriodo('todos')">Período total</button>
+                <input type="month" id="filtroMesAnoRelatorio" onchange="mudarFiltroMesManual()" style="width:auto; min-width:150px;">
+            </div>
+        </section>
+
+        <section class="grid-4" style="margin-bottom:16px;">
+            <div class="stat-box"><div class="stat-label">Entradas · Samuel</div><div id="relatorioEntradaSamuel" class="stat-value positivo">R$ 0,00</div></div>
+            <div class="stat-box"><div class="stat-label">Saídas · Samuel</div><div id="relatorioSaidaSamuel" class="stat-value negativo">R$ 0,00</div></div>
+            <div class="stat-box"><div class="stat-label">Entradas · Mariana</div><div id="relatorioEntradaMariana" class="stat-value positivo">R$ 0,00</div></div>
+            <div class="stat-box"><div class="stat-label">Saídas · Mariana</div><div id="relatorioSaidaMariana" class="stat-value negativo">R$ 0,00</div></div>
+        </section>
+
+        <section class="form-card">
+            <div class="section-title"><div><h2>Gráficos e estatísticas</h2><p>Os filtros abaixo afetam os gráficos do relatório.</p></div></div>
+            <div class="filter-bar" style="margin-bottom:16px;">
+                <div class="filter-group"><label for="filtroUsuarioGraficos">Usuário</label><select id="filtroUsuarioGraficos" onchange="carregarRelatorios()" style="width:auto;"><option value="todos">Ambos (geral)</option><option value="1">Samuel</option><option value="2">Mariana</option></select></div>
+                <div class="filter-group"><label for="filtroServicoEssencialDashboard">Serviço essencial</label><select id="filtroServicoEssencialDashboard" onchange="carregarRelatorios()" style="width:auto;"><option value="todos">Todos</option><option value="sim">Essenciais</option><option value="nao">Não essenciais</option></select></div>
+            </div>
+            <div class="grid-3">
+                <article class="stat-box chart-card"><div class="chart-head"><h3>Entradas x saídas</h3></div><div class="chart-container"><canvas id="graficoRelatorioEntradasSaidas"></canvas></div></article>
+                <article class="stat-box chart-card"><div class="chart-head"><h3>Gastos por categoria</h3></div><div class="chart-container"><canvas id="graficoRelatorioCategorias"></canvas></div></article>
+                <article class="stat-box chart-card"><div class="chart-head"><h3>Essenciais x não essenciais</h3></div><div class="chart-container"><canvas id="graficoServicosEssenciais"></canvas></div></article>
+            </div>
+        </section>
+
+        <section class="grid-2">
+            <div class="stat-box"><div class="stat-label">Horas extras no período</div><div id="totalHoraExtraPeriodo" class="stat-value positivo">R$ 0,00</div></div>
+            <div class="stat-box"><div class="section-title"><h3>Resumo por categoria</h3></div><div id="relatorioCategorias" class="muted small"></div></div>
+        </section>
+
+        <section class="form-card" style="margin-top:16px;">
+            <div class="section-title"><div><h2>Contas e faturas a pagar</h2><p>Faturas de cartão são agrupadas por cartão e mês de vencimento.</p></div></div>
+            <div class="tabela-container">
+                <table class="tabela"><thead><tr><th>Descrição / fatura</th><th>Vencimento</th><th>Valor</th><th>Ações</th></tr></thead><tbody id="tabelaContasAPagar"></tbody></table>
+            </div>
+        </section>
+
+        <section class="form-card">
+            <div class="section-title"><div><h2>Contas pagas</h2><p>Histórico de pagamentos do período selecionado.</p></div></div>
+            <div class="tabela-container">
+                <table class="tabela"><thead><tr><th>Descrição / fatura</th><th>Vencimento</th><th>Valor</th><th>Ações</th></tr></thead><tbody id="tabelaContasPagas"></tbody></table>
+            </div>
+        </section>
+
+        <section class="form-card">
+            <div class="section-title">
+                <div><h2>Parcelamentos ativos</h2><p>Compras parceladas identificadas por vínculo de parcelamento.</p></div>
+                <select id="filtroCartaoParcelamento" onchange="carregarRelatorios()" style="width:auto;"><option value="todos">Todos os cartões</option></select>
+            </div>
+            <div class="tabela-container">
+                <table class="tabela"><thead><tr><th>Descrição</th><th>Parcela</th><th>Valor</th><th>Vencimento</th><th>Ações</th></tr></thead><tbody id="tabelaParcelamentos"></tbody></table>
+            </div>
+        </section>
+
+        <section class="form-card">
+            <div class="section-title"><div><h2>Financiamentos</h2><p>Abra um contrato para acompanhar suas parcelas individualmente.</p></div></div>
+            <div id="listaFinanciamentos"></div>
+        </section>
+    </main>
+
+    <script src="script.js"></script>
+    <script>
+        verificarAutenticacao();
+        definirFiltroPeriodo('mesAtual');
+
+        function definirFiltroPeriodo(tipo) {
+            const inputMes = document.getElementById('filtroMesAnoRelatorio');
+            const hoje = new Date();
+            const ids = ['btnMesAtual', 'btnMesPassado', 'btnTodos'];
+            ids.forEach(id => document.getElementById(id)?.classList.remove('period-active'));
+
+            if (tipo === 'mesAtual') {
+                inputMes.value = dataLocalYYYYMMDD(hoje).slice(0, 7);
+                document.getElementById('btnMesAtual')?.classList.add('period-active');
+            } else if (tipo === 'mesPassado') {
+                const passado = adicionarMesesClamped(hoje, -1);
+                inputMes.value = dataParaString(passado).slice(0, 7);
+                document.getElementById('btnMesPassado')?.classList.add('period-active');
+            } else {
+                inputMes.value = '';
+                document.getElementById('btnTodos')?.classList.add('period-active');
+            }
+            carregarRelatorios();
+        }
+
+        function mudarFiltroMesManual() {
+            ['btnMesAtual', 'btnMesPassado', 'btnTodos'].forEach(id => document.getElementById(id)?.classList.remove('period-active'));
+            carregarRelatorios();
+        }
+    </script>
+</body>
+</html>

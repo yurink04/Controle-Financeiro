@@ -2,71 +2,106 @@
 <html lang="pt-BR">
 <head>
     <meta charset="UTF-8">
-    <title>Painel do Administrador - Logs de Auditoria</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin | Auditoria | Controle Financeiro</title>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
-    <header>
-        <h1>Controle Financeiro - Admin</h1>
-        <span id="usuarioLogadoNome"></span>
-        <nav>
+<header class="app-header">
+    <div class="header-inner">
+        <!-- Esquerdo: Controle Financeiro + Perfil/Sync -->
+        <div class="header-left">
+            <div class="brand">
+                <span class="brand-title">Controle Financeiro</span>
+                <span class="brand-subtitle">Gestão Inteligente</span>
+            </div>
+            <div class="header-perfil-sync">
+                <span id="usuarioLogadoNome" class="user-chip"></span>
+                <!-- Ícone de Sincronização ou Status -->
+                <span id="syncStatusIcon" title="Sincronizado" style="cursor: pointer; display: flex; align-items: center;">
+                    <img src="imagens/nuvem.png" alt="Sync" style="width: 22px; height: 22px;">
+                </span>
+            </div>
+        </div>
+
+        <!-- Centro: Opções Principais -->
+        <nav class="app-nav-center" aria-label="Navegação principal">
             <a href="dashboard.html">Início</a>
-            <a href="admin-logs.html" class="active" style="background-color: #c0392b;">Painel Admin (Logs)</a>
-            <a href="index.html" onclick="localStorage.removeItem('usuarioLogado'); sessionStorage.removeItem('adminLogado');">Sair</a>
+            <div class="nav-dropdown" style="position: relative;">
+                <a href="#" onclick="event.preventDefault();" style="cursor: pointer;">Cadastros ▾</a>
+                <div class="nav-dropdown-content" style="position: absolute; top: 100%; left: 0;">
+                    <a href="cartoes.html">Cartões</a>
+                    <a href="categorias.html">Categorias</a>
+                    <a href="bens.html">Bens</a>
+                    <a href="financiamentos.html">Financiamentos</a>
+                </div>
+            </div>
+            <a href="lancamentos.html">Lançamentos</a>
+            <a href="relatorios.html">Relatórios</a>
         </nav>
-    </header>
+
+        <!-- Direito: Tema, Configurações, Notificações e Sair separados -->
+        <div class="header-right">
+            <div class="header-tools">
+                <button type="button" onclick="alternarTemaVisual()" title="Alternar tema">
+                    <img src="imagens/modo_escuro.jpg" alt="Tema">
+                </button>
+                <a href="configuracoes.html" title="Configurações">
+                    <img src="imagens/config.png" alt="Configurações">
+                </a>
+                <!-- Ícone de Notificações -->
+                <button type="button" title="Notificações" id="btnNotificacoesHeader">
+                    <img src="imagens/notificacao.png" alt="Notificações" onerror="this.style.display='none'">
+                </button>
+            </div>
+            
+            <div class="header-tools" style="border-left: 1px solid var(--border-color, #e5e7eb); padding-left: 18px;">
+                <a href="index.html" onclick="event.preventDefault(); deslogarSistema()" class="btn-sair-extremo" title="Sair do sistema">
+                    <img src="imagens/exit.png" alt="Sair">
+                </a>
+            </div>
+        </div>
+    </div>
+</header>
 
     <main class="container">
-        <!-- Tela de Login do Admin -->
-        <div id="divLoginAdmin" class="form-card" style="max-width: 400px; margin: 50px auto; text-align: center;">
-            <h2>Acesso Restrito ao Administrador</h2>
-            <p style="margin-bottom: 15px; color: #555;">Digite a senha de acesso ao paine:</p>
-            <input type="password" id="senhaAdminInput" placeholder="Senha do Administrador" style="margin-bottom: 15px;">
-            <button onclick="autenticarPainelAdmin()" style="background-color: #c0392b; width: 100%;">Entrar no Painel</button>
-            <button onclick="window.location.href='dashboard.html'" style="background-color: #7f8c8d; width: 100%; margin-top: 10px;">Voltar ao Início</button>
-        </div>
+        <div class="page-heading"><div><h2>Auditoria e acessos</h2><p>Registro das operações realizadas no sistema.</p></div></div>
 
-        <!-- Conteúdo dos Logs (Visível apenas após autenticação) -->
-        <div id="divConteudoAdmin" style="display: none;">
-            <div class="form-card" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
-                <h2>Logs de Auditoria e Acessos</h2>
-                <button onclick="limparLogsSistemaComSenha()" style="background-color: #c0392b; width: auto; padding: 8px 15px;">Limpar Logs</button>
-            </div>
+        <section id="divLoginAdmin" class="form-card" style="max-width:460px;margin:50px auto;">
+            <div class="login-logo">ADM</div>
+            <h2 style="text-align:center;">Acesso restrito</h2>
+            <p class="muted small" style="text-align:center;margin-bottom:12px;">Informe a senha administrativa para visualizar os registros.</p>
+            <input type="password" id="senhaAdminInput" class="modal-input" placeholder="Senha administrativa" autocomplete="off">
+            <div class="btn-row" style="margin-top:14px;"><button type="button" onclick="autenticarPainelAdmin()">Entrar</button><a href="dashboard.html" class="btn-secondary" style="display:inline-flex;align-items:center;justify-content:center;text-decoration:none;border-radius:10px;padding:10px 15px;font-size:.84rem;font-weight:750;">Voltar</a></div>
+        </section>
 
-            <div class="form-card" style="margin-top: 20px; overflow-x: auto;">
-                <table class="tabela">
-                    <thead>
-                        <tr>
-                            <th>Data / Hora</th>
-                            <th>Usuário</th>
-                            <th>Ação</th>
-                            <th>Detalhes da Operação</th>
-                        </tr>
-                    </thead>
-                    <tbody id="tabelaLogs">
-                        <!-- Preenchido via JS -->
-                    </tbody>
-                </table>
+        <section id="divConteudoAdmin" style="display:none;">
+            <div class="form-card">
+                <div class="section-title"><div><h2>Logs de auditoria</h2><p id="contadorLogs">0 registros</p></div><div class="toolbar-actions"><input type="search" id="filtroLogs" placeholder="Buscar nos logs..." oninput="carregarTabelaLogs()" style="width:230px;"><button type="button" class="btn-danger" onclick="limparLogsSistemaComSenha()">Limpar logs</button></div></div>
+                <div class="tabela-container">
+                    <table class="tabela"><thead><tr><th>Data / hora</th><th>Usuário</th><th>Ação</th><th>Detalhes</th></tr></thead><tbody id="tabelaLogs"></tbody></table>
+                </div>
             </div>
-        </div>
+        </section>
     </main>
 
     <script src="script.js"></script>
     <script>
         verificarAutenticacao();
+        if (sessionStorage.getItem('adminLogado') === 'true') liberarPainelAdmin();
 
-        if (sessionStorage.getItem('adminLogado') === 'true') {
-            liberarPainelAdmin();
-        }
-
-        function autenticarPainelAdmin() {
-            const senha = document.getElementById('senhaAdminInput').value;
-            if (senha === "praia2222") {
+        async function autenticarPainelAdmin() {
+            const senha = document.getElementById('senhaAdminInput').value.trim();
+            if (!senha) return;
+            if (senha === SENHA_ADMIN) {
                 sessionStorage.setItem('adminLogado', 'true');
+                const dados = obterDados();
+                registrarLogInterno(dados, 'LOGIN ADMIN', 'Administrador acessou o painel de auditoria');
+                await salvarDados(dados);
                 liberarPainelAdmin();
-                registrarLog("LOGIN ADMIN", "Administrador acessou o Painel de Logs");
             } else {
-                alert("Senha de administrador incorreta!");
+                document.getElementById('senhaAdminInput').value = '';
+                await mostrarAlertaModal('Senha administrativa incorreta.');
             }
         }
 
@@ -79,44 +114,37 @@
         function carregarTabelaLogs() {
             const dados = obterDados();
             const tbody = document.getElementById('tabelaLogs');
-            if (!tbody) return;
+            const filtro = normalizarTexto(document.getElementById('filtroLogs')?.value || '');
+            let logs = [...(dados.logs || [])].reverse();
+            if (filtro) logs = logs.filter(log => normalizarTexto(`${log.dataHoraFormatada || log.dataHora || ''} ${log.usuario || ''} ${log.acao || ''} ${log.detalhes || ''}`).includes(filtro));
+            document.getElementById('contadorLogs').textContent = `${logs.length} registro(s)`;
             tbody.innerHTML = '';
-
-            const logs = dados.logs || [];
-            if (logs.length === 0) {
-                tbody.innerHTML = `<tr><td colspan="4" style="text-align: center;">Nenhum registro de log encontrado.</td></tr>`;
-                return;
-            }
-
-            [...logs].reverse().forEach(log => {
+            if (!logs.length) { tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;">Nenhum registro encontrado.</td></tr>'; return; }
+            logs.forEach(log => {
                 const tr = document.createElement('tr');
-                tr.innerHTML = `
-                    <td>${log.dataHora}</td>
-                    <td><strong>${log.usuario}</strong></td>
-                    <td><span style="padding: 3px 8px; border-radius: 4px; background: #eee; font-size: 12px; font-weight: bold;">${log.acao}</span></td>
-                    <td>${log.detalhes}</td>
-                `;
+                const dt = log.dataHoraFormatada || (log.dataHora ? new Date(log.dataHora).toLocaleString('pt-BR') : '-');
+                tr.innerHTML = `<td>${escaparHTML(dt)}</td><td><strong>${escaparHTML(log.usuario || '-')}</strong></td><td><span class="audit-action">${escaparHTML(log.acao || '-')}</span></td><td>${escaparHTML(log.detalhes || '-')}</td>`;
                 tbody.appendChild(tr);
             });
         }
 
         async function limparLogsSistemaComSenha() {
-            const senhaDigitada = prompt("Digite a senha de administrador (praia2222) para confirmar a limpeza dos logs:");
-            if (senhaDigitada === null) return;
-
-            if (senhaDigitada === "praia2222") {
-                if (confirm('Deseja realmente apagar todo o histórico de auditoria?')) {
-                    const dados = obterDados();
-                    dados.logs = [];
-                    await salvarDados(dados);
-                    registrarLog("LIMPEZA DE LOGS", "O histórico de auditoria foi limpo pelo administrador");
-                    carregarTabelaLogs();
-                    alert('Logs limpos com sucesso!');
-                }
-            } else {
-                alert('Senha incorreta! Ação cancelada.');
-            }
+            const senha = await mostrarPromptSenha('Confirmar limpeza', 'Digite a senha administrativa para apagar o histórico atual.');
+            if (senha === null) return;
+            if (senha !== SENHA_ADMIN) { await mostrarAlertaModal('Senha administrativa incorreta.'); return; }
+            const confirmar = await mostrarConfirmacaoModal('Apagar todo o histórico de auditoria? Essa operação remove os registros atuais.');
+            if (!confirmar) return;
+            const dados = obterDados();
+            dados.logs = [];
+            adicionarAuditoriaAoObjeto(dados, 'LIMPEZA DE LOGS', 'Histórico de auditoria foi limpo pelo administrador');
+            await salvarDados(dados);
+            carregarTabelaLogs();
+            await mostrarAlertaModal('Logs limpos com sucesso.');
         }
+
+        document.getElementById('senhaAdminInput').addEventListener('keydown', e => {
+            if (e.key === 'Enter') autenticarPainelAdmin();
+        });
     </script>
 </body>
 </html>

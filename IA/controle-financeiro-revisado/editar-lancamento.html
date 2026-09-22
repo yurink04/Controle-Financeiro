@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Editar lançamento | Controle Financeiro</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <header class="app-header">
+        <div class="header-inner">
+            <div class="brand"><span class="brand-title">Controle Financeiro</span><span class="brand-subtitle">Edição de lançamento</span></div>
+            <span id="usuarioLogadoNome" class="user-chip"></span>
+            <nav class="app-nav" aria-label="Navegação principal">
+                <a href="dashboard.html">Início</a><a href="categorias.html">Categorias</a><a href="cartoes.html">Cartões</a><a href="lancamentos.html" class="active">Lançamentos</a><a href="relatorios.html">Relatórios</a><a href="admin-logs.html" class="nav-admin">Admin</a>
+                <button type="button" onclick="alternarTemaVisual()" class="btn-theme" title="Alternar tema"><img src="imagens/modo_escuro.jpg" alt="Tema"></button>
+                <a href="index.html" onclick="event.preventDefault(); deslogarSistema()">Sair</a>
+            </nav>
+        </div>
+    </header>
+
+    <main class="container">
+        <div class="page-heading"><div><h2>Editar lançamento</h2><p>Alterações ficam registradas na auditoria e exigem uma justificativa.</p></div><a href="lancamentos.html" class="text-link">← Voltar</a></div>
+
+        <section class="form-card">
+            <form id="formEditarLancamento" onsubmit="salvarEdicaoLancamento(event)" novalidate>
+                <input type="hidden" id="editId">
+                <div class="form-grid-2">
+                    <div class="form-group"><label for="editDescricao">Descrição</label><input type="text" id="editDescricao" maxlength="120" required></div>
+                    <div class="form-group"><label for="editTipo">Tipo</label><select id="editTipo" onchange="tratarMudancaTipoEdicao()"><option value="saida">Saída</option><option value="entrada">Entrada</option></select></div>
+                </div>
+                <div class="form-grid-2">
+                    <div class="form-group"><label for="editCategoria">Categoria</label><select id="editCategoria" required></select></div>
+                    <div class="form-group"><label for="editFormaPagamento">Forma de pagamento</label><select id="editFormaPagamento"><option value="DINHEIRO">Dinheiro / Pix / Débito</option><option value="BOLETO">Boleto / Conta</option><option value="FIXO">Conta fixa</option><option value="CARTAO">Cartão de crédito</option></select></div>
+                </div>
+                <div id="blocoServicoEssencial" class="form-group"><label for="editServicoEssencial">Despesa essencial?</label><select id="editServicoEssencial"><option value="nao">Não</option><option value="sim">Sim</option></select></div>
+                <div class="form-grid-2">
+                    <div class="form-group"><label for="editValor">Valor (R$)</label><input type="number" step="0.01" min="0.01" id="editValor" required></div>
+                    <div class="form-group"><label for="editVencimento">Data de vencimento / recebimento</label><input type="date" id="editVencimento" required></div>
+                </div>
+                <div class="form-group"><label for="editObservacao">Observação</label><input type="text" id="editObservacao" maxlength="250"></div>
+                <div class="btn-row" style="margin-top:18px;"><button type="submit">Salvar alterações</button><button type="button" class="btn-secondary" onclick="history.back()">Cancelar</button></div>
+            </form>
+        </section>
+    </main>
+
+    <script src="script.js"></script>
+    <script>
+        verificarAutenticacao();
+        const lancamentoId = Number(new URLSearchParams(window.location.search).get('id'));
+        const dadosEdicao = obterDados();
+        const lancamento = dadosEdicao.lancamentos.find(l => Number(l.id) === lancamentoId);
+
+        function carregarFormulario() {
+            if (!lancamento) {
+                mostrarAlertaModal('Lançamento não encontrado.').then(() => history.back());
+                return;
+            }
+            const selectCat = document.getElementById('editCategoria');
+            selectCat.innerHTML = '';
+            dadosEdicao.categorias.forEach(c => {
+                const option = document.createElement('option'); option.value = c.id; option.textContent = c.nome; selectCat.appendChild(option);
+            });
+            document.getElementById('editId').value = lancamento.id;
+            document.getElementById('editDescricao').value = lancamento.descricao || '';
+            document.getElementById('editTipo').value = lancamento.tipo || 'saida';
+            document.getElementById('editCategoria').value = lancamento.categoriaId;
+            document.getElementById('editFormaPagamento').value = lancamento.formaPagamento || 'BOLETO';
+            document.getElementById('editValor').value = lancamento.valor;
+            document.getElementById('editObservacao').value = lancamento.observacao || '';
+            document.getElementById('editVencimento').value = lancamento.vencimento || dataLocalYYYYMMDD();
+            document.getElementById('editServicoEssencial').value = lancamento.servicoEssencial || 'nao';
+            tratarMudancaTipoEdicao();
+        }
+
+        function tratarMudancaTipoEdicao() {
+            const entrada = document.getElementById('editTipo').value === 'entrada';
+            document.getElementById('blocoServicoEssencial').style.display = entrada ? 'none' : 'block';
+        }
+
+        async function salvarEdicaoLancamento(event) {
+            event.preventDefault();
+            if (!lancamento) return;
+            const tipo = document.getElementById('editTipo').value;
+            const valor = parseFloat(document.getElementById('editValor').value);
+            if (!Number.isFinite(valor) || valor <= 0) { await mostrarAlertaModal('Informe um valor válido.'); return; }
+            const ok = await atualizarLancamentoNoBanco(lancamentoId, {
+                descricao: document.getElementById('editDescricao').value.trim(),
+                tipo,
+                categoriaId: Number(document.getElementById('editCategoria').value),
+                formaPagamento: document.getElementById('editFormaPagamento').value,
+                valor,
+                observacao: document.getElementById('editObservacao').value.trim(),
+                vencimento: document.getElementById('editVencimento').value,
+                servicoEssencial: tipo === 'saida' ? document.getElementById('editServicoEssencial').value : 'nao',
+                cartaoId: lancamento.cartaoId || null,
+                dataCompra: lancamento.dataCompra || null
+            });
+            if (ok) window.location.href = 'dashboard.html';
+        }
+
+        carregarFormulario();
+    </script>
+</body>
+</html>
