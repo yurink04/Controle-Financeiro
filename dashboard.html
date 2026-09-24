@@ -38,12 +38,16 @@
                 </div>
             </div>
             <a href="lancamentos.html">Lançamentos</a>
+            <a href="central-pagamentos.html">Central de Pagamentos</a>
             <a href="relatorios.html">Relatórios</a>
         </nav>
 
-        <!-- Direito: Tema, Configurações, Notificações (Sino) e Sair -->
+        <!-- Direito: Privacidade, Tema, Configurações, Notificações (Sino) e Sair -->
         <div class="header-right">
             <div class="header-tools">
+                <button type="button" onclick="alternarPrivacidade()" title="Ocultar/Mostrar Valores" id="btnPrivacidade">
+                    <img src="imagens/esconder.png" alt="Privacidade" id="imgPrivacidade">
+                </button>
                 <button type="button" onclick="alternarTemaVisual()" title="Alternar tema">
                     <img src="imagens/modo_escuro.jpg" alt="Tema">
                 </button>
@@ -69,8 +73,10 @@
                 <h2>Visão geral</h2>
                 <p>Acompanhe entradas, despesas, patrimônio e compromissos ativos do mês.</p>
             </div>
-            <div class="toolbar-actions">
-                <a class="text-link" href="lancamentos.html">+ Novo lançamento</a>
+            <div class="toolbar-actions" style="display: flex; gap: 8px; flex-wrap: wrap;">
+                <button type="button" class="btn-sucesso" onclick="redirecionarNovoLancamento('entrada')" style="padding: 10px 16px; font-weight: bold; border-radius: 8px; cursor: pointer; border: none; color: #fff;">+ Nova Entrada</button>
+                <button type="button" class="btn-perigo" onclick="redirecionarNovoLancamento('saida')" style="padding: 10px 16px; font-weight: bold; border-radius: 8px; cursor: pointer; border: none; color: #fff;">- Nova Saída</button>
+                <button type="button" class="btn-warning" onclick="redirecionarNovoLancamento('cartao')" style="padding: 10px 16px; font-weight: bold; border-radius: 8px; cursor: pointer; border: none; background-color: #d97706; color: white;">💳 Nova Saída no Cartão</button>
             </div>
         </div>
 
@@ -83,7 +89,6 @@
                 <div class="filter-group">
                     <label for="filtroEscopoDashboardGeral">Escopo</label>
                     <select id="filtroEscopoDashboardGeral" onchange="carregarDashboard()" style="width:auto; min-width:140px;">
-                        <option value="todos">Todos</option>
                         <option value="casal">Casal / Casa</option>
                         <option value="individual">Individual</option>
                     </select>
@@ -95,7 +100,7 @@
             </div>
         </section>
 
-        <!-- Grade de KPIs Principais (Incluindo Patrimônio de Bens) -->
+        <!-- Grade de KPIs Principais -->
         <section class="stat-grid" id="gridKpiDashboard" style="grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));">
             <div class="stat-box kpi-card">
                 <span class="kpi-accent success"></span>
@@ -125,11 +130,17 @@
                 <div id="totalFaturasMes" class="stat-value warning">R$ 0,00</div>
                 <div class="stat-detail">Lançadas no período</div>
             </div>
+            <div class="stat-box kpi-card" id="kpiCardParcelas" style="display: none;">
+                <span class="kpi-accent warning" style="background: var(--warning);"></span>
+                <div class="stat-label">Compras Parceladas</div>
+                <div id="totalParcelasMes" class="stat-value warning">R$ 0,00</div>
+                <div class="stat-detail">Parcelamentos ativos</div>
+            </div>
             <div class="stat-box kpi-card" id="kpiCardFinanciamentos" style="display: none;">
                 <span class="kpi-accent"></span>
-                <div class="stat-label">Financiamentos / Parcelas</div>
+                <div class="stat-label">Financiamentos</div>
                 <div id="totalFinanciamentosMes" class="stat-value">R$ 0,00</div>
-                <div class="stat-detail">Compromissos ativos</div>
+                <div class="stat-detail">Contratos e bens</div>
             </div>
         </section>
 
@@ -216,113 +227,6 @@
             const input = document.getElementById('filtroMesAno');
             if (input) input.value = dataLocalYYYYMMDD().slice(0, 7);
             carregarDashboard();
-        }
-
-        function carregarDashboard() {
-            const mesAno = document.getElementById('filtroMesAno').value;
-            const escopo = document.getElementById('filtroEscopoDashboardGeral').value;
-            const tipoFiltroLanc = document.getElementById('filtroTipoUltimosLancamentos').value;
-
-            const dados = obterDados();
-            const usuarioId = localStorage.getItem('usuarioLogado');
-            const usuario = dados.usuarios.find(u => Number(u.id) === Number(usuarioId)) || {};
-            const lancamentos = dados.lancamentos || [];
-            const categorias = dados.categorias || [];
-            const cartoes = (dados.cartoes || []).filter(c => c.ativo !== false);
-
-            // Cálculo do Patrimônio Total de Bens (próprios + compartilhados se houver parceiro)
-            const bens = dados.bens || [];
-            const bensValidos = bens.filter(b => {
-                if (b.ativo === false) return false;
-                const eSeu = Number(b.usuarioId) === Number(usuarioId) || !b.usuarioId;
-                const eCompartilhado = b.compartilhado && usuario.parceiroId;
-                return eSeu || eCompartilhado;
-            });
-            const valorTotalPatrimonio = bensValidos.reduce((acc, b) => acc + Number(b.valor || 0), 0);
-            document.getElementById('totalPatrimonioBens').textContent = `R$ ${valorTotalPatrimonio.toLocaleString('pt-BR', {minimumFractionDigits: 2})}`;
-
-            // Filtro por mês/ano e por escopo (o campo "escopo" era lido do select
-            // mas nunca chegava a ser usado no filtro — o controle não tinha efeito).
-            const filtrados = lancamentos.filter(l => {
-                const dataOk = (l.vencimento || l.data || '').startsWith(mesAno);
-                const escopoOk = escopo === 'todos' || (l.tipo === 'entrada') || (l.escopo || 'casal') === escopo;
-                return dataOk && escopoOk;
-            });
-
-            let totalEntradas = 0;
-            let totalSaidas = 0;
-            let totalFaturas = 0;
-            let totalFinanciamentos = 0;
-
-            filtrados.forEach(l => {
-                const val = Number(l.valor || 0);
-                const descLower = (l.descricao || '').toLowerCase();
-
-                if (l.tipo === 'entrada') {
-                    totalEntradas += val;
-                } else {
-                    totalSaidas += val;
-                    if (descLower.includes('fatura') || descLower.includes('cartão')) {
-                        totalFaturas += val;
-                    } else if (l.financiamentoId || descLower.includes('financiamento') || descLower.includes('parcela')) {
-                        totalFinanciamentos += val;
-                    }
-                }
-            });
-
-            const saldoGeral = totalEntradas - totalSaidas;
-
-            document.getElementById('totalEntradas').textContent = `R$ ${totalEntradas.toLocaleString('pt-BR', {minimumFractionDigits: 2})}`;
-            document.getElementById('totalSaidas').textContent = `R$ ${totalSaidas.toLocaleString('pt-BR', {minimumFractionDigits: 2})}`;
-            
-            const elSaldo = document.getElementById('saldoGeral');
-            elSaldo.textContent = `R$ ${saldoGeral.toLocaleString('pt-BR', {minimumFractionDigits: 2})}`;
-            elSaldo.className = `stat-value ${saldoGeral >= 0 ? 'positivo' : 'negativo'}`;
-
-            const kpiFaturas = document.getElementById('kpiCardFaturas');
-            if (totalFaturas > 0) {
-                document.getElementById('totalFaturasMes').textContent = `R$ ${totalFaturas.toLocaleString('pt-BR', {minimumFractionDigits: 2})}`;
-                kpiFaturas.style.display = 'block';
-            } else {
-                kpiFaturas.style.display = 'none';
-            }
-
-            const kpiFinanciamentos = document.getElementById('kpiCardFinanciamentos');
-            if (totalFinanciamentos > 0) {
-                document.getElementById('totalFinanciamentosMes').textContent = `R$ ${totalFinanciamentos.toLocaleString('pt-BR', {minimumFractionDigits: 2})}`;
-                kpiFinanciamentos.style.display = 'block';
-            } else {
-                kpiFinanciamentos.style.display = 'none';
-            }
-
-            const cardCartoes = document.getElementById('cardGraficoCartoes');
-            if (cardCartoes) {
-                cardCartoes.style.display = cartoes.length === 0 ? 'none' : 'flex';
-            }
-
-            const tbodyLanc = document.getElementById('tabelaUltimosLancamentos');
-            tbodyLanc.innerHTML = '';
-
-            const lancamentosTabela = filtrados.filter(l => tipoFiltroLanc === 'todos' || l.tipo === tipoFiltroLanc);
-
-            if (lancamentosTabela.length === 0) {
-                tbodyLanc.innerHTML = `<tr><td colspan="7" style="text-align: center;">Nenhum lançamento encontrado.</td></tr>`;
-            } else {
-                lancamentosTabela.forEach(l => {
-                    const catObj = categorias.find(c => Number(c.id) === Number(l.categoriaId)) || { nome: 'Geral' };
-                    const tr = document.createElement('tr');
-                    tr.innerHTML = `
-                        <td>${l.usuario || 'Sistema'}</td>
-                        <td><strong>${l.descricao}</strong></td>
-                        <td>${catObj.nome}</td>
-                        <td>${l.dataPagamento ? l.dataPagamento.split('-').reverse().join('/') : '-'}</td>
-                        <td>${l.vencimento ? l.vencimento.split('-').reverse().join('/') : '-'}</td>
-                        <td class="${l.tipo === 'entrada' ? 'positivo' : 'negativo'}">R$ ${Number(l.valor || 0).toLocaleString('pt-BR', {minimumFractionDigits: 2})}</td>
-                        <td>-</td>
-                    `;
-                    tbodyLanc.appendChild(tr);
-                });
-            }
         }
     </script>
 </body>

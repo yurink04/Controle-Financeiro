@@ -14,7 +14,7 @@
 <body class="login-page">
 
     <!-- =========================================================
-         BOTÃO DE TEMA
+         BOTÃO DE TEMA (ATUALIZADO COM IMAGEM)
          ========================================================= -->
 
     <button
@@ -23,9 +23,9 @@
         id="loginThemeToggle"
         onclick="alternarTemaVisual()"
         aria-label="Alternar modo escuro"
-        title="Ativar modo escuro"
+        title="Alternar tema"
     >
-        <span class="theme-icon" id="themeIcon">☾</span>
+        <img src="imagens/modo_escuro.jpg" alt="Tema" id="themeImage" style="width: 22px; height: 22px; object-fit: contain;">
     </button>
 
 
@@ -169,7 +169,7 @@
                     </h2>
 
                     <p>
-                        Selecione seu perfil para continuar.
+                        Digite o seu nome de usuário para continuar.
                     </p>
 
                 </div>
@@ -184,34 +184,28 @@
                     onsubmit="realizarLogin(event)"
                 >
 
-                    <!-- Campo usuário -->
+                    <!-- Campo usuário (Input de texto) -->
 
                     <div class="login-field">
 
-                        <label for="selectUsuario">
+                        <label for="inputUsuario">
                             Usuário
                         </label>
 
-                        <div class="login-select-wrapper">
+                        <div class="login-select-wrapper" style="padding: 0 12px;">
 
                             <span class="login-field-icon">
                                 👤
                             </span>
 
-                            <select
-                                id="selectUsuario"
+                            <input
+                                type="text"
+                                id="inputUsuario"
+                                placeholder="Digite seu nome de usuário"
+                                autocomplete="off"
                                 required
+                                style="border: none; background: transparent; width: 100%; outline: none; font-size: 0.96rem; color: var(--text-main);"
                             >
-
-                                <option value="">
-                                    Selecione seu usuário
-                                </option>
-
-                            </select>
-
-                            <span class="login-select-arrow">
-                                ⌄
-                            </span>
 
                         </div>
 
@@ -245,30 +239,29 @@
                 </form>
 
 
-                <!-- =================================================
-                     AVISO DE SEGURANÇA
-                     ================================================= -->
+               <!-- =================================================
+     BOTÃO / CARD DE PRIMEIRO ACESSO
+     ================================================= -->
 
-                <div class="login-security">
+<div class="login-security" style="cursor: pointer;" onclick="abrirModalPrimeiroAcesso()" title="Clique para cadastrar sua conta">
 
-                    <div class="login-security-icon">
-                        🔒
-                    </div>
+    <div class="login-security-icon">
+        👤+
+    </div>
 
-                    <div>
+    <div>
 
-                        <strong>
-                            Acesso protegido
-                        </strong>
+        <strong>
+            Primeiro acesso
+        </strong>
 
-                        <p>
-                            Um PIN de segurança será solicitado
-                            antes de entrar no sistema.
-                        </p>
+        <p>
+            Clique aqui para cadastrar seu usuário, nome e senha.
+        </p>
 
-                    </div>
+    </div>
 
-                </div>
+</div>
 
 
                 <!-- =================================================
@@ -311,373 +304,98 @@
 
     <script>
 
-        /* =========================================================
-           CARREGAR USUÁRIOS
-           ========================================================= */
-
         document.addEventListener(
             "DOMContentLoaded",
             async () => {
-
                 try {
-
                     await inicializarBanco();
-
-                    const dados = obterDados();
-
-                    const select =
-                        document.getElementById(
-                            "selectUsuario"
-                        );
-
-                    if (!select) {
-                        return;
-                    }
-
-                    select.innerHTML = "";
-
-
-                    /* -------------------------------------------------
-                       Existem usuários cadastrados
-                       ------------------------------------------------- */
-
-                    if (
-                        dados &&
-                        Array.isArray(dados.usuarios) &&
-                        dados.usuarios.length > 0
-                    ) {
-
-                        const primeiraOpcao =
-                            document.createElement("option");
-
-                        primeiraOpcao.value = "";
-
-                        primeiraOpcao.textContent =
-                            "Selecione seu usuário";
-
-                        primeiraOpcao.disabled = true;
-
-                        primeiraOpcao.selected = true;
-
-                        select.appendChild(
-                            primeiraOpcao
-                        );
-
-
-                        dados.usuarios.forEach(
-                            usuario => {
-
-                                const option =
-                                    document.createElement(
-                                        "option"
-                                    );
-
-                                option.value =
-                                    usuario.id;
-
-                                option.textContent =
-                                    usuario.nome;
-
-                                select.appendChild(
-                                    option
-                                );
-
-                            }
-                        );
-
-                    }
-
-
-                    /* -------------------------------------------------
-                       Nenhum usuário cadastrado
-                       ------------------------------------------------- */
-
-                    else {
-
-                        const option =
-                            document.createElement(
-                                "option"
-                            );
-
-                        option.value = "";
-
-                        option.textContent =
-                            "Nenhum usuário cadastrado";
-
-                        option.disabled = true;
-
-                        option.selected = true;
-
-                        select.appendChild(
-                            option
-                        );
-
-                    }
-
+                } catch (erro) {
+                    console.error("Erro ao inicializar banco:", erro);
                 }
-
-                catch (erro) {
-
-                    console.error(
-                        "Erro ao carregar usuários:",
-                        erro
-                    );
-
-
-                    const select =
-                        document.getElementById(
-                            "selectUsuario"
-                        );
-
-                    if (!select) {
-                        return;
-                    }
-
-
-                    select.innerHTML = "";
-
-
-                    const option =
-                        document.createElement(
-                            "option"
-                        );
-
-                    option.value = "";
-
-                    option.textContent =
-                        "Erro ao carregar usuários";
-
-                    option.disabled = true;
-
-                    option.selected = true;
-
-                    select.appendChild(
-                        option
-                    );
-
-                }
-
             }
         );
 
-
         /* =========================================================
-           LOGIN
+           LOGIN POR DIGITAÇÃO E VERIFICAÇÃO DE UNICIDADE
            ========================================================= */
 
         async function realizarLogin(event) {
-
             event.preventDefault();
 
+            const inputUsuario = document.getElementById("inputUsuario");
+            const botao = document.getElementById("loginSubmit");
 
-            const select =
-                document.getElementById(
-                    "selectUsuario"
-                );
-
-            const botao =
-                document.getElementById(
-                    "loginSubmit"
-                );
-
-
-            if (
-                !select ||
-                !select.value
-            ) {
-
+            if (!inputUsuario || !inputUsuario.value.trim()) {
                 return;
-
             }
 
-
-            /* -----------------------------------------------------
-               Ativa animação do botão
-               ----------------------------------------------------- */
+            const usuarioDigitado = inputUsuario.value.trim();
+            const dados = obterDados();
 
             if (botao) {
-
-                botao.classList.add(
-                    "loading"
-                );
-
+                botao.classList.add("loading");
             }
-
 
             try {
-
-                /*
-                 * IMPORTANTE:
-                 *
-                 * selecionarUsuario() já faz:
-                 *
-                 * - localização do usuário;
-                 * - validação do PIN;
-                 * - registro do login;
-                 * - salvamento;
-                 * - redirecionamento para dashboard.
-                 *
-                 * Portanto NÃO chamamos registrarLog()
-                 * aqui para evitar registro duplicado.
-                 */
-
-                const sucesso = await selecionarUsuario(
-                    select.value
+                const usuariosEncontrados = (dados.usuarios || []).filter(
+                    u => normalizarTexto(u.usuario || u.nome) === normalizarTexto(usuarioDigitado)
                 );
 
-                /*
-                 * selecionarUsuario() retorna false (sem lancar erro) quando
-                 * o PIN esta incorreto ou o usuario cancela - sem isto, o
-                 * botao ficava preso no estado "carregando" nesses casos.
-                 */
+                if (usuariosEncontrados.length === 0) {
+                    await mostrarAlertaModal("Usuário não encontrado no sistema.");
+                    if (botao) botao.classList.remove("loading");
+                    return;
+                }
+
+                if (usuariosEncontrados.length > 1) {
+                    await mostrarAlertaModal("Erro de segurança: Existe mais de um registro com este usuário exato. Contate o administrador.");
+                    if (botao) botao.classList.remove("loading");
+                    return;
+                }
+
+                const usuarioUnico = usuariosEncontrados[0];
+                const sucesso = await selecionarUsuario(usuarioUnico.id);
+
                 if (!sucesso && botao) {
-                    botao.classList.remove(
-                        "loading"
-                    );
+                    botao.classList.remove("loading");
                 }
 
-            }
-
-            catch (erro) {
-
-                console.error(
-                    "Erro ao realizar login:",
-                    erro
-                );
-
-
-                /*
-                 * Caso ocorra algum erro antes
-                 * do redirecionamento, devolvemos
-                 * o botão ao estado normal.
-                 */
-
+            } catch (erro) {
+                console.error("Erro ao realizar login:", erro);
                 if (botao) {
-
-                    botao.classList.remove(
-                        "loading"
-                    );
-
+                    botao.classList.remove("loading");
                 }
-
             }
-
         }
 
 
         /* =========================================================
-           ÍCONE DO TEMA
+           ATUALIZAÇÃO DA IMAGEM DO TEMA
            ========================================================= */
 
         function atualizarIconeTemaLogin() {
+            const img = document.getElementById("themeImage");
+            if (!img) return;
 
-            const icon =
-                document.getElementById(
-                    "themeIcon"
-                );
-
-            const botao =
-                document.getElementById(
-                    "loginThemeToggle"
-                );
-
-
-            if (!icon) {
-                return;
-            }
-
-
-            const escuro =
-                document.body.classList.contains(
-                    "dark-mode"
-                );
-
-
-            /*
-             * Modo escuro ativo:
-             * mostra sol.
-             *
-             * Modo claro ativo:
-             * mostra lua.
-             */
-
-            icon.textContent =
-                escuro
-                    ? "☀"
-                    : "☾";
-
-
-            if (botao) {
-
-                botao.setAttribute(
-                    "title",
-                    escuro
-                        ? "Ativar modo claro"
-                        : "Ativar modo escuro"
-                );
-
-                botao.setAttribute(
-                    "aria-label",
-                    escuro
-                        ? "Ativar modo claro"
-                        : "Ativar modo escuro"
-                );
-
-            }
-
+            // Mantém a mesma imagem padronizada do cabeçalho das outras telas
+            img.src = "imagens/modo_escuro.jpg";
         }
 
+        document.addEventListener("DOMContentLoaded", () => {
+            atualizarIconeTemaLogin();
+        });
 
-        /* =========================================================
-           INICIALIZAÇÃO DO ÍCONE
-           ========================================================= */
+        const alternarTemaOriginal = window.alternarTemaVisual;
 
-        document.addEventListener(
-            "DOMContentLoaded",
-            () => {
-
-                atualizarIconeTemaLogin();
-
+        window.alternarTemaVisual = function () {
+            if (typeof alternarTemaOriginal === "function") {
+                alternarTemaOriginal();
             }
-        );
 
-
-        /* =========================================================
-           ATUALIZAÇÃO DO ÍCONE AO TROCAR O TEMA
-           ========================================================= */
-
-        const alternarTemaOriginal =
-            window.alternarTemaVisual;
-
-
-        window.alternarTemaVisual =
-            function () {
-
-                if (
-                    typeof alternarTemaOriginal ===
-                    "function"
-                ) {
-
-                    alternarTemaOriginal();
-
-                }
-
-
-                /*
-                 * Pequeno atraso para garantir
-                 * que a classe dark-mode já foi
-                 * aplicada ao body.
-                 */
-
-                requestAnimationFrame(
-                    () => {
-
-                        atualizarIconeTemaLogin();
-
-                    }
-                );
-
-            };
+            requestAnimationFrame(() => {
+                atualizarIconeTemaLogin();
+            });
+        };
 
     </script>
 

@@ -9,13 +9,24 @@
 <body>
     <header class="app-header">
         <div class="header-inner">
-            <div class="brand"><span class="brand-title">Controle Financeiro</span><span class="brand-subtitle">Gestão de contratos e parcelamentos</span></div>
-            <span id="usuarioLogadoNome" class="user-chip"></span>
-            <nav class="app-nav" aria-label="Navegação principal">
+            <div class="header-left">
+                <div class="brand">
+                    <span class="brand-title">Controle Financeiro</span>
+                    <span class="brand-subtitle">Gestão Inteligente</span>
+                </div>
+                <div class="header-perfil-sync">
+                    <span id="usuarioLogadoNome" class="user-chip"></span>
+                    <span id="syncStatusIcon" title="Sincronizado" style="cursor: pointer; display: flex; align-items: center;">
+                        <img src="imagens/nuvem.png" alt="Sync" style="width: 22px; height: 22px;">
+                    </span>
+                </div>
+            </div>
+
+            <nav class="app-nav-center" aria-label="Navegação principal">
                 <a href="dashboard.html">Início</a>
-                <div class="nav-dropdown">
+                <div class="nav-dropdown" style="position: relative;">
                     <a href="#" onclick="event.preventDefault();" style="cursor: pointer;">Cadastros ▾</a>
-                    <div class="nav-dropdown-content">
+                    <div class="nav-dropdown-content" style="position: absolute; top: 100%; left: 0;">
                         <a href="cartoes.html">Cartões</a>
                         <a href="categorias.html">Categorias</a>
                         <a href="bens.html">Bens</a>
@@ -23,11 +34,29 @@
                     </div>
                 </div>
                 <a href="lancamentos.html">Lançamentos</a>
+                <a href="central-pagamentos.html">Central de Pagamentos</a>
                 <a href="relatorios.html">Relatórios</a>
-                <button type="button" onclick="alternarTemaVisual()" class="btn-theme" title="Alternar tema"><img src="imagens/modo_escuro.jpg" alt="Tema"></button>
-                <a href="configuracoes.html" class="btn-theme" title="Configurações"><img src="imagens/config.png" alt="Configurações"></a>
-                <a href="index.html" onclick="event.preventDefault(); deslogarSistema()" class="btn-theme" title="Sair"><img src="imagens/exit.png" alt="Sair"></a>
             </nav>
+
+            <div class="header-right">
+                <div class="header-tools">
+                    <button type="button" onclick="alternarTemaVisual()" title="Alternar tema">
+                        <img src="imagens/modo_escuro.jpg" alt="Tema">
+                    </button>
+                    <a href="configuracoes.html" title="Configurações">
+                        <img src="imagens/config.png" alt="Configurações">
+                    </a>
+                    <button type="button" title="Notificações" id="btnNotificacoesHeader">
+                        <img src="imagens/notificacao.png" alt="Notificações" onerror="this.style.display='none'">
+                    </button>
+                </div>
+                
+                <div class="header-tools" style="border-left: 1px solid var(--border-color, #e5e7eb); padding-left: 18px;">
+                    <a href="index.html" onclick="event.preventDefault(); deslogarSistema()" class="btn-sair-extremo" title="Sair do sistema">
+                        <img src="imagens/exit.png" alt="Sair">
+                    </a>
+                </div>
+            </div>
         </div>
     </header>
 
@@ -35,7 +64,7 @@
         <div class="page-heading">
             <div>
                 <h2>Financiamentos e Contratos</h2>
-                <p>Gerencie contratos de longo prazo, vincule bens patrimoniais e acompanhe parcelas.</p>
+                <p>Gerencie contratos de longo prazo, vincule bens patrimoniais e acompanhe parcelas[cite: 42].</p>
             </div>
             <div class="toolbar-actions">
                 <button type="button" onclick="abrirModalNovoFinanciamento()">+ Novo Contrato</button>
@@ -44,7 +73,7 @@
 
         <section class="form-card">
             <div class="section-title">
-                <div><h2>Contratos Ativos</h2><p>Listagem de todos os financiamentos e parcelamentos de longo prazo cadastrados.</p></div>
+                <div><h2>Contratos Ativos</h2><p>Listagem de todos os financiamentos e parcelamentos de longo prazo cadastrados[cite: 42].</p></div>
             </div>
             <div class="tabela-container">
                 <table class="tabela">
@@ -64,11 +93,10 @@
         </section>
     </main>
 
-    <!-- Modal Novo Contrato / Financiamento -->
     <div id="modalNovoFinanciamento" class="modal-overlay" style="display: none;">
         <div class="modal-box" style="max-width: 600px; width: 95%;">
             <h3>Novo Contrato</h3>
-            <p>Informe os dados do financiamento ou parcelamento. É obrigatório vincular a um bem.</p>
+            <p>Informe os dados do financiamento ou parcelamento. É obrigatório vincular a um bem[cite: 42].</p>
             
             <form id="formFinanciamentoModal" onsubmit="salvarFinanciamentoModal(event)">
                 <div class="form-grid-2">
@@ -124,7 +152,7 @@
 
         async function abrirModalNovoFinanciamento() {
             const dados = obterDados();
-            const bensAtivos = (dados.bens || []).filter(b => b.ativo !== false);
+            const bensAtivos = filtrarDadosPorPermissao(dados.bens || [], dados, 'casal').filter(b => b.ativo !== false);
             
             if (bensAtivos.length === 0) {
                 const criar = await mostrarConfirmacaoModal("Você precisa cadastrar pelo menos um bem patrimonial antes de criar um financiamento. Deseja ir para a tela de Bens agora?");
@@ -174,66 +202,14 @@
                 return;
             }
 
-            mostrarLoading("Salvando contrato...");
-            const dados = obterDados();
-            const usuarioId = Number(localStorage.getItem('usuarioLogado'));
+            const sucesso = await adicionarFinanciamentoComRecorrencia(
+                nome, 'sim', valorParcela, qtdMeses, primeiroVencimento, categoriaId, bemId
+            );
 
-            const financiamentoId = dados.financiamentos.reduce((m, f) => Math.max(m, Number(f.id) || 0), 0) + 1;
-            const parcelamentoId = gerarId('finparc');
-
-            dados.financiamentos.push({
-                id: financiamentoId,
-                usuarioId,
-                nome,
-                bemId,
-                totalMeses: qtdMeses,
-                mesesPagos: 0,
-                valorParcela: Number(valorParcela.toFixed(2)),
-                categoriaId,
-                primeiroVencimento,
-                ativo: true,
-                createdAt: new Date().toISOString()
-            });
-
-            let proximaIdLanc = dados.lancamentos.reduce((m, l) => Math.max(m, Number(l.id) || 0), 0) + 1;
-            const dataBase = criarDataLocal(primeiroVencimento);
-            const parcelas = dividirValorExato(valorParcela * qtdMeses, qtdMeses);
-
-            for (let i = 1; i <= qtdMeses; i++) {
-                const dataVenc = adicionarMesesClamped(dataBase, i - 1);
-                dados.lancamentos.push({
-                    id: proximaIdLanc++,
-                    usuarioId,
-                    descricao: `Financiamento: ${nome} (${i}/${qtdMeses})`,
-                    valor: parcelas[i - 1],
-                    tipo: 'saida',
-                    categoriaId,
-                    formaPagamento: 'BOLETO',
-                    cartaoId: null,
-                    bemId,
-                    vencimento: dataParaString(dataVenc),
-                    recorrencia: 'mensal',
-                    parcelaAtual: i,
-                    totalParcelas: qtdMeses,
-                    parcelamentoId,
-                    financiamentoId,
-                    observacao: 'Gerado automaticamente pelo contrato',
-                    horaExtra: 0,
-                    servicoEssencial: 'nao',
-                    pago: false,
-                    status: 'pendente',
-                    createdAt: new Date().toISOString(),
-                    updatedAt: new Date().toISOString()
-                });
+            if (sucesso) {
+                fecharModalNovoFinanciamento();
+                carregarTabelaFinanciamentosGeral();
             }
-
-            registrarLogInterno(dados, "CADASTRO FINANCIAMENTO", `Contrato criado: ${nome} (${qtdMeses} meses)`, { entidade: 'financiamento', entidadeId: financiamentoId });
-            await salvarDados(dados);
-
-            esconderLoading();
-            fecharModalNovoFinanciamento();
-            carregarTabelaFinanciamentosGeral();
-            await mostrarAlertaModal("Contrato de financiamento cadastrado com sucesso!");
         }
 
         function carregarTabelaFinanciamentosGeral() {
@@ -242,7 +218,8 @@
             if (!tbody) return;
             tbody.innerHTML = '';
 
-            const financiamentos = (dados.financiamentos || []).filter(f => f.ativo !== false);
+            // APLICAÇÃO DO FILTRO DE PERMISSÃO / COMPARTILHAMENTO
+            const financiamentos = filtrarDadosPorPermissao(dados.financiamentos || [], dados, 'casal').filter(f => f.ativo !== false);
 
             if (financiamentos.length === 0) {
                 tbody.innerHTML = `<tr><td colspan="6" style="text-align: center;">Nenhum contrato cadastrado.</td></tr>`;
@@ -252,12 +229,10 @@
             financiamentos.forEach(f => {
                 const lancamentosFin = dados.lancamentos.filter(l => Number(l.financiamentoId) === Number(f.id));
                 const pagos = lancamentosFin.filter(l => l.pago).length;
-                // Soma o valor real de cada parcela em aberto (não o valor nominal x quantidade),
-                // pois uma parcela pode ter sido editada individualmente em detalhes-financiamento.html.
                 const saldoDevedor = lancamentosFin.filter(l => !l.pago).reduce((acc, l) => acc + Number(l.valor || 0), 0);
                 const percentual = Math.min(100, Math.round((pagos / Number(f.totalMeses)) * 100)) || 0;
 
-                const bemObj = dados.bens.find(b => Number(b.id) === Number(f.bemId));
+                const bemObj = (dados.bens || []).find(b => Number(b.id) === Number(f.bemId));
                 const nomeBem = bemObj ? bemObj.nome : 'Não vinculado';
 
                 const tr = document.createElement('tr');

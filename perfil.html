@@ -24,7 +24,7 @@
             </div>
         </div>
 
-        <!-- Centro: Opções Principais -->
+        <!-- Centro: Navegação Principal -->
         <nav class="app-nav-center" aria-label="Navegação principal">
             <a href="dashboard.html">Início</a>
             <div class="nav-dropdown" style="position: relative;">
@@ -37,6 +37,7 @@
                 </div>
             </div>
             <a href="lancamentos.html">Lançamentos</a>
+            <a href="central-pagamentos.html">Central de Pagamentos</a>
             <a href="relatorios.html">Relatórios</a>
         </nav>
 
@@ -113,19 +114,30 @@
             <div class="section-title">
                 <div>
                     <h2>Atualizar Dados Pessoais</h2>
-                    <p>Modifique sua renda fixa, PIN ou solicite atrelamento de parceiro com aprovação segura.</p>
+                    <p>Modifique seu usuário de acesso, nome próprio, renda fixa, PIN ou solicite atrelamento de parceiro.</p>
                 </div>
             </div>
 
             <form id="formMeuPerfil" onsubmit="salvarMeuPerfil(event)">
                 <div class="form-grid-2" style="margin-bottom: 16px;">
                     <div class="form-group">
-                        <label for="meuNome">Seu Nome</label>
+                        <label for="meuUsuarioLogin">Usuário de Acesso (Único)</label>
+                        <input type="text" id="meuUsuarioLogin" required style="width:100%;">
+                    </div>
+                    <div class="form-group">
+                        <label for="meuNome">Nome Próprio (Exibição)</label>
                         <input type="text" id="meuNome" required style="width:100%;">
                     </div>
+                </div>
+
+                <div class="form-grid-2" style="margin-bottom: 16px;">
                     <div class="form-group">
                         <label for="minhaRendaFixa">Renda Fixa Base (R$)</label>
                         <input type="number" step="0.01" min="0" id="minhaRendaFixa" placeholder="0.00" required style="width:100%;">
+                    </div>
+                    <div class="form-group">
+                        <label for="meuPinAtual">Alterar PIN Numérico (Opcional)</label>
+                        <input type="password" id="meuPinAtual" maxlength="6" inputmode="numeric" placeholder="Deixe em branco para manter" style="width:100%;">
                     </div>
                 </div>
 
@@ -136,10 +148,6 @@
                             <option value="">Nenhum (Apenas Individual)</option>
                         </select>
                         <small class="muted" style="font-size: 0.75rem; display: block; margin-top: 4px;">Requer aprovação na Central de Notificações do parceiro.</small>
-                    </div>
-                    <div class="form-group">
-                        <label for="meuPinAtual">Alterar PIN Numérico (Opcional)</label>
-                        <input type="password" id="meuPinAtual" maxlength="6" inputmode="numeric" placeholder="Deixe em branco para manter" style="width:100%;">
                     </div>
                 </div>
 
@@ -199,6 +207,7 @@
             const usuario = dados.usuarios.find(u => Number(u.id) === Number(usuarioId));
             if (!usuario) return;
 
+            document.getElementById('meuUsuarioLogin').value = usuario.usuario || usuario.nome || '';
             document.getElementById('meuNome').value = usuario.nome || '';
             document.getElementById('minhaRendaFixa').value = usuario.rendaFixa || 0;
 
@@ -221,7 +230,6 @@
             const financiamentosAtivos = (dados.financiamentos || []).filter(f => Number(f.usuarioId) === usuarioIdNum && f.ativo !== false).length;
             const cartoesAtivos = (dados.cartoes || []).filter(c => Number(c.usuarioId) === usuarioIdNum && c.ativo !== false).length;
 
-            // Filtro de Bens do Usuário + Bens Compartilhados se houver parceiro
             const bens = dados.bens || [];
             const bensDoUsuario = bens.filter(b => {
                 const éSeu = Number(b.usuarioId) === usuarioIdNum || !b.usuarioId;
@@ -282,6 +290,18 @@
             const usuario = dados.usuarios.find(u => Number(u.id) === Number(usuarioId));
             if (!usuario) return;
 
+            const novoUsuarioLogin = document.getElementById('meuUsuarioLogin').value.trim();
+
+            // Valida unicidade estrita do usuário de login
+            const usuarioExistente = dados.usuarios.find(u => 
+                normalizarTexto(u.usuario || u.nome) === normalizarTexto(novoUsuarioLogin) && Number(u.id) !== Number(usuarioId)
+            );
+            if (usuarioExistente) {
+                await mostrarAlertaModal("Este nome de usuário já está em uso por outra conta. Escolha um usuário único.");
+                return;
+            }
+
+            usuario.usuario = novoUsuarioLogin;
             usuario.nome = document.getElementById('meuNome').value.trim();
             usuario.rendaFixa = parseFloat(document.getElementById('minhaRendaFixa').value) || 0;
             
@@ -323,10 +343,10 @@
                 usuario.pin = novoPin;
             }
 
-            registrarLogInterno(dados, "ATUALIZAÇÃO PERFIL", `Usuário ${usuario.nome} atualizou suas informações pessoais.`);
+            registrarLogInterno(dados, "ATUALIZAÇÃO PERFIL", `Usuário ${usuario.usuario} (${usuario.nome}) atualizou suas informações pessoais.`);
             await salvarDados(dados);
             carregarDadosPerfil();
-            await mostrarAlertaModal("Perfil atualizado com sucesso!");
+            await mostrarAlertaModal("Perfil e usuário atualizados com sucesso!");
         }
     </script>
 </body>

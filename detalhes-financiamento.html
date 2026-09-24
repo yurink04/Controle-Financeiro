@@ -9,7 +9,6 @@
 <body>
    <header class="app-header">
     <div class="header-inner">
-        <!-- Esquerdo: Controle Financeiro + Perfil/Sync -->
         <div class="header-left">
             <div class="brand">
                 <span class="brand-title">Controle Financeiro</span>
@@ -17,14 +16,12 @@
             </div>
             <div class="header-perfil-sync">
                 <span id="usuarioLogadoNome" class="user-chip"></span>
-                <!-- Ícone de Sincronização ou Status -->
                 <span id="syncStatusIcon" title="Sincronizado" style="cursor: pointer; display: flex; align-items: center;">
                     <img src="imagens/nuvem.png" alt="Sync" style="width: 22px; height: 22px;">
                 </span>
             </div>
         </div>
 
-        <!-- Centro: Opções Principais -->
         <nav class="app-nav-center" aria-label="Navegação principal">
             <a href="dashboard.html">Início</a>
             <div class="nav-dropdown" style="position: relative;">
@@ -37,10 +34,10 @@
                 </div>
             </div>
             <a href="lancamentos.html">Lançamentos</a>
+            <a href="central-pagamentos.html">Central de Pagamentos</a>
             <a href="relatorios.html">Relatórios</a>
         </nav>
-
-        <!-- Direito: Tema, Configurações, Notificações e Sair separados -->
+        
         <div class="header-right">
             <div class="header-tools">
                 <button type="button" onclick="alternarTemaVisual()" title="Alternar tema">
@@ -49,7 +46,6 @@
                 <a href="configuracoes.html" title="Configurações">
                     <img src="imagens/config.png" alt="Configurações">
                 </a>
-                <!-- Ícone de Notificações -->
                 <button type="button" title="Notificações" id="btnNotificacoesHeader">
                     <img src="imagens/notificacao.png" alt="Notificações" onerror="this.style.display='none'">
                 </button>
@@ -89,10 +85,27 @@
         </section>
 
         <section class="form-card">
-            <div class="section-title"><div><h2>Parcelas do financiamento</h2><p>Status, vencimento e valor de cada parcela.</p></div></div>
+            <div class="section-title"><div><h2>Parcelas do financiamento</h2><p>Status, vencimento e valor de cada parcela (30 por página).</p></div></div>
+            
+            <div id="paginacaoTopoFinanciamento" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; flex-wrap: wrap; gap: 8px;"></div>
+
             <div class="tabela-container">
-                <table class="tabela"><thead><tr><th>Parcela</th><th>Vencimento</th><th>Categoria</th><th>Valor</th><th>Status</th><th>Ações</th></tr></thead><tbody id="tabelaParcelasFinanciamento"></tbody></table>
+                <table class="tabela">
+                    <thead>
+                        <tr>
+                            <th>Parcela</th>
+                            <th>Vencimento</th>
+                            <th>Categoria</th>
+                            <th>Valor</th>
+                            <th>Status</th>
+                            <th>Ações</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tabelaParcelasFinanciamento"></tbody>
+                </table>
             </div>
+
+            <div id="paginacaoRodapeFinanciamento" style="display: flex; justify-content: space-between; align-items: center; margin-top: 12px; flex-wrap: wrap; gap: 8px;"></div>
         </section>
     </main>
 
@@ -101,13 +114,15 @@
         verificarAutenticacao();
         const urlParams = new URLSearchParams(window.location.search);
         const financiamentoId = urlParams.get('id');
+        let paginaAtualFinanciamento = 1;
+        const itensPorPaginaFin = 30;
 
         function obterParcelasFinanciamento(dados, fin) {
-            return dados.lancamentos.filter(l =>
+            return (dados.lancamentos || []).filter(l =>
                 l.tipo === 'saida' &&
                 (String(l.financiamentoId) === String(fin.id) ||
-                 (!l.financiamentoId && normalizarTexto(l.descricao).includes(normalizarTexto(`Financiamento: ${fin.nome}`))))
-            ).sort((a, b) => String(a.vencimento).localeCompare(String(b.vencimento)));
+                 (!l.financiamentoId && normalizarTexto(l.descricao || '').includes(normalizarTexto(`Financiamento: ${fin.nome}`))))
+            ).sort((a, b) => String(a.vencimento || '').localeCompare(String(b.vencimento || '')));
         }
 
         function statusBadge(lancamento) {
@@ -117,43 +132,93 @@
             return `<span class="status-badge ${classe}">${texto}</span>`;
         }
 
+        function mudarPaginaFinanciamento(novaPagina) {
+            paginaAtualFinanciamento = novaPagina;
+            carregarDetalhesFinanciamentoPagina();
+        }
+
         function carregarDetalhesFinanciamentoPagina() {
             const dados = obterDados();
-            const fin = dados.financiamentos.find(f => String(f.id) === String(financiamentoId));
+            const fin = (dados.financiamentos || []).find(f => String(f.id) === String(financiamentoId));
             if (!fin) {
                 mostrarAlertaModal('Financiamento não encontrado.').then(() => window.location.href = 'relatorios.html');
                 return;
             }
 
-            document.getElementById('tituloFinanciamentoDetalhe').textContent = `Contrato: ${fin.nome}`;
-            document.getElementById('editNomeFin').value = fin.nome;
-            document.getElementById('editTotalMesesFin').value = fin.totalMeses;
+            const elTitFin = document.getElementById('tituloFinanciamentoDetalhe');
+            if (elTitFin) elTitFin.textContent = `Contrato: ${fin.nome}`;
+            const elNomeFin = document.getElementById('editNomeFin');
+            if (elNomeFin) elNomeFin.value = fin.nome || '';
+            const elTotMesesFin = document.getElementById('editTotalMesesFin');
+            if (elTotMesesFin) elTotMesesFin.value = fin.totalMeses || 1;
 
             const parcelas = obterParcelasFinanciamento(dados, fin);
             const pagas = parcelas.filter(p => p.pago).length;
             const total = Number(fin.totalMeses) || parcelas.length;
             const faltantes = Math.max(0, total - pagas);
-            document.getElementById('infoProgressoMeses').textContent = `${pagas} / ${total}`;
-            document.getElementById('infoMesesFaltantes').textContent = String(faltantes);
+            
+            const elProg = document.getElementById('infoProgressoMeses');
+            if (elProg) elProg.textContent = `${pagas} / ${total}`;
+            const elFalt = document.getElementById('infoMesesFaltantes');
+            if (elFalt) elFalt.textContent = String(faltantes);
+            
             const ultima = parcelas[parcelas.length - 1];
-            document.getElementById('infoTerminoFinanciamento').textContent = ultima?.vencimento ? ultima.vencimento.slice(5, 7) + '/' + ultima.vencimento.slice(0, 4) : '--/----';
+            const elTerm = document.getElementById('infoTerminoFinanciamento');
+            if (elTerm) {
+                elTerm.textContent = ultima?.vencimento ? ultima.vencimento.slice(5, 7) + '/' + ultima.vencimento.slice(0, 4) : '--/----';
+            }
+
+            const totalPaginas = Math.ceil(parcelas.length / itensPorPaginaFin) || 1;
+            if (paginaAtualFinanciamento > totalPaginas) paginaAtualFinanciamento = totalPaginas;
+
+            const inicio = (paginaAtualFinanciamento - 1) * itensPorPaginaFin;
+            const fim = inicio + itensPorPaginaFin;
+            const parcelasPagina = parcelas.slice(inicio, fim);
+
+            const renderizarPaginacaoHtml = () => {
+                if (totalPaginas <= 1) return '';
+                
+                let optionsSelect = '';
+                for (let p = 1; p <= totalPaginas; p++) {
+                    const parcelaInicialBloco = ((p - 1) * itensPorPaginaFin) + 1;
+                    const parcelaFinalBloco = Math.min(p * itensPorPaginaFin, parcelas.length);
+                    optionsSelect += `<option value="${p}" ${p === paginaAtualFinanciamento ? 'selected' : ''}>Parcelas ${parcelaInicialBloco} a ${parcelaFinalBloco}</option>`;
+                }
+
+                return `
+                    <button type="button" class="btn-secundario" ${paginaAtualFinanciamento === 1 ? 'disabled style="opacity:0.5;"' : ''} onclick="mudarPaginaFinanciamento(${paginaAtualFinanciamento - 1})">← Anterior</button>
+                    <div style="display: flex; align-items: center; gap: 6px;">
+                        <span style="font-size: 0.85rem; font-weight: bold;">Salto:</span>
+                        <select onchange="mudarPaginaFinanciamento(Number(this.value))" style="padding: 4px 8px; border-radius: 6px; border: 1px solid var(--border); font-size: 0.85rem; background: var(--surface); color: var(--text-main);">
+                            ${optionsSelect}
+                        </select>
+                        <span style="font-size: 0.85rem; font-weight: bold;">(Pág. ${paginaAtualFinanciamento}/${totalPaginas})</span>
+                    </div>
+                    <button type="button" class="btn-secundario" ${paginaAtualFinanciamento === totalPaginas ? 'disabled style="opacity:0.5;"' : ''} onclick="mudarPaginaFinanciamento(${paginaAtualFinanciamento + 1})">Próxima →</button>
+                `;
+            };
+
+            const htmlPaginacao = renderizarPaginacaoHtml();
+            document.getElementById('paginacaoTopoFinanciamento').innerHTML = htmlPaginacao;
+            document.getElementById('paginacaoRodapeFinanciamento').innerHTML = htmlPaginacao;
 
             const tbody = document.getElementById('tabelaParcelasFinanciamento');
+            if (!tbody) return;
             tbody.innerHTML = '';
             if (!parcelas.length) {
                 tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;">Nenhuma parcela encontrada.</td></tr>';
                 return;
             }
 
-            parcelas.forEach(l => {
-                const cat = dados.categorias.find(c => String(c.id) === String(l.categoriaId));
+            parcelasPagina.forEach(l => {
+                const cat = (dados.categorias || []).find(c => String(c.id) === String(l.categoriaId));
                 const tr = document.createElement('tr');
                 const parcela = `${l.parcelaAtual || '-'} / ${l.totalParcelas || '-'}`;
                 tr.innerHTML = `
                     <td><strong>${escaparHTML(parcela)}</strong></td>
-                    <td>${escaparHTML(formatarDataBR(l.vencimento))}</td>
+                    <td>${escaparHTML(formatarDataBR(l.vencimento || ''))}</td>
                     <td>${escaparHTML(cat?.nome || 'Geral')}</td>
-                    <td>${escaparHTML(formatarMoeda(l.valor))}</td>
+                    <td>${escaparHTML(formatarMoeda(l.valor || 0))}</td>
                     <td>${statusBadge(l)}</td>
                     <td class="action-cell">
                         <button type="button" onclick="editarValorParcelaFinanciamento(${Number(l.id)})" class="btn-acao-icone editar" title="Editar valor">✎</button>
@@ -167,19 +232,18 @@
             event.preventDefault();
             if (!await verificarSenhaAdmin('editar financiamento')) return;
             const dados = obterDados();
-            const fin = dados.financiamentos.find(f => String(f.id) === String(financiamentoId));
+            const fin = (dados.financiamentos || []).find(f => String(f.id) === String(financiamentoId));
             if (!fin) return;
-            const novoNome = document.getElementById('editNomeFin').value.trim();
-            const novoTotal = parseInt(document.getElementById('editTotalMesesFin').value, 10);
+            const novoNome = document.getElementById('editNomeFin')?.value?.trim() || '';
+            const novoTotal = parseInt(document.getElementById('editTotalMesesFin')?.value, 10) || 1;
             if (!novoNome || !novoTotal || novoTotal < 1 || novoTotal > 360) {
                 await mostrarAlertaModal('Informe um nome e uma quantidade válida de meses.'); return;
             }
 
             const nomeAnterior = fin.nome;
-            const parcelasAntes = obterParcelasFinanciamento(dados, fin).sort((a, b) => String(a.vencimento).localeCompare(String(b.vencimento)));
+            const parcelasAntes = obterParcelasFinanciamento(dados, fin).sort((a, b) => String(a.vencimento || '').localeCompare(String(b.vencimento || '')));
             const qtdPagas = parcelasAntes.filter(p => p.pago).length;
 
-            // Antes: reduzir o total de meses abaixo do que já foi pago não era bloqueado.
             if (novoTotal < qtdPagas) {
                 await mostrarAlertaModal(`Este contrato já tem ${qtdPagas} parcela(s) paga(s). O total de meses não pode ser menor que isso.`);
                 return;
@@ -194,19 +258,16 @@
             fin.totalMeses = novoTotal;
             fin.updatedAt = new Date().toISOString();
 
-            // Compatibilidade com parcelas antigas sem financiamentoId.
-            dados.lancamentos.forEach(l => {
-                if (!l.financiamentoId && normalizarTexto(l.descricao).includes(normalizarTexto(`Financiamento: ${nomeAnterior}`))) {
-                    l.descricao = l.descricao.replace(new RegExp(`Financiamento: ${nomeAnterior}`, 'i'), `Financiamento: ${novoNome}`);
+            (dados.lancamentos || []).forEach(l => {
+                if (!l.financiamentoId && normalizarTexto(l.descricao || '').includes(normalizarTexto(`Financiamento: ${nomeAnterior}`))) {
+                    l.descricao = (l.descricao || '').replace(new RegExp(`Financiamento: ${nomeAnterior}`, 'i'), `Financiamento: ${novoNome}`);
                 }
             });
 
-            // Antes: aumentar o total de meses só mudava o rótulo "x/total" das
-            // parcelas existentes, sem criar as parcelas novas que passaram a faltar.
             if (novoTotal > parcelasAntes.length) {
                 const ultima = parcelasAntes[parcelasAntes.length - 1];
                 const dataBase = ultima ? criarDataLocal(ultima.vencimento) : criarDataLocal(fin.primeiroVencimento || dataLocalYYYYMMDD());
-                let proximaIdLanc = dados.lancamentos.reduce((m, l) => Math.max(m, Number(l.id) || 0), 0) + 1;
+                let proximaIdLanc = (dados.lancamentos || []).reduce((m, l) => Math.max(m, Number(l.id) || 0), 0) + 1;
                 for (let i = parcelasAntes.length + 1; i <= novoTotal; i++) {
                     const offsetMeses = ultima ? (i - parcelasAntes.length) : (i - 1);
                     const dataVenc = adicionarMesesClamped(dataBase, offsetMeses);
@@ -237,9 +298,8 @@
                 }
             }
 
-            // Mantém o rótulo "x/total" das parcelas já existentes coerente com o novo total.
             parcelasAntes.forEach(p => {
-                const lanc = dados.lancamentos.find(l => String(l.id) === String(p.id));
+                const lanc = (dados.lancamentos || []).find(l => String(l.id) === String(p.id));
                 if (lanc) lanc.totalParcelas = novoTotal;
             });
 
@@ -257,7 +317,7 @@
                 await mostrarAlertaModal('Valor inválido.'); return;
             }
             const dados = obterDados();
-            const lanc = dados.lancamentos.find(l => String(l.id) === String(lancamentoId));
+            const lanc = (dados.lancamentos || []).find(l => String(l.id) === String(lancamentoId));
             if (!lanc) return;
             lanc.valor = Number(novoValor.toFixed(2));
             lanc.updatedAt = new Date().toISOString();
