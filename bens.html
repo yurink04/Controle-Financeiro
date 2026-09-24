@@ -292,6 +292,14 @@
 
         async function excluirBemGeral(id) {
             if (!await verificarSenhaAdmin("excluir bem")) return;
+
+            const dadosCheck = obterDados();
+            const financiamentoVinculado = (dadosCheck.financiamentos || []).find(f => Number(f.bemId) === Number(id) && f.ativo !== false);
+            if (financiamentoVinculado) {
+                await mostrarAlertaModal(`Este bem está vinculado ao financiamento "${financiamentoVinculado.nome}". Exclua ou desvincule o financiamento antes de excluir o bem.`);
+                return;
+            }
+
             const confirmar = await mostrarConfirmacaoModal("Deseja realmente excluir este bem?");
             if (!confirmar) return;
 

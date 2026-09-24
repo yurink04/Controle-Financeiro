@@ -174,7 +174,22 @@
             if (!novoNome || !novoTotal || novoTotal < 1 || novoTotal > 360) {
                 await mostrarAlertaModal('Informe um nome e uma quantidade válida de meses.'); return;
             }
+
             const nomeAnterior = fin.nome;
+            const parcelasAntes = obterParcelasFinanciamento(dados, fin).sort((a, b) => String(a.vencimento).localeCompare(String(b.vencimento)));
+            const qtdPagas = parcelasAntes.filter(p => p.pago).length;
+
+            // Antes: reduzir o total de meses abaixo do que já foi pago não era bloqueado.
+            if (novoTotal < qtdPagas) {
+                await mostrarAlertaModal(`Este contrato já tem ${qtdPagas} parcela(s) paga(s). O total de meses não pode ser menor que isso.`);
+                return;
+            }
+
+            if (novoTotal < parcelasAntes.length) {
+                const seguir = await mostrarConfirmacaoModal(`Existem ${parcelasAntes.length} parcelas geradas e o novo total é ${novoTotal}. As parcelas excedentes NÃO serão apagadas automaticamente — você pode removê-las manualmente na lista abaixo. Deseja continuar?`);
+                if (!seguir) return;
+            }
+
             fin.nome = novoNome;
             fin.totalMeses = novoTotal;
             fin.updatedAt = new Date().toISOString();
@@ -185,7 +200,50 @@
                     l.descricao = l.descricao.replace(new RegExp(`Financiamento: ${nomeAnterior}`, 'i'), `Financiamento: ${novoNome}`);
                 }
             });
-            registrarLogInterno(dados, 'EDIÇÃO FINANCIAMENTO', `Contrato ID ${financiamentoId} atualizado para: ${novoNome}`);
+
+            // Antes: aumentar o total de meses só mudava o rótulo "x/total" das
+            // parcelas existentes, sem criar as parcelas novas que passaram a faltar.
+            if (novoTotal > parcelasAntes.length) {
+                const ultima = parcelasAntes[parcelasAntes.length - 1];
+                const dataBase = ultima ? criarDataLocal(ultima.vencimento) : criarDataLocal(fin.primeiroVencimento || dataLocalYYYYMMDD());
+                let proximaIdLanc = dados.lancamentos.reduce((m, l) => Math.max(m, Number(l.id) || 0), 0) + 1;
+                for (let i = parcelasAntes.length + 1; i <= novoTotal; i++) {
+                    const offsetMeses = ultima ? (i - parcelasAntes.length) : (i - 1);
+                    const dataVenc = adicionarMesesClamped(dataBase, offsetMeses);
+                    dados.lancamentos.push({
+                        id: proximaIdLanc++,
+                        usuarioId: ultima ? ultima.usuarioId : obterUsuarioAtualId(dados),
+                        descricao: `Financiamento: ${novoNome} (${i}/${novoTotal})`,
+                        valor: Number(fin.valorParcela || (ultima ? ultima.valor : 0)),
+                        tipo: 'saida',
+                        categoriaId: ultima ? ultima.categoriaId : fin.categoriaId,
+                        formaPagamento: ultima ? ultima.formaPagamento : 'BOLETO',
+                        cartaoId: ultima ? ultima.cartaoId : null,
+                        bemId: fin.bemId || null,
+                        vencimento: dataParaString(dataVenc),
+                        recorrencia: 'mensal',
+                        parcelaAtual: i,
+                        totalParcelas: novoTotal,
+                        parcelamentoId: ultima ? ultima.parcelamentoId : null,
+                        financiamentoId: fin.id,
+                        observacao: 'Gerado automaticamente ao aumentar o total de meses do contrato',
+                        horaExtra: 0,
+                        servicoEssencial: 'nao',
+                        pago: false,
+                        status: 'pendente',
+                        createdAt: new Date().toISOString(),
+                        updatedAt: new Date().toISOString()
+                    });
+                }
+            }
+
+            // Mantém o rótulo "x/total" das parcelas já existentes coerente com o novo total.
+            parcelasAntes.forEach(p => {
+                const lanc = dados.lancamentos.find(l => String(l.id) === String(p.id));
+                if (lanc) lanc.totalParcelas = novoTotal;
+            });
+
+            registrarLogInterno(dados, 'EDIÇÃO FINANCIAMENTO', `Contrato ID ${financiamentoId} atualizado para: ${novoNome} (${novoTotal} meses)`);
             await salvarDados(dados);
             await mostrarAlertaModal('Financiamento atualizado com sucesso.');
             carregarDetalhesFinanciamentoPagina();

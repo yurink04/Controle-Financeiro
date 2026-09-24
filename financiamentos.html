@@ -252,8 +252,9 @@
             financiamentos.forEach(f => {
                 const lancamentosFin = dados.lancamentos.filter(l => Number(l.financiamentoId) === Number(f.id));
                 const pagos = lancamentosFin.filter(l => l.pago).length;
-                const restantes = Math.max(0, Number(f.totalMeses) - pagos);
-                const saldoDevedor = restantes * Number(f.valorParcela || 0);
+                // Soma o valor real de cada parcela em aberto (não o valor nominal x quantidade),
+                // pois uma parcela pode ter sido editada individualmente em detalhes-financiamento.html.
+                const saldoDevedor = lancamentosFin.filter(l => !l.pago).reduce((acc, l) => acc + Number(l.valor || 0), 0);
                 const percentual = Math.min(100, Math.round((pagos / Number(f.totalMeses)) * 100)) || 0;
 
                 const bemObj = dados.bens.find(b => Number(b.id) === Number(f.bemId));

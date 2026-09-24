@@ -174,7 +174,7 @@ function migrarDados(dados) {
 
     const defaults = {
         usuarios: [], categorias: [], cartoes: [], lancamentos: [],
-        financiamentos: [], logs: [], exclusao_movimento: [], edicao_movimento: []
+        financiamentos: [], bens: [], notificacoes: [], logs: [], exclusao_movimento: [], edicao_movimento: []
     };
     Object.entries(defaults).forEach(([chave, valor]) => {
         if (!Array.isArray(dados[chave])) {
@@ -293,37 +293,6 @@ function alternarTemaVisual(event) {
         body.classList.remove('theme-animating', 'theme-to-light');
         botao?.classList.remove('theme-switching');
     }, 760);
-}
-
-function criarIndicadorSincronizacaoUi() {
-    if (document.getElementById('syncIndicator')) return;
-    const chip = document.createElement('span');
-    chip.id = 'syncIndicator';
-    chip.title = "Status: Sincronizado";
-    chip.style.cssText = `
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        width: 34px;
-        height: 34px;
-        border-radius: 9px;
-        background: var(--surface-2);
-        border: 1px solid var(--border);
-        color: var(--success);
-        font-size: 1.1rem;
-        cursor: pointer;
-        margin-left: 8px;
-        transition: var(--transition-fast);
-    `;
-    chip.textContent = '☁';
-    
-    const userChip = document.getElementById('usuarioLogadoNome');
-    if (userChip && userChip.parentNode) {
-        userChip.parentNode.style.display = 'flex';
-        userChip.parentNode.style.alignItems = 'center';
-        userChip.parentNode.style.flexWrap = 'nowrap';
-        userChip.parentNode.appendChild(chip);
-    }
 }
 
 function criarIndicadorSincronizacaoUi() {
@@ -459,6 +428,8 @@ async function inicializarBanco() {
             cartoes: [],
             lancamentos: [],
             financiamentos: [],
+            bens: [],
+            notificacoes: [],
             logs: [],
             exclusao_movimento: [],
             edicao_movimento: []
@@ -536,6 +507,19 @@ async function sincronizarComServidor() {
         syncInFlight = false;
         if (syncPendingData) agendarSincronizacao(syncPendingData);
     }
+}
+
+// Antes o app só ENVIAVA dados para a planilha (sincronizarComServidor);
+// não existia nenhuma forma de trazer de volta o que estava salvo na nuvem.
+// Isso é usado pelo botão "Restaurar da nuvem" em configuracoes.html —
+// é uma ação explícita e confirmada pelo usuário, nunca automática, para
+// não sobrescrever dados locais mais recentes sem aviso.
+async function buscarDadosServidor() {
+    const resposta = await fetch(`${API_URL}?action=obterDados&token=${encodeURIComponent(TOKEN_API)}`);
+    if (!resposta.ok) throw new Error('Falha de rede ao contatar o servidor.');
+    const json = await resposta.json();
+    if (json.status === 'erro') throw new Error(json.mensagem || 'Erro desconhecido do servidor.');
+    return json;
 }
 
 async function salvarDados(dados, opcoes = {}) {
@@ -1016,188 +1000,10 @@ function renderizarCategorias() {
     });
 }
 
-// --- Gestão de Cartões e Benefícios (VR / VA) ---
-async function adicionarCartao(nome, limiteTotal, fechamento, vencimento, tipoCartao = 'credito') {
-    if (processandoAcaoModal) return false;
-    if (!await verificarSenhaAdmin("cadastrar cartão")) return false;
-
-    processandoAcaoModal = true;
-    mostrarLoading("Salvando cartão...");
-    try {
-        const dados = obterDados();
-        const usuarioId = Number(localStorage.getItem('usuarioLogado'));
-        const nomeFinal = String(nome || '').trim();
-        const limite = numeroSeguro(limiteTotal);
-        const diaFechamento = inteiroSeguro(fechamento);
-        const diaVencimento = inteiroSeguro(vencimento);
-
-        if (!nomeFinal || limite < 0 || diaFechamento < 1 || diaFechamento > 31 || diaVencimento < 1 || diaVencimento > 31) {
-            throw new Error('Preencha os dados do cartão corretamente.');
-        }
-        if (dados.cartoes.some(c => Number(c.usuarioId) === usuarioId && normalizarTexto(c.nome) === normalizarTexto(nomeFinal) && c.ativo !== false)) {
-            throw new Error('Você já possui um cartão com este nome.');
-        }
-
-        const novaId = dados.cartoes.reduce((m, c) => Math.max(m, Number(c.id) || 0), 0) + 1;
-        dados.cartoes.push({
-            id: novaId,
-            usuarioId,
-            nome: nomeFinal,
-            limiteTotal: Number(limite.toFixed(2)),
-            fechamento: diaFechamento,
-            vencimento: diaVencimento,
-            tipoCartao,
-            ativo: true,
-            createdAt: new Date().toISOString()
-        });
-
-        registrarLogInterno(dados, "CADASTRO CARTÃO", `Cartão criado: ${nomeFinal} (${tipoCartao}), Limite/Carga: ${formatarMoeda(limite)}`);
-        await salvarDados(dados);
-
-        esconderLoading();
-        processandoAcaoModal = false;
-        await mostrarAlertaModal("Cartão/Benefício cadastrado com sucesso!");
-        if (typeof renderizarCartoes === 'function') renderizarCartoes();
-        return true;
-    } catch (erro) {
-        console.error(erro);
-        esconderLoading();
-        processandoAcaoModal = false;
-        await mostrarAlertaModal(erro.message || 'Não foi possível cadastrar o cartão.');
-        return false;
-    }
-}
-
-function renderizarCartoes() {
-    const dados = obterDados();
-    const grid = document.getElementById('gridCartoes');
-    if (!grid) return;
-    grid.innerHTML = '';
-
-    const usuarioAtualId = Number(localStorage.getItem('usuarioLogado'));
-    const cartoesVisiveis = dados.cartoes.filter(c => c.ativo !== false && Number(c.usuarioId) === usuarioAtualId);
-
-    if (cartoesVisiveis.length === 0) {
-        grid.innerHTML = '<div class="empty-state"><strong>Nenhum cartão ou benefício cadastrado.</strong><span>Cadastre um cartão para acompanhar o limite e as faturas.</span></div>';
-        return;
-    }
-
-    cartoesVisiveis.forEach(cartao => {
-        const isBeneficio = cartao.tipoCartao === 'beneficio';
-        
-        const gastosUtilizados = dados.lancamentos
-            .filter(l => Number(l.cartaoId) === Number(cartao.id) && !l.pago)
-            .reduce((acc, l) => acc + Number(l.valor), 0);
-
-        let infoHtml = '';
-        if (isBeneficio) {
-            const saldoAtual = Number(cartao.limiteTotal) - gastosUtilizados;
-            infoHtml = `
-                <p style="font-size: 0.85rem; font-weight: normal; margin-bottom: 4px;">Tipo: <strong>Vale-Alimentação / Refeição (VR/VA)</strong></p>
-                <p style="font-size: 0.95rem; margin-top: 6px;">Carga Mensal: R$ ${Number(cartao.limiteTotal).toFixed(2)}</p>
-                <p style="font-size: 0.95rem;" class="negativo">Gasto no Mês: R$ ${gastosUtilizados.toFixed(2)}</p>
-                <p style="font-size: 0.95rem;" class="positivo">Saldo Disponível: R$ ${saldoAtual.toFixed(2)}</p>
-            `;
-        } else {
-            const disponivel = Number(cartao.limiteTotal) - gastosUtilizados;
-            infoHtml = `
-                <p style="font-size: 0.85rem; font-weight: normal; margin-bottom: 4px;">Fechamento: dia ${cartao.fechamento} | Vencimento: dia ${cartao.vencimento}</p>
-                <p style="font-size: 0.95rem; margin-top: 6px;">Limite Total: R$ ${Number(cartao.limiteTotal).toFixed(2)}</p>
-                <p style="font-size: 0.95rem;" class="negativo">Utilizado: R$ ${gastosUtilizados.toFixed(2)}</p>
-                <p style="font-size: 0.95rem;" class="positivo">Disponível: R$ ${disponivel.toFixed(2)}</p>
-            `;
-        }
-
-        const box = document.createElement('div');
-        box.className = 'stat-box';
-        box.style.textAlign = 'left';
-        box.innerHTML = `
-            <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px;">
-                <h3 style="margin: 0; font-size: 1rem; color: var(--accent);">${cartao.nome}</h3>
-                <div style="display: flex; gap: 4px;">
-                    <button onclick="excluirCartao(${cartao.id})" class="btn-acao-icone excluir" title="Excluir"><img src="imagens/excluir.png" alt="Excluir"></button>
-                </div>
-            </div>
-            ${infoHtml}
-        `;
-        grid.appendChild(box);
-    });
-}
-
-async function atualizarCartaoNoBanco(id, nome, limiteTotal, fechamento, vencimento) {
-    if (processandoAcaoModal) return false;
-    if (!await verificarSenhaAdmin("editar cartão")) return false;
-
-    processandoAcaoModal = true;
-    mostrarLoading("Atualizando cartão...");
-    try {
-        const dados = obterDados();
-        const cartao = dados.cartoes.find(c => String(c.id) === String(id));
-        const nomeFinal = String(nome || '').trim();
-        const limite = numeroSeguro(limiteTotal);
-        const diaFechamento = inteiroSeguro(fechamento);
-        const diaVencimento = inteiroSeguro(vencimento);
-
-        if (!cartao || !nomeFinal || limite < 0 || diaFechamento < 1 || diaFechamento > 31 || diaVencimento < 1 || diaVencimento > 31) {
-            throw new Error('Dados do cartão inválidos.');
-        }
-        if (dados.cartoes.some(c => String(c.id) !== String(id) && Number(c.usuarioId) === Number(cartao.usuarioId) && c.ativo !== false && normalizarTexto(c.nome) === normalizarTexto(nomeFinal))) {
-            throw new Error('Já existe outro cartão com este nome.');
-        }
-
-        cartao.nome = nomeFinal;
-        cartao.limiteTotal = Number(limite.toFixed(2));
-        cartao.fechamento = diaFechamento;
-        cartao.vencimento = diaVencimento;
-        cartao.updatedAt = new Date().toISOString();
-
-        registrarLogInterno(dados, "EDIÇÃO CARTÃO", `Cartão ID ${id} atualizado para: ${nomeFinal}`);
-        await salvarDados(dados);
-
-        esconderLoading();
-        processandoAcaoModal = false;
-        await mostrarAlertaModal("Cartão atualizado com sucesso!");
-        if (typeof renderizarCartoes === 'function') renderizarCartoes();
-        return true;
-    } catch (erro) {
-        console.error(erro);
-        esconderLoading();
-        processandoAcaoModal = false;
-        await mostrarAlertaModal(erro.message || 'Não foi possível atualizar o cartão.');
-        return false;
-    }
-}
-
-async function excluirCartao(id) {
-    if (processandoAcaoModal) return;
-    if (!await verificarSenhaAdmin("excluir cartão")) return;
-    const confirmar = await mostrarConfirmacaoModal("Deseja realmente excluir este cartão?");
-    if (!confirmar) return;
-
-    processandoAcaoModal = true;
-    mostrarLoading("Excluindo cartão...");
-    const dados = obterDados();
-    const cartao = dados.cartoes.find(c => String(c.id) === String(id));
-    if (!cartao) {
-        esconderLoading();
-        processandoAcaoModal = false;
-        return false;
-    }
-    const emUso = dados.lancamentos.some(l => String(l.cartaoId) === String(id));
-    if (emUso) {
-        cartao.ativo = false;
-        registrarLogInterno(dados, "INATIVAÇÃO CARTÃO", `Cartão ID ${id} desativado porque possui lançamentos associados`);
-    } else {
-        dados.cartoes = dados.cartoes.filter(c => String(c.id) !== String(id));
-        registrarLogInterno(dados, "EXCLUSÃO CARTÃO", `Cartão ID ${id} excluído`);
-    }
-    await salvarDados(dados);
-    
-    esconderLoading();
-    processandoAcaoModal = false;
-    await mostrarAlertaModal(emUso ? "Cartão desativado porque possui lançamentos associados." : "Cartão excluído com sucesso!");
-    if (typeof renderizarCartoes === 'function') renderizarCartoes();
-}
+// A gestão de cartões (criar/editar/excluir/renderizar) vive em cartoes.html,
+// que usa os campos reais `limite` e `isBeneficio` (ver Code.gs SCHEMA.cartoes).
+// Antes havia aqui uma implementação paralela com campos `limiteTotal`/`tipoCartao`
+// que nunca era chamada por nenhuma página e divergia do schema salvo na planilha.
 
 function popularSelectsLancamento() {
     const dados = obterDados();

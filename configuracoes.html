@@ -150,7 +150,9 @@
                 <label class="btn-secundario" style="display: inline-flex; align-items: center; cursor: pointer; margin: 0;">
                     📤 Restaurar Backup <input type="file" id="inputRestaurarBackup" accept=".json" onchange="importarBackupJSON(event)" style="display: none;">
                 </label>
+                <button type="button" onclick="restaurarBackupNuvem()" class="btn-warning">☁️ Restaurar da nuvem</button>
             </div>
+            <p class="muted small" style="margin-top: 8px;">O envio para a nuvem (planilha) acontece automaticamente a cada alteração. Antes não havia como trazer os dados de volta — use este botão para restaurar o que está salvo na planilha neste dispositivo.</p>
         </section>
 
         <!-- Painel Administrativo & Logs -->
@@ -531,6 +533,25 @@
                 }
             };
             leitor.readAsText(arquivo);
+        }
+
+        async function restaurarBackupNuvem() {
+            if (!await verificarSenhaAdmin("restaurar dados da nuvem")) return;
+            const confirmar = await mostrarConfirmacaoModal("Isto vai buscar os dados salvos na planilha (Google Sheets) e substituir TUDO o que está neste dispositivo agora. Se houver alterações locais ainda não sincronizadas, elas serão perdidas. Deseja continuar?");
+            if (!confirmar) return;
+
+            mostrarLoading("Buscando dados na nuvem...");
+            try {
+                const dadosNuvem = await buscarDadosServidor();
+                await salvarDados(dadosNuvem, { sincronizar: false });
+                esconderLoading();
+                await mostrarAlertaModal("Dados restaurados da nuvem com sucesso! A página será recarregada.");
+                window.location.reload();
+            } catch (erro) {
+                esconderLoading();
+                console.error(erro);
+                await mostrarAlertaModal("Não foi possível buscar os dados da nuvem: " + (erro.message || erro));
+            }
         }
 
         async function tentarAcessarAdminLogs() {

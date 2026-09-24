@@ -521,9 +521,20 @@
                  * aqui para evitar registro duplicado.
                  */
 
-                await selecionarUsuario(
+                const sucesso = await selecionarUsuario(
                     select.value
                 );
+
+                /*
+                 * selecionarUsuario() retorna false (sem lancar erro) quando
+                 * o PIN esta incorreto ou o usuario cancela - sem isto, o
+                 * botao ficava preso no estado "carregando" nesses casos.
+                 */
+                if (!sucesso && botao) {
+                    botao.classList.remove(
+                        "loading"
+                    );
+                }
 
             }
 

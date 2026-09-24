@@ -241,10 +241,12 @@
             const valorTotalPatrimonio = bensValidos.reduce((acc, b) => acc + Number(b.valor || 0), 0);
             document.getElementById('totalPatrimonioBens').textContent = `R$ ${valorTotalPatrimonio.toLocaleString('pt-BR', {minimumFractionDigits: 2})}`;
 
-            // Filtro por mês/ano
+            // Filtro por mês/ano e por escopo (o campo "escopo" era lido do select
+            // mas nunca chegava a ser usado no filtro — o controle não tinha efeito).
             const filtrados = lancamentos.filter(l => {
-                const dataOk = (l.data || l.vencimento || '').startsWith(mesAno);
-                return dataOk;
+                const dataOk = (l.vencimento || l.data || '').startsWith(mesAno);
+                const escopoOk = escopo === 'todos' || (l.tipo === 'entrada') || (l.escopo || 'casal') === escopo;
+                return dataOk && escopoOk;
             });
 
             let totalEntradas = 0;
@@ -313,7 +315,7 @@
                         <td>${l.usuario || 'Sistema'}</td>
                         <td><strong>${l.descricao}</strong></td>
                         <td>${catObj.nome}</td>
-                        <td>${l.data ? l.data.split('-').reverse().join('/') : '-'}</td>
+                        <td>${l.dataPagamento ? l.dataPagamento.split('-').reverse().join('/') : '-'}</td>
                         <td>${l.vencimento ? l.vencimento.split('-').reverse().join('/') : '-'}</td>
                         <td class="${l.tipo === 'entrada' ? 'positivo' : 'negativo'}">R$ ${Number(l.valor || 0).toLocaleString('pt-BR', {minimumFractionDigits: 2})}</td>
                         <td>-</td>
