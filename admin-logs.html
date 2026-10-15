@@ -7,68 +7,10 @@
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
-<header class="app-header">
-    <div class="header-inner">
-        <!-- Esquerdo: Controle Financeiro + Perfil/Sync -->
-        <div class="header-left">
-            <div class="brand">
-                <span class="brand-title">Controle Financeiro</span>
-                <span class="brand-subtitle">Gestão Inteligente</span>
-            </div>
-            <div class="header-perfil-sync">
-                <span id="usuarioLogadoNome" class="user-chip"></span>
-                <!-- Ícone de Sincronização ou Status -->
-                <span id="syncStatusIcon" title="Sincronizado" style="cursor: pointer; display: flex; align-items: center;">
-                    <img src="imagens/nuvem.png" alt="Sync" style="width: 22px; height: 22px;">
-                </span>
-            </div>
-        </div>
-
-    <!-- Centro: Navegação Principal -->
-        <nav class="app-nav-center" aria-label="Navegação principal">
-            <a href="dashboard.html">Início</a>
-            <div class="nav-dropdown" style="position: relative;">
-                <a href="#" onclick="event.preventDefault();" style="cursor: pointer;">Cadastros ▾</a>
-                <div class="nav-dropdown-content" style="position: absolute; top: 100%; left: 0;">
-                    <a href="cartoes.html">Cartões</a>
-                    <a href="categorias.html">Categorias</a>
-                    <a href="bens.html">Bens</a>
-                    <a href="financiamentos.html">Financiamentos</a>
-                </div>
-            </div>
-            <a href="lancamentos.html">Lançamentos</a>
-            <a href="central-pagamentos.html">Central de Pagamentos</a>
-            <a href="relatorios.html">Relatórios</a>
-        </nav>
-
-        <!-- Direito: Tema, Configurações, Notificações e Sair separados -->
-        <div class="header-right">
-            <div class="header-tools">
-                <button type="button" onclick="alternarTemaVisual()" title="Alternar tema">
-                    <img src="imagens/modo_escuro.jpg" alt="Tema">
-                </button>
-                <a href="configuracoes.html" title="Configurações">
-                    <img src="imagens/config.png" alt="Configurações">
-                </a>
-                <!-- Ícone de Notificações -->
-                <button type="button" title="Notificações" id="btnNotificacoesHeader">
-                    <img src="imagens/notificacao.png" alt="Notificações" onerror="this.style.display='none'">
-                </button>
-            </div>
-            
-            <div class="header-tools" style="border-left: 1px solid var(--border-color, #e5e7eb); padding-left: 18px;">
-                <a href="index.html" onclick="event.preventDefault(); deslogarSistema()" class="btn-sair-extremo" title="Sair do sistema">
-                    <img src="imagens/exit.png" alt="Sair">
-                </a>
-            </div>
-        </div>
-    </div>
-</header>
-
     <main class="container">
         <div class="page-heading"><div><h2>Auditoria e acessos</h2><p>Registro das operações realizadas no sistema.</p></div></div>
 
-        <section id="divLoginAdmin" class="form-card" style="max-width:460px;margin:50px auto;">
+        <section id="divLoginAdmin" class="form-card" style="max-width:460px;margin:50px auto; display:none;">
             <div class="login-logo">ADM</div>
             <h2 style="text-align:center;">Acesso restrito</h2>
             <p class="muted small" style="text-align:center;margin-bottom:12px;">Informe a senha administrativa para visualizar os registros.</p>
@@ -88,21 +30,51 @@
 
     <script src="script.js"></script>
     <script>
-        verificarAutenticacao();
-        if (sessionStorage.getItem('adminLogado') === 'true') liberarPainelAdmin();
+        // Correção da Condição de Corrida (Carregamento Seguro)
+        document.addEventListener('DOMContentLoaded', async () => {
+            injetarHeader();
+            const autenticado = await verificarAutenticacao();
+            if (autenticado) {
+                // Mantém a usabilidade da sessão caso ele já tenha validado no servidor recentemente
+                if (sessionStorage.getItem('adminAutorizado') === 'true') {
+                    liberarPainelAdmin();
+                } else {
+                    document.getElementById('divLoginAdmin').style.display = 'block';
+                }
+            }
+        });
 
         async function autenticarPainelAdmin() {
             const senha = document.getElementById('senhaAdminInput').value.trim();
             if (!senha) return;
-            if (senha === SENHA_ADMIN) {
-                sessionStorage.setItem('adminLogado', 'true');
-                const dados = obterDados();
-                registrarLogInterno(dados, 'LOGIN ADMIN', 'Administrador acessou o painel de auditoria');
-                await salvarDados(dados);
-                liberarPainelAdmin();
-            } else {
-                document.getElementById('senhaAdminInput').value = '';
-                await mostrarAlertaModal('Senha administrativa incorreta.');
+            
+            mostrarLoading("Verificando acesso...");
+            
+            try {
+                // Validação real conectada ao servidor (Code.gs) em vez de validar variável inexistente no front
+                const resposta = await fetch(API_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                    body: JSON.stringify({ action: 'verificarAdmin', token: TOKEN_API, senha: senha })
+                });
+                const resultado = await resposta.json();
+                
+                esconderLoading();
+
+                if (resultado.status === 'sucesso' && resultado.autorizado === true) {
+                    sessionStorage.setItem('adminAutorizado', 'true');
+                    const dados = obterDados();
+                    registrarLogInterno(dados, 'LOGIN ADMIN', 'Administrador acessou o painel de auditoria');
+                    await salvarDados(dados);
+                    liberarPainelAdmin();
+                } else {
+                    document.getElementById('senhaAdminInput').value = '';
+                    await mostrarAlertaModal('Senha administrativa incorreta.');
+                }
+            } catch (e) {
+                esconderLoading();
+                console.error(e);
+                await mostrarAlertaModal('Erro ao validar acesso. Verifique a conexão com o servidor.');
             }
         }
 
@@ -117,10 +89,19 @@
             const tbody = document.getElementById('tabelaLogs');
             const filtro = normalizarTexto(document.getElementById('filtroLogs')?.value || '');
             let logs = [...(dados.logs || [])].reverse();
-            if (filtro) logs = logs.filter(log => normalizarTexto(`${log.dataHoraFormatada || log.dataHora || ''} ${log.usuario || ''} ${log.acao || ''} ${log.detalhes || ''}`).includes(filtro));
+            
+            if (filtro) {
+                logs = logs.filter(log => normalizarTexto(`${log.dataHoraFormatada || log.dataHora || ''} ${log.usuario || ''} ${log.acao || ''} ${log.detalhes || ''}`).includes(filtro));
+            }
+            
             document.getElementById('contadorLogs').textContent = `${logs.length} registro(s)`;
             tbody.innerHTML = '';
-            if (!logs.length) { tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;">Nenhum registro encontrado.</td></tr>'; return; }
+            
+            if (!logs.length) { 
+                tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;">Nenhum registro encontrado.</td></tr>'; 
+                return; 
+            }
+            
             logs.forEach(log => {
                 const tr = document.createElement('tr');
                 const dt = log.dataHoraFormatada || (log.dataHora ? new Date(log.dataHora).toLocaleString('pt-BR') : '-');
@@ -130,15 +111,20 @@
         }
 
         async function limparLogsSistemaComSenha() {
-            const senha = await mostrarPromptSenha('Confirmar limpeza', 'Digite a senha administrativa para apagar o histórico atual.');
-            if (senha === null) return;
-            if (senha !== SENHA_ADMIN) { await mostrarAlertaModal('Senha administrativa incorreta.'); return; }
-            const confirmar = await mostrarConfirmacaoModal('Apagar todo o histórico de auditoria? Essa operação remove os registros atuais.');
+            // Reutiliza a verificação segura do script.js
+            const autorizado = await verificarSenhaAdmin("limpeza de logs");
+            if (!autorizado) return;
+
+            const confirmar = await mostrarConfirmacaoModal('Apagar todo o histórico de auditoria? Essa operação remove os registros atuais permanentemente.');
             if (!confirmar) return;
+            
+            mostrarLoading("Limpando logs...");
             const dados = obterDados();
             dados.logs = [];
             adicionarAuditoriaAoObjeto(dados, 'LIMPEZA DE LOGS', 'Histórico de auditoria foi limpo pelo administrador');
             await salvarDados(dados);
+            
+            esconderLoading();
             carregarTabelaLogs();
             await mostrarAlertaModal('Logs limpos com sucesso.');
         }

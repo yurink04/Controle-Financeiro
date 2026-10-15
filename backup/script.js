@@ -1,8 +1,22 @@
+async function gerarHash(texto) {
+    const encoder = new TextEncoder();
+    const data = encoder.encode(texto);
+    const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
 const DB_KEY = 'sistemaFinanceiroCompartilhado';
 const BACKUP_TESTE_KEY = 'sistemaFinanceiroBackupTeste';
-const API_URL = "https://script.google.com/macros/s/AKfycbxsGdyzSH-XmWepLo_y7sEN05xBz8-wpxKYEpzJR3-JZB3mXtIWR_brdVSeZGAbaYbZ/exec";
-const TOKEN_API = "PLANOF1NALPRAS4AIRD@MERDA"; 
-const SENHA_ADMIN_EXCLUSAO = "praia22";
+const API_URL = "https://script.google.com/macros/s/AKfycbzRyMczLpCP6ad9nplv6wFXy7NfGFU9NKUlQT3CbT_C4RAMVLHgGeuhjCL_K2yPmkRn/exec";
+const TOKEN_API = "PLANOF1NALPRAS4AIRD@MERDA";
+const SENHA_ADMIN = "praia2222";
+const SCHEMA_VERSION = 2;
+const SYNC_DEBOUNCE_MS = 250;
+let syncTimer = null;
+let syncPendingData = null;
+let syncInFlight = false;
+let ultimaSincronizacaoStatus = 'idle';
 
 let chartEntradasSaidasInstance = null;
 let chartGastosCategoriasInstance = null;
@@ -11,12 +25,389 @@ let chartRelatorioESInstance = null;
 let chartRelatorioCatInstance = null;
 let chartServicosEssenciaisInstance = null;
 
-// Trava global para evitar duplo envio/duplicação em modais e caixas de diálogo
 let processandoAcaoModal = false;
+
+
+function filtrarDadosPorPermissao(lista, dadosGlobais, escopoFiltro = 'casal') {
+    const usuarioAtualId = Number(localStorage.getItem('usuarioLogado'));
+    const usuarioAtual = (dadosGlobais.usuarios || []).find(u => Number(u.id) === usuarioAtualId);
+    
+    if (!usuarioAtual) return [];
+
+    const parceiroId = usuarioAtual.parceiroId ? Number(usuarioAtual.parceiroId) : null;
+
+    return (lista || []).filter(item => {
+        const donoId = Number(item.usuarioId);
+        
+        if (!item.usuarioId) return true;
+
+        if (escopoFiltro === 'individual') {
+            return donoId === usuarioAtualId;
+        }
+
+        if (donoId === usuarioAtualId || (parceiroId && donoId === parceiroId)) {
+            return true;
+        }
+
+        return false;
+    });
+}
+
+   function gerarId(prefixo = 'id') {
+    try {
+        if (window.crypto && typeof window.crypto.randomUUID === 'function') {
+            return `${prefixo}_${window.crypto.randomUUID()}`;
+        }
+    } catch (_) {}
+    return `${prefixo}_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function clonarDados(dados) {
+    return JSON.parse(JSON.stringify(dados));
+}
+
+function validarComplexidadeSenha(senha) {
+    // Mínimo de 8 caracteres, pelo menos uma letra maiúscula, uma minúscula, um número e um caractere especial
+    const regex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[\W_]).{8,}$/;
+    return regex.test(String(senha || ''));
+}
+
+async function selecionarUsuario(id) {
+    const dados = obterDados();
+    const usuario = dados.usuarios.find(u => Number(u.id) === Number(id));
+    if (!usuario) return false;
+
+    const senhaAtual = String(usuario.pin || usuario.senha || "").trim();
+    
+    // Se não tiver palavra-passe cadastrada, exige o cadastro seguro com 2 campos
+    if (!senhaAtual) {
+        let novaSenha = null;
+        let senhaValida = false;
+
+        while (!senhaValida) {
+            novaSenha = await mostrarPromptSenha(
+                "Primeiro Acesso - Cadastrar Senha",
+                `Olá, ${usuario.nome}! Crie uma palavra-passe segura:\n\nRequisitos:\n• Mínimo de 8 carateres\n• Letras (maiúsculas e minúsculas) e números\n• Pelo menos um caráter especial`,
+                true
+            );
+
+            if (novaSenha === null) return false;
+
+            if (validarComplexidadeSenha(novaSenha)) {
+                senhaValida = true;
+            } else {
+                await mostrarAlertaModal("A palavra-passe informada não cumpre todos os requisitos mínimos de segurança. Tente novamente.");
+            }
+        }
+
+        // Gera o hash antes de salvar
+        const hashSenha = await gerarHash(novaSenha);
+        usuario.pin = hashSenha;
+        usuario.senha = hashSenha;
+        
+        registrarLogInterno(dados, "CADASTRO SENHA INICIAL", `Utilizador ${usuario.nome} cadastrou a palavra-passe inicial.`);
+        await salvarDados(dados);
+        await mostrarAlertaModal("Palavra-passe cadastrada com sucesso!");
+    } else {
+        // Se já tem palavra-passe, faz a verificação normal exigindo apenas 1 campo
+        const senhaDigitada = await mostrarPromptSenha(
+            "Verificação de Palavra-passe",
+            `Digite a palavra-passe de acesso para ${usuario.nome}:`,
+            false
+        );
+        
+        if (senhaDigitada === null) return false;
+
+        // Gera o hash da senha digitada para comparar com o salvo
+        const hashDigitado = await gerarHash(senhaDigitada);
+        if (hashDigitado !== senhaAtual) {
+            await mostrarAlertaModal("Palavra-passe incorreta.");
+            return false;
+        }
+    }
+
+    mostrarLoading("A entrar no sistema...");
+    localStorage.setItem('usuarioLogado', String(usuario.id));
+    // Ao iniciar uma nova sessão, os valores voltam a ficar ocultos por padrão
+    localStorage.setItem('privacidadeAtiva', 'true');
+
+    if (normalizarTexto(usuario.nome) === 'teste') {
+        localStorage.setItem(BACKUP_TESTE_KEY, JSON.stringify(dados));
+    }
+
+    registrarLogInterno(dados, "LOGIN", "Utilizador acedeu ao sistema");
+    await salvarDados(dados);
+    esconderLoading();
+    window.location.href = 'dashboard.html';
+    return true;
+}
+
+function numeroSeguro(valor, padrao = 0) {
+    const n = Number(valor);
+    return Number.isFinite(n) ? n : padrao;
+}
+
+function inteiroSeguro(valor, padrao = 0) {
+    const n = parseInt(valor, 10);
+    return Number.isFinite(n) ? n : padrao;
+}
+
+function paraCentavos(valor) {
+    return Math.round(numeroSeguro(valor) * 100);
+}
+
+function deCentavos(centavos) {
+    return numeroSeguro(centavos) / 100;
+}
+
+function formatarMoeda(valor) {
+    return new Intl.NumberFormat('pt-BR', {
+        style: 'currency',
+        currency: 'BRL'
+    }).format(numeroSeguro(valor));
+}
+
+function formatarDataBR(dataStr) {
+    if (!dataStr) return '-';
+    const partes = String(dataStr).split('-');
+    if (partes.length !== 3) return String(dataStr);
+    return `${partes[2]}/${partes[1]}/${partes[0]}`;
+}
+
+function dataLocalYYYYMMDD(data = new Date()) {
+    const ano = data.getFullYear();
+    const mes = String(data.getMonth() + 1).padStart(2, '0');
+    const dia = String(data.getDate()).padStart(2, '0');
+    return `${ano}-${mes}-${dia}`;
+}
+
+function criarDataLocal(dataStr) {
+    if (!dataStr) return null;
+    const [ano, mes, dia] = String(dataStr).split('-').map(Number);
+    if (!ano || !mes || !dia) return null;
+    return new Date(ano, mes - 1, dia);
+}
+
+function dataParaString(data) {
+    return dataLocalYYYYMMDD(data);
+}
+
+function adicionarMesesClamped(dataInicial, meses) {
+    const base = new Date(dataInicial);
+    const diaOriginal = base.getDate();
+    base.setDate(1);
+    base.setMonth(base.getMonth() + meses);
+    const ultimoDia = new Date(base.getFullYear(), base.getMonth() + 1, 0).getDate();
+    base.setDate(Math.min(diaOriginal, ultimoDia));
+    return base;
+}
+
+function definirDiaSeguro(ano, mesZeroBased, dia) {
+    const ultimoDia = new Date(ano, mesZeroBased + 1, 0).getDate();
+    return Math.min(Math.max(1, inteiroSeguro(dia, 1)), ultimoDia);
+}
+
+function dividirValorExato(valor, quantidade) {
+    const qtd = Math.max(1, inteiroSeguro(quantidade, 1));
+    const totalCentavos = paraCentavos(valor);
+    const base = Math.floor(totalCentavos / qtd);
+    const resto = totalCentavos % qtd;
+    return Array.from({ length: qtd }, (_, index) =>
+        deCentavos(base + (index < resto ? 1 : 0))
+    );
+}
+
+function normalizarTexto(texto) {
+    return String(texto || '')
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .trim()
+        .toLowerCase();
+}
+
+function escaparHTML(valor) {
+    const div = document.createElement('div');
+    div.textContent = valor == null ? '' : String(valor);
+    return div.innerHTML;
+}
+
+function obterUsuarioAtual(dados = obterDados()) {
+    const usuarioId = localStorage.getItem('usuarioLogado');
+    return dados.usuarios.find(u => String(u.id) === String(usuarioId)) || null;
+}
+
+function obterUsuarioAtualId(dados = obterDados()) {
+    const usuario = obterUsuarioAtual(dados);
+    return usuario ? usuario.id : null;
+}
+
+function descricaoBaseParcelamento(descricao = '') {
+    return String(descricao).replace(/\s\(\d+\/\d+\)$/, '').trim();
+}
+
+function resolverParcelamentoId(lancamento) {
+    if (lancamento && lancamento.parcelamentoId) return lancamento.parcelamentoId;
+    return null;
+}
+
+function resolverFinanciamentoIdPorLancamento(lancamento, dados) {
+    if (lancamento && lancamento.financiamentoId != null) return lancamento.financiamentoId;
+    const descricao = normalizarTexto(lancamento?.descricao || '');
+    const candidato = (dados.financiamentos || []).find(f =>
+        descricao.includes(normalizarTexto(`Financiamento: ${f.nome}`))
+    );
+    return candidato ? candidato.id : null;
+}
+
+function adicionarAuditoriaAoObjeto(dados, acao, detalhes, extras = {}) {
+    if (!Array.isArray(dados.logs)) dados.logs = [];
+    const usuario = obterUsuarioAtual(dados);
+    dados.logs.push({
+        id: gerarId('log'),
+        dataHora: new Date().toISOString(),
+        dataHoraFormatada: new Date().toLocaleString('pt-BR'),
+        usuario: usuario ? usuario.nome : 'Sistema / Desconhecido',
+        usuarioId: usuario ? usuario.id : null,
+        acao,
+        detalhes,
+        ...extras
+    });
+}
+
+function migrarDados(dados) {
+    let alterou = false;
+    if (!dados || typeof dados !== 'object') dados = {};
+
+    const defaults = {
+        usuarios: [], categorias: [], cartoes: [], lancamentos: [],
+        financiamentos: [], bens: [], notificacoes: [], logs: [], exclusao_movimento: [], edicao_movimento: []
+    };
+    Object.entries(defaults).forEach(([chave, valor]) => {
+        if (!Array.isArray(dados[chave])) {
+            dados[chave] = valor;
+            alterou = true;
+        }
+    });
+
+    dados.cartoes.forEach(cartao => {
+        if (cartao.ativo === undefined) { cartao.ativo = true; alterou = true; }
+        if (!cartao.tipoCartao) { cartao.tipoCartao = 'credito'; alterou = true; }
+        if (cartao.usuarioId == null) {
+            const primeiroUsuario = dados.usuarios[0];
+            if (primeiroUsuario) { cartao.usuarioId = primeiroUsuario.id; alterou = true; }
+        }
+    });
+
+    dados.financiamentos.forEach(fin => {
+        if (fin.ativo === undefined) { fin.ativo = true; alterou = true; }
+        if (fin.totalMeses == null) { fin.totalMeses = 0; alterou = true; }
+        if (!fin.valorParcela && fin.valorParcela !== 0) { fin.valorParcela = 0; alterou = true; }
+    });
+
+    const porFinanciamento = new Map();
+    dados.financiamentos.forEach(fin => {
+        porFinanciamento.set(normalizarTexto(fin.nome), fin.id);
+    });
+
+    dados.lancamentos.forEach(lanc => {
+        if (lanc.pago === undefined) {
+            lanc.pago = lanc.status === 'pago';
+            alterou = true;
+        }
+        if (!lanc.status) {
+            lanc.status = lanc.pago ? 'pago' : 'pendente';
+            alterou = true;
+        }
+        if (lanc.horaExtra == null) { lanc.horaExtra = 0; alterou = true; }
+        if (!lanc.servicoEssencial) { lanc.servicoEssencial = 'nao'; alterou = true; }
+        
+        // >>> AJUSTE AQUI: garante que lançamentos antigos tenham o escopo padrão 'casal' <<<
+        if (!lanc.escopo) { lanc.escopo = 'casal'; alterou = true; }
+
+        if (!lanc.observacao) lanc.observacao = '';
+        if (!lanc.cartaoId && lanc.formaPagamento !== 'CARTAO') lanc.cartaoId = null;
+
+        if (!lanc.parcelamentoId && Number(lanc.totalParcelas) > 1) {
+            const base = descricaoBaseParcelamento(lanc.descricao);
+            const chave = `${lanc.usuarioId || 0}|${lanc.cartaoId || 0}|${base}|${lanc.totalParcelas}`;
+            if (!lanc._legacyParcelamentoChave) {
+                lanc._legacyParcelamentoChave = chave;
+                alterou = true;
+            }
+        }
+
+        if (!lanc.financiamentoId && normalizarTexto(lanc.descricao).startsWith('financiamento:')) {
+            const nome = normalizarTexto(lanc.descricao)
+                .replace(/^financiamento:\s*/, '')
+                .replace(/\s\(\d+\/\d+\)$/, '')
+                .trim();
+            const id = porFinanciamento.get(nome);
+            if (id != null) {
+                lanc.financiamentoId = id;
+                alterou = true;
+            }
+        }
+    });
+
+    const gruposParcelamento = new Map();
+    dados.lancamentos.forEach(lanc => {
+        if (lanc._legacyParcelamentoChave) {
+            if (!gruposParcelamento.has(lanc._legacyParcelamentoChave)) {
+                gruposParcelamento.set(lanc._legacyParcelamentoChave, gerarId('parc'));
+            }
+            lanc.parcelamentoId = gruposParcelamento.get(lanc._legacyParcelamentoChave);
+            delete lanc._legacyParcelamentoChave;
+            alterou = true;
+        }
+    });
+
+    if (dados._schemaVersion !== SCHEMA_VERSION) {
+        dados._schemaVersion = SCHEMA_VERSION;
+        alterou = true;
+    }
+
+    return { dados, alterou };
+}
 
 document.addEventListener("DOMContentLoaded", () => {
     inicializarTemaVisual();
+    inicializarPrivacidade(); // já aplica/remova a classe com base no que foi salvo em localStorage
+    criarIndicadorSincronizacaoUi();
 });
+
+function inicializarPrivacidade() {
+    const privacidade = localStorage.getItem('privacidadeAtiva');
+    // Se for o primeiro acesso, o padrão será "true" (escondido) para maior privacidade
+    if (privacidade !== 'false') {
+        document.body.classList.add('privacidade-ativa');
+        localStorage.setItem('privacidadeAtiva', 'true');
+    } else {
+        document.body.classList.remove('privacidade-ativa');
+    }
+    atualizarIconePrivacidade();
+}
+
+function alternarPrivacidade() {
+    const body = document.body;
+    const estaAtiva = body.classList.contains('privacidade-ativa');
+    
+    if (estaAtiva) {
+        body.classList.remove('privacidade-ativa');
+        localStorage.setItem('privacidadeAtiva', 'false');
+    } else {
+        body.classList.add('privacidade-ativa');
+        localStorage.setItem('privacidadeAtiva', 'true');
+    }
+    atualizarIconePrivacidade();
+}
+
+function atualizarIconePrivacidade() {
+    const img = document.getElementById('imgPrivacidade');
+    if (!img) return;
+    const estaAtiva = document.body.classList.contains('privacidade-ativa');
+    img.src = estaAtiva ? 'imagens/esconder.png' : 'imagens/ver.png';
+    img.alt = estaAtiva ? 'Escondido' : 'Visível';
+}
 
 function inicializarTemaVisual() {
     const temaSalvo = localStorage.getItem('temaSistema') || 'claro';
@@ -25,17 +416,109 @@ function inicializarTemaVisual() {
     }
 }
 
-function alternarTemaVisual() {
-    if (document.body.classList.contains('dark-mode')) {
-        document.body.classList.remove('dark-mode');
-        localStorage.setItem('temaSistema', 'claro');
-    } else {
-        document.body.classList.add('dark-mode');
-        localStorage.setItem('temaSistema', 'escuro');
+function alternarTemaVisual(event) {
+    const body = document.body;
+    const botao = event?.currentTarget || document.querySelector('.btn-theme');
+    const indoParaEscuro = !body.classList.contains('dark-mode');
+    const rect = botao?.getBoundingClientRect();
+    const x = event?.clientX ?? (rect ? rect.left + rect.width / 2 : window.innerWidth / 2);
+    const y = event?.clientY ?? (rect ? rect.top + rect.height / 2 : 40);
+    body.style.setProperty('--theme-x', `${x}px`);
+    body.style.setProperty('--theme-y', `${y}px`);
+    body.classList.toggle('theme-to-light', !indoParaEscuro);
+    body.classList.add('theme-animating');
+    if (botao) { botao.classList.remove('theme-switching'); void botao.offsetWidth; botao.classList.add('theme-switching'); }
+    body.classList.toggle('dark-mode', indoParaEscuro);
+    localStorage.setItem('temaSistema', indoParaEscuro ? 'escuro' : 'claro');
+    window.setTimeout(() => {
+        body.classList.remove('theme-animating', 'theme-to-light');
+        botao?.classList.remove('theme-switching');
+    }, 760);
+}
+
+function criarIndicadorSincronizacaoUi() {
+    // Reaproveita o ícone de sincronização que já existe no HTML de cada página
+    // (#syncStatusIcon), em vez de criar um segundo ícone ao lado dele.
+    const chip = document.getElementById('syncStatusIcon');
+    if (!chip || chip.dataset.syncWired === 'true') return;
+    chip.dataset.syncWired = 'true';
+
+    chip.title = "Status: Sincronizado. Clique para verificar novamente.";
+    chip.style.cssText = `
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 4px;
+        padding: 0 8px;
+        height: 34px;
+        border-radius: 9px;
+        background: var(--success-soft);
+        border: 1px solid color-mix(in srgb, var(--success) 26%, var(--border));
+        color: var(--success);
+        font-size: 1.1rem;
+        cursor: pointer;
+        margin-left: 8px;
+        transition: var(--transition-fast);
+    `;
+    chip.innerHTML = '☁';
+
+    chip.onclick = async () => {
+        chip.style.transform = 'scale(0.9)';
+        setTimeout(() => chip.style.transform = 'scale(1)', 150);
+        
+        atualizarIndicadorSyncUI('pending');
+        
+        try {
+            if (syncPendingData) {
+                await sincronizarComServidor();
+            } else {
+                const dados = obterDados();
+                await salvarDados(dados, { sincronizar: true });
+            }
+            atualizarIndicadorSyncUI('success');
+        } catch (e) {
+            atualizarIndicadorSyncUI('error');
+        } finally {
+            // Recarrega a página após a tentativa de sincronização manual
+            setTimeout(() => {
+                window.location.reload();
+            }, 800);
+        }
+    };
+
+    const userChip = document.getElementById('usuarioLogadoNome');
+    if (userChip && userChip.parentNode) {
+        userChip.parentNode.style.display = 'flex';
+        userChip.parentNode.style.alignItems = 'center';
+        userChip.parentNode.style.flexWrap = 'nowrap';
     }
 }
 
-// --- Tela de Carregamento (Loading) ---
+function atualizarIndicadorSyncUI(status) {
+    const chip = document.getElementById('syncStatusIcon');
+    if (!chip) return;
+    
+    if (status === 'pending') {
+        chip.style.color = 'var(--warning)';
+        chip.style.backgroundColor = 'var(--warning-soft)';
+        chip.style.borderColor = 'color-mix(in srgb, var(--warning) 26%, var(--border))';
+        chip.title = "Status: Sincronizando...";
+        chip.innerHTML = `<img src="imagens/loading.gif" alt="Carregando" style="width: 16px; height: 16px; object-fit: contain;">`;
+    } else if (status === 'success') {
+        chip.style.color = 'var(--success)';
+        chip.style.backgroundColor = 'var(--success-soft)';
+        chip.style.borderColor = 'color-mix(in srgb, var(--success) 26%, var(--border))';
+        chip.title = "Status: Sincronizado com sucesso";
+        chip.innerHTML = `☁ <span style="font-size: 0.85rem; font-weight: bold; margin-left: 2px;">✓</span>`;
+    } else if (status === 'error') {
+        chip.style.color = 'var(--danger)';
+        chip.style.backgroundColor = 'var(--danger-soft)';
+        chip.style.borderColor = 'color-mix(in srgb, var(--danger) 26%, var(--border))';
+        chip.title = "Status: Erro ao sincronizar";
+        chip.innerHTML = `☁ <span style="font-size: 0.85rem; font-weight: bold; margin-left: 2px;">✕</span>`;
+    }
+}
+
 function mostrarLoading(mensagem = "Salvando alterações...") {
     if (document.getElementById('loadingOverlay')) return;
     const overlay = document.createElement('div');
@@ -60,144 +543,134 @@ function esconderLoading() {
 }
 
 async function inicializarBanco() {
-    if (!localStorage.getItem(DB_KEY)) {
-        const dadosIniciais = {
-            usuarios: [
-                { id: 1, nome: "Samuel", senha: "" },
-                { id: 2, nome: "Mariana", senha: "" },
-                { id: 3, nome: "TESTE", senha: "" }
-            ],
-            categorias: [
-                { id: 1, nome: "Alimentação", tipo: "saida" },
-                { id: 2, nome: "Moradia / Contas", tipo: "saida" },
-                { id: 3, nome: "Salário", tipo: "entrada" },
-                { id: 4, nome: "Financiamentos", tipo: "saida" }
-            ],
-            cartoes: [],
-            lancamentos: [],
-            financiamentos: [],
-            logs: [],
-            exclusao_movimento: [],
-            edicao_movimento: []
-        };
-        localStorage.setItem(DB_KEY, JSON.stringify(dadosIniciais));
+    try {
+        mostrarLoading("Sincronizando com o servidor...");
+        const json = await buscarDadosServidor();
+        
+        const resultado = migrarDados(json);
+        if (!Number.isFinite(Number(resultado.dados._revision))) resultado.dados._revision = 0;
+        
+        memoriaSistema = resultado.dados;
+        revisaoServidorAtual = resultado.dados._revision;
+        localStorage.setItem(DB_KEY, JSON.stringify(memoriaSistema));
+        esconderLoading();
+    } catch (e) {
+        console.warn("Erro ao buscar dados do servidor. Usando cache local.", e);
+        // Fallback para o localStorage se estiver offline
+        const bruto = localStorage.getItem(DB_KEY);
+        if (bruto) {
+            const resultado = migrarDados(JSON.parse(bruto));
+            memoriaSistema = resultado.dados;
+            localStorage.setItem(DB_KEY, JSON.stringify(resultado.dados));
+        } else {
+            throw new Error("Sistema offline e sem dados locais.");
+        }
     }
 }
 
-let memoriaSistema = JSON.parse(localStorage.getItem(DB_KEY)) || {
-    usuarios: [
-        { id: 1, nome: "Samuel", senha: "" }, 
-        { id: 2, nome: "Mariana", senha: "" }, 
-        { id: 3, nome: "TESTE", senha: "" }
-    ],
-    categorias: [],
-    cartoes: [],
-    lancamentos: [],
-    financiamentos: [],
-    logs: [],
-    exclusao_movimento: [],
-    edicao_movimento: []
-};
+let memoriaSistema = null;
 
 function obterDados() {
+    let dados = null;
     const dadosLocal = localStorage.getItem(DB_KEY);
     if (dadosLocal) {
-        const parsed = JSON.parse(dadosLocal);
-        if (!parsed.logs) parsed.logs = [];
-        if (!parsed.exclusao_movimento) parsed.exclusao_movimento = [];
-        if (!parsed.edicao_movimento) parsed.edicao_movimento = [];
-        return parsed;
-    }
-    if (!memoriaSistema.logs) memoriaSistema.logs = [];
-    if (!memoriaSistema.exclusao_movimento) memoriaSistema.exclusao_movimento = [];
-    if (!memoriaSistema.edicao_movimento) memoriaSistema.edicao_movimento = [];
-    return memoriaSistema;
-}
-
-async function salvarDados(dados) {
-    const usuarioId = localStorage.getItem('usuarioLogado');
-    const usuarioObj = dados.usuarios.find(u => u.id == usuarioId);
-    
-    if (usuarioObj && usuarioObj.nome.toUpperCase() === 'TESTE') {
-        return;
+        try {
+            dados = JSON.parse(dadosLocal);
+        } catch (_) {
+            dados = null;
+        }
     }
 
-    memoriaSistema = dados;
-    localStorage.setItem(DB_KEY, JSON.stringify(dados));
-    
-    fetch(API_URL, {
-        method: "POST",
-        mode: "no-cors",
-        headers: {
-            "Content-Type": "application/json"
-        },
-        body: JSON.stringify({ 
-            action: "salvarDados", 
-            token: TOKEN_API, 
-            dados: dados 
-        })
-    }).catch(e => {
-        console.error("Erro ao sincronizar em segundo plano com o Google Sheets:", e);
-    });
+    if (!dados) {
+        dados = memoriaSistema || {};
+    }
+
+    const resultado = migrarDados(dados);
+    memoriaSistema = resultado.dados;
+    if (resultado.alterou) {
+        localStorage.setItem(DB_KEY, JSON.stringify(resultado.dados));
+    }
+    return resultado.dados;
 }
 
-async function registrarLog(acao, detalhes) {
+function agendarSincronizacao(dados) {
+    syncPendingData = clonarDados(dados);
+    ultimaSincronizacaoStatus = 'pending';
+    atualizarIndicadorSyncUI('pending');
+
+    if (syncTimer) clearTimeout(syncTimer);
+    syncTimer = setTimeout(() => sincronizarComServidor(), SYNC_DEBOUNCE_MS);
+}
+
+async function sincronizarComServidor() {
+    if (syncInFlight || !syncPendingData) return;
+    syncInFlight = true;
+    const payloadDados = syncPendingData;
+    syncPendingData = null;
+
+    try {
+        await fetch(API_URL, {
+            method: "POST",
+            headers: { "Content-Type": "text/plain;charset=utf-8" },
+            body: JSON.stringify({
+                action: "salvarDados",
+                token: TOKEN_API,
+                dados: payloadDados
+            })
+        });
+        ultimaSincronizacaoStatus = 'success';
+        atualizarIndicadorSyncUI('success');
+    } catch (e) {
+        ultimaSincronizacaoStatus = 'error';
+        atualizarIndicadorSyncUI('error');
+        console.error("Erro ao sincronizar com o Google Sheets:", e);
+        syncPendingData = payloadDados;
+    } finally {
+        syncInFlight = false;
+        if (syncPendingData) agendarSincronizacao(syncPendingData);
+    }
+}
+
+async function buscarDadosServidor() {
+    const resposta = await fetch(`${API_URL}?action=obterDados&token=${encodeURIComponent(TOKEN_API)}`);
+    if (!resposta.ok) throw new Error('Falha de rede ao contatar o servidor.');
+    const json = await resposta.json();
+    if (json.status === 'erro') throw new Error(json.mensagem || 'Erro desconhecido do servidor.');
+    return json;
+}
+
+async function salvarDados(dados, opcoes = {}) {
+    const usuarioObj = obterUsuarioAtual(dados);
+    if (usuarioObj && normalizarTexto(usuarioObj.nome) === 'teste') {
+        memoriaSistema = dados;
+        localStorage.setItem(DB_KEY, JSON.stringify(dados));
+        return true;
+    }
+
+    const normalizado = migrarDados(dados).dados;
+    if (!Number.isFinite(Number(normalizado._revision))) {
+        normalizado._revision = Number(revisaoServidorAtual) || 0;
+    }
+
+    memoriaSistema = normalizado;
+    localStorage.setItem(DB_KEY, JSON.stringify(normalizado));
+
+    if (opcoes.sincronizar !== false) {
+        syncPendingData = normalizado;
+        // Aguarda a sincronização real em vez de usar debounce assíncrono invisível
+        await sincronizarComServidor(); 
+    }
+    return true;
+}
+
+async function registrarLog(acao, detalhes, extras = {}) {
     const dados = obterDados();
-    const usuarioId = localStorage.getItem('usuarioLogado');
-    let nomeUsuario = "Sistema / Desconhecido";
-    
-    if (usuarioId) {
-        const u = dados.usuarios.find(user => user.id == usuarioId);
-        if (u) nomeUsuario = u.nome;
-    }
-
-    const agora = new Date();
-    const dataHora = agora.toLocaleString('pt-BR');
-
-    dados.logs.push({
-        dataHora,
-        usuario: nomeUsuario,
-        acao,
-        detalhes
-    });
-
+    adicionarAuditoriaAoObjeto(dados, acao, detalhes, extras);
     await salvarDados(dados);
 }
 
-// --- Seleção de Usuário com Verificação Automática de PIN ---
-async function selecionarUsuario(id) {
-    const dados = obterDados();
-    const usuario = dados.usuarios.find(u => Number(u.id) === Number(id));
-    
-    if (!usuario) {
-        return;
-    }
-
-    if (usuario.senha !== undefined && usuario.senha !== null && String(usuario.senha).trim() !== "") {
-        const senhaDigitada = await mostrarPromptModal("Verificação de PIN", `Digite o PIN de acesso para ${usuario.nome}:`, usuario.senha);
-        if (senhaDigitada === null) return;
-    }
-
-    mostrarLoading("Entrando no sistema...");
-
-    localStorage.setItem('usuarioLogado', id);
-
-    if (usuario.nome.toUpperCase() === 'TESTE') {
-        localStorage.setItem(BACKUP_TESTE_KEY, JSON.stringify(dados));
-    }
-
-    fetch(`${API_URL}?action=obterDados&token=${TOKEN_API}`)
-        .then(res => res.json())
-        .then(dadosRemotos => {
-            if (dadosRemotos && dadosRemotos.usuarios) {
-                localStorage.setItem(DB_KEY, JSON.stringify(dadosRemotos));
-            }
-        }).catch(e => {
-            console.warn("Aviso ao atualizar dados remotos em segundo plano:", e);
-        });
-
-    esconderLoading();
-    window.location.href = 'dashboard.html';
+function registrarLogInterno(dados, acao, detalhes, extras = {}) {
+    adicionarAuditoriaAoObjeto(dados, acao, detalhes, extras);
 }
 
 function deslogarSistema() {
@@ -205,20 +678,18 @@ function deslogarSistema() {
     if (usuarioId) {
         const dados = obterDados();
         const usuario = dados.usuarios.find(u => Number(u.id) === Number(usuarioId));
-        
-        if (usuario && usuario.nome.toUpperCase() === 'TESTE') {
+        if (usuario && normalizarTexto(usuario.nome) === 'teste') {
             const backup = localStorage.getItem(BACKUP_TESTE_KEY);
             if (backup) {
                 localStorage.setItem(DB_KEY, backup);
                 localStorage.removeItem(BACKUP_TESTE_KEY);
-            } else {
-                localStorage.removeItem(DB_KEY);
             }
         }
     }
 
     localStorage.removeItem('usuarioLogado');
     sessionStorage.removeItem('adminAutorizado');
+    sessionStorage.removeItem('adminLogado');
     window.location.href = 'index.html';
 }
 
@@ -227,194 +698,306 @@ async function verificarAutenticacao() {
     const usuarioId = localStorage.getItem('usuarioLogado');
     if (!usuarioId) {
         window.location.href = 'index.html';
-        return;
+        return false;
     }
+
     const dados = obterDados();
-    const usuario = dados.usuarios.find(u => u.id == usuarioId);
-    const spanNome = document.getElementById('usuarioLogadoNome');
-    if (spanNome && usuario) {
-        spanNome.innerText = `Perfil: ${usuario.nome}`;
+    const usuario = dados.usuarios.find(u => String(u.id) === String(usuarioId));
+    if (!usuario) {
+        deslogarSistema();
+        return false;
     }
+
+    const spanNome = document.getElementById('usuarioLogadoNome');
+    if (spanNome) {
+        spanNome.style.cursor = 'pointer';
+        spanNome.title = "Clique para gerenciar seu perfil";
+        // Exibe o nome próprio da pessoa na barra de navegação
+        spanNome.innerHTML = `Perfil: <strong>${usuario.nome}</strong> ⚙️`;
+        spanNome.onclick = () => {
+            window.location.href = 'perfil.html';
+        };
+    }
+
+    renderizarSinoNotificacoes();
+    return true;
 }
 
-// --- Modais Customizados com PIN Automático e Trava de Submissão Única ---
+function criarModalBase({ titulo, mensagem, htmlExtra = '', classe = '' }) {
+    const overlay = document.createElement('div');
+    overlay.className = `modal-overlay ${classe}`.trim();
+    overlay.setAttribute('role', 'dialog');
+    overlay.setAttribute('aria-modal', 'true');
+    overlay.innerHTML = `
+        <div class="modal-box" tabindex="-1">
+            <h3>${escaparHTML(titulo)}</h3>
+            <p>${escaparHTML(mensagem)}</p>
+            ${htmlExtra}
+        </div>
+    `;
+    document.body.appendChild(overlay);
+    const box = overlay.querySelector('.modal-box');
+    if (box) box.focus();
+    return { overlay, box };
+}
+
+function fecharModal(overlay) {
+    if (!overlay) return;
+    overlay.classList.add('modal-closing');
+    setTimeout(() => overlay.remove(), 120);
+}
+
 function mostrarConfirmacaoModal(mensagem) {
-    return new Promise((resolve) => {
-        if (processandoAcaoModal) return;
-        const overlay = document.createElement('div');
-        overlay.className = 'modal-overlay';
-        overlay.innerHTML = `
-            <div class="modal-box">
-                <h3>Confirmação</h3>
-                <p>${mensagem}</p>
+    return new Promise(resolve => {
+        const { overlay } = criarModalBase({
+            titulo: 'Confirmação',
+            mensagem,
+            htmlExtra: `
                 <div class="modal-buttons">
-                    <button id="btnNaoModal">Cancelar</button>
-                    <button id="btnSimModal">Confirmar</button>
+                    <button type="button" class="btn-secundario" data-cancelar>Cancelar</button>
+                    <button type="button" class="btn-perigo" data-confirmar>Confirmar</button>
+                </div>`
+        });
+        let finalizado = false;
+        const finalizar = valor => {
+            if (finalizado) return;
+            finalizado = true;
+            fecharModal(overlay);
+            resolve(valor);
+        };
+        overlay.querySelector('[data-cancelar]').onclick = () => finalizar(false);
+        overlay.querySelector('[data-confirmar]').onclick = () => finalizar(true);
+        overlay.addEventListener('click', e => {
+            if (e.target === overlay) finalizar(false);
+        });
+        overlay.addEventListener('keydown', e => {
+            if (e.key === 'Escape') finalizar(false);
+            if (e.key === 'Enter') finalizar(true);
+        });
+    });
+}
+
+function mostrarPromptSenha(titulo, descricao, exigirConfirmacao = true) {
+    return new Promise(resolve => {
+        const htmlExtra = exigirConfirmacao ? `
+            <div style="margin-top: 20px; display: flex; flex-direction: column; gap: 16px; text-align: left;">
+                <div>
+                    <label style="font-size: 0.95rem; font-weight: bold; color: var(--text-main); display: block; margin-bottom: 6px;">Nova Palavra-passe:</label>
+                    <input type="password" class="modal-input" id="promptNovaSenha" maxlength="32" autocomplete="off" placeholder="Digite a nova palavra-passe" style="min-height: 54px; font-size: 1.05rem;">
+                </div>
+                <div>
+                    <label style="font-size: 0.95rem; font-weight: bold; color: var(--text-main); display: block; margin-bottom: 6px;">Confirme a Nova Palavra-passe:</label>
+                    <input type="password" class="modal-input" id="promptConfirmaSenha" maxlength="32" autocomplete="off" placeholder="Digite a palavra-passe novamente" style="min-height: 54px; font-size: 1.05rem;">
+                </div>
+            </div>
+        ` : `
+            <div style="margin-top: 20px; display: flex; flex-direction: column; gap: 16px; text-align: left;">
+                <div>
+                    <label style="font-size: 0.95rem; font-weight: bold; color: var(--text-main); display: block; margin-bottom: 6px;">Palavra-passe:</label>
+                    <input type="password" class="modal-input" id="promptNovaSenha" maxlength="32" autocomplete="off" placeholder="Digite a sua palavra-passe" style="min-height: 54px; font-size: 1.05rem;">
                 </div>
             </div>
         `;
-        document.body.appendChild(overlay);
 
-        const finalizar = (val) => {
-            overlay.remove();
-            resolve(val);
+        const { overlay, box } = criarModalBase({
+            titulo,
+            mensagem: descricao,
+            htmlExtra: htmlExtra + `
+                <div class="modal-buttons" style="margin-top: 28px;">
+                    <button type="button" class="btn-secundario" data-cancelar style="padding: 14px;">Cancelar</button>
+                    <button type="button" data-confirmar style="padding: 14px;">Confirmar</button>
+                </div>`
+        });
+
+        if (box) {
+            box.style.width = "min(680px, 95vw)";
+            box.style.padding = "40px";
+        }
+
+        const inputNova = overlay.querySelector('#promptNovaSenha');
+        const inputConfirma = overlay.querySelector('#promptConfirmaSenha');
+        let finalizado = false;
+
+        const finalizar = valor => {
+            if (finalizado) return;
+            finalizado = true;
+            fecharModal(overlay);
+            resolve(valor);
         };
 
-        document.getElementById('btnSimModal').onclick = () => finalizar(true);
-        document.getElementById('btnNaoModal').onclick = () => finalizar(false);
+        setTimeout(() => inputNova?.focus(), 0);
+
+        overlay.querySelector('[data-cancelar]').onclick = () => finalizar(null);
+        
+        overlay.querySelector('[data-confirmar]').onclick = () => {
+            const valNova = inputNova.value.trim();
+
+            if (!valNova) {
+                mostrarAlertaModal("O campo de palavra-passe não pode estar vazio.");
+                inputNova.focus();
+                return;
+            }
+
+            if (exigirConfirmacao) {
+                const valConfirma = inputConfirma.value.trim();
+                if (!validarComplexidadeSenha(valNova)) {
+                    mostrarAlertaModal("A palavra-passe não atende aos requisitos mínimos de segurança.");
+                    inputNova.focus();
+                    return;
+                }
+                if (valNova !== valConfirma) {
+                    mostrarAlertaModal("As palavras-passe digitadas não conferem. Tente novamente.");
+                    inputConfirma.value = '';
+                    inputConfirma.focus();
+                    return;
+                }
+            }
+
+            finalizar(valNova);
+        };
+
+        inputNova.addEventListener('keydown', e => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                if (exigirConfirmacao && inputConfirma) {
+                    inputConfirma.focus();
+                } else {
+                    overlay.querySelector('[data-confirmar]').click();
+                }
+            }
+            if (e.key === 'Escape') finalizar(null);
+        });
+
+        if (inputConfirma) {
+            inputConfirma.addEventListener('keydown', e => {
+                if (e.key === 'Enter') { e.preventDefault(); overlay.querySelector('[data-confirmar]').click(); }
+                if (e.key === 'Escape') finalizar(null);
+            });
+        }
     });
 }
 
 function mostrarPromptModal(titulo, descricao, senhaCorreta = null) {
-    return new Promise((resolve) => {
-        const overlay = document.createElement('div');
-        overlay.className = 'modal-overlay';
-        overlay.innerHTML = `
-            <div class="modal-box" style="text-align: center;">
-                <h3>${titulo}</h3>
-                <p>${descricao}</p>
-                <input type="password" id="inputModalValor" placeholder="••••" maxlength="6" autofocus style="text-align: center; font-size: 1.5rem; letter-spacing: 8px; width: 150px; margin: 15px auto;">
-                <div class="modal-buttons" style="justify-content: center; margin-top: 10px;">
-                    <button id="btnCancelarPrompt" style="background-color: #64748b; flex: 1; max-width: 150px;">Cancelar</button>
-                </div>
-            </div>
-        `;
-        document.body.appendChild(overlay);
+    return new Promise(async resolve => {
+        if (senhaCorreta !== null && senhaCorreta !== undefined && senhaCorreta !== '') {
+            const resposta = await mostrarPromptSenha(titulo, descricao);
+            resolve(resposta === null ? null : resposta);
+            return;
+        }
 
-        const input = document.getElementById('inputModalValor');
-        input.focus();
-
-        const finalizar = (val) => {
-            if (processandoAcaoModal) return;
-            processandoAcaoModal = true;
-            overlay.remove();
-            setTimeout(() => { processandoAcaoModal = false; }, 300);
-            resolve(val);
+        const { overlay } = criarModalBase({
+            titulo,
+            mensagem: descricao,
+            htmlExtra: `
+                <input type="text" class="modal-input" data-valor autocomplete="off" placeholder="Digite o valor">
+                <div class="modal-buttons">
+                    <button type="button" class="btn-secundario" data-cancelar>Cancelar</button>
+                    <button type="button" data-confirmar>Confirmar</button>
+                </div>`
+        });
+        const input = overlay.querySelector('[data-valor]');
+        let finalizado = false;
+        const finalizar = valor => {
+            if (finalizado) return;
+            finalizado = true;
+            fecharModal(overlay);
+            resolve(valor);
         };
-
-        input.oninput = () => {
-            const digitado = input.value.trim();
-            if (senhaCorreta !== null && senhaCorreta !== undefined && senhaCorreta !== "") {
-                if (digitado === String(senhaCorreta).trim()) {
-                    finalizar(digitado);
-                }
+        setTimeout(() => input?.focus(), 0);
+        overlay.querySelector('[data-cancelar]').onclick = () => finalizar(null);
+        overlay.querySelector('[data-confirmar]').onclick = () => finalizar(input.value.trim());
+        input.addEventListener('keydown', e => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                finalizar(input.value.trim());
             }
-        };
-
-        document.getElementById('btnCancelarPrompt').onclick = () => finalizar(null);
-        input.onkeydown = (e) => {
             if (e.key === 'Escape') finalizar(null);
-        };
+        });
     });
 }
 
 function mostrarPromptTextoModal(titulo, descricao) {
-    return new Promise((resolve) => {
-        const overlay = document.createElement('div');
-        overlay.className = 'modal-overlay';
-        overlay.innerHTML = `
-            <div class="modal-box">
-                <h3>${titulo}</h3>
-                <p>${descricao}</p>
-                <input type="text" id="inputModalTextoMotivo" placeholder="Digite o motivo obrigatório..." autofocus style="width: 100%; padding: 8px; margin-top: 10px; border: 1px solid var(--border); border-radius: 4px;">
-                <div class="modal-buttons" style="margin-top: 15px;">
-                    <button id="btnCancelarPromptTexto">Cancelar</button>
-                    <button id="btnOkPromptTexto" style="background-color: var(--primary); color: #fff;">Confirmar</button>
-                </div>
-            </div>
-        `;
-        document.body.appendChild(overlay);
-
-        const input = document.getElementById('inputModalTextoMotivo');
-        input.focus();
-
-        const finalizar = (val) => {
-            if (processandoAcaoModal) return;
-            processandoAcaoModal = true;
-            overlay.remove();
-            setTimeout(() => { processandoAcaoModal = false; }, 300);
-            resolve(val);
+    return new Promise(resolve => {
+        const { overlay } = criarModalBase({
+            titulo,
+            mensagem: descricao,
+            htmlExtra: `
+                <input type="text" class="modal-input" data-valor maxlength="250" placeholder="Digite o motivo obrigatório...">
+                <div class="modal-buttons">
+                    <button type="button" class="btn-secundario" data-cancelar>Cancelar</button>
+                    <button type="button" data-confirmar>Confirmar</button>
+                </div>`
+        });
+        const input = overlay.querySelector('[data-valor]');
+        let finalizado = false;
+        const finalizar = valor => {
+            if (finalizado) return;
+            finalizado = true;
+            fecharModal(overlay);
+            resolve(valor);
         };
-
-        const acaoConfirmar = () => {
-            const val = input.value.trim();
-            if (!val) {
-                alert("O preenchimento do motivo é obrigatório!");
+        const confirmar = () => {
+            const valor = input.value.trim();
+            if (!valor) {
+                input.focus();
+                mostrarAlertaModal('O preenchimento do motivo é obrigatório!');
                 return;
             }
-            finalizar(val);
+            finalizar(valor);
         };
-
-        document.getElementById('btnOkPromptTexto').onclick = acaoConfirmar;
-        document.getElementById('btnCancelarPromptTexto').onclick = () => finalizar(null);
-        
-        input.onkeydown = (e) => {
+        setTimeout(() => input?.focus(), 0);
+        overlay.querySelector('[data-cancelar]').onclick = () => finalizar(null);
+        overlay.querySelector('[data-confirmar]').onclick = confirmar;
+        input.addEventListener('keydown', e => {
             if (e.key === 'Enter') {
                 e.preventDefault();
-                acaoConfirmar();
+                confirmar();
             }
             if (e.key === 'Escape') finalizar(null);
-        };
+        });
     });
 }
 
 function mostrarAlertaModal(mensagem) {
-    return new Promise((resolve) => {
-        const overlay = document.createElement('div');
-        overlay.className = 'modal-overlay';
-        overlay.innerHTML = `
-            <div class="modal-box" style="text-align: center;">
-                <h3>Aviso</h3>
-                <p style="margin: 15px 0; text-align: center;">${mensagem}</p>
-                <div class="modal-buttons" style="justify-content: center;">
-                    <button id="btnOkAlerta" style="flex: 1; max-width: 200px;">OK</button>
-                </div>
-            </div>
-        `;
-        document.body.appendChild(overlay);
-
+    return new Promise(resolve => {
+        const { overlay } = criarModalBase({
+            titulo: 'Aviso',
+            mensagem,
+            htmlExtra: `
+                <div class="modal-buttons modal-buttons-center">
+                    <button type="button" data-confirmar>OK</button>
+                </div>`
+        });
         const finalizar = () => {
-            overlay.remove();
+            fecharModal(overlay);
             resolve(true);
         };
-
-        document.getElementById('btnOkAlerta').onclick = finalizar;
-        
-        const handleKeyDown = (e) => {
-            if (e.key === 'Enter' || e.key === 'Escape') {
-                document.removeEventListener('keydown', handleKeyDown);
-                finalizar();
-            }
-        };
-        document.addEventListener('keydown', handleKeyDown);
+        overlay.querySelector('[data-confirmar]').onclick = finalizar;
+        overlay.addEventListener('keydown', e => {
+            if (e.key === 'Enter' || e.key === 'Escape') finalizar();
+        });
     });
 }
 
 async function verificarSenhaAdmin(nomeSecao = "esta seção") {
-    const usuarioId = localStorage.getItem('usuarioLogado');
-    const dadosCheck = obterDados();
-    const usuarioObj = dadosCheck.usuarios.find(u => u.id == usuarioId);
-    if (usuarioObj && usuarioObj.nome.toUpperCase() === 'TESTE') {
-        return true;
-    }
+    const usuario = obterUsuarioAtual();
+    if (usuario && normalizarTexto(usuario.nome) === 'teste') return true;
+    if (sessionStorage.getItem('adminAutorizado') === 'true') return true;
 
-    if (sessionStorage.getItem('adminAutorizado') === 'true') {
-        return true;
-    }
-
-    const senhaDigitada = await mostrarPromptModal("Acesso Restrito", `Área protegida por senha de administrador para ${nomeSecao}.`);
+    const senhaDigitada = await mostrarPromptSenha(
+        "Acesso restrito",
+        `Área protegida por senha de administrador para ${nomeSecao}.`
+    );
     if (senhaDigitada === null) return false;
 
-    if (senhaDigitada === SENHA_ADMIN_EXCLUSAO) {
-        const lembrar = await mostrarConfirmacaoModal("Deseja lembrar a autorização para essa seção durante esta sessão?");
-        if (lembrar) {
-            sessionStorage.setItem('adminAutorizado', 'true');
-        }
+    if (senhaDigitada === SENHA_ADMIN) {
+        const lembrar = await mostrarConfirmacaoModal("Deseja lembrar esta autorização durante a sessão?");
+        if (lembrar) sessionStorage.setItem('adminAutorizado', 'true');
         return true;
-    } else {
-        await mostrarAlertaModal('Senha de administrador incorreta!');
-        return false;
     }
+
+    await mostrarAlertaModal('Senha de administrador incorreta!');
+    return false;
 }
 
 async function adicionarCategoria(nome, tipo) {
@@ -424,365 +1007,648 @@ async function adicionarCategoria(nome, tipo) {
     processandoAcaoModal = true;
     mostrarLoading("Cadastrando categoria...");
     const dados = obterDados();
-    const novaId = dados.categorias.length > 0 ? Number(dados.categorias[dados.categorias.length - 1].id) + 1 : 1;
-    dados.categorias.push({ id: novaId, nome, tipo });
-    
+    const nomeNormalizado = normalizarTexto(nome);
+    const usuarioAtualId = Number(obterUsuarioAtualId(dados));
+    const ID_SISTEMA = 5;
+
+    if (!nomeNormalizado || !['entrada', 'saida'].includes(tipo)) {
+        esconderLoading();
+        processandoAcaoModal = false;
+        await mostrarAlertaModal('Dados da categoria inválidos.');
+        return false;
+    }
+
+    // Verifica duplicação considerando o escopo correto
+    const duplicada = dados.categorias.some(c => {
+        const criadorId = Number(c.criadopor);
+        const mesmoNomeTipo = c.tipo === tipo && normalizarTexto(c.nome) === nomeNormalizado;
+        const pertenceAoContexto = criadorId === ID_SISTEMA || criadorId === usuarioAtualId;
+        return mesmoNomeTipo && pertenceAoContexto;
+    });
+
+    if (duplicada) {
+        esconderLoading();
+        processandoAcaoModal = false;
+        await mostrarAlertaModal('Já existe uma categoria com este nome e tipo.');
+        return false;
+    }
+
+    const novaId = dados.categorias.reduce((m, c) => Math.max(m, Number(c.id) || 0), 0) + 1;
+    dados.categorias.push({ 
+        id: novaId, 
+        nome: String(nome).trim(), 
+        tipo, 
+        classificacao: 'personalizado', 
+        criadopor: usuarioAtualId 
+    });
+
+    registrarLogInterno(dados, "CADASTRO CATEGORIA", `Categoria personalizada criada: ${nome} (${tipo})`);
     await salvarDados(dados);
-    await registrarLog("CADASTRO CATEGORIA", `Categoria criada: ${nome} (${tipo})`);
     
     esconderLoading();
     processandoAcaoModal = false;
     await mostrarAlertaModal("Categoria cadastrada com sucesso!");
     if (typeof renderizarCategorias === 'function') renderizarCategorias();
+    return true;
 }
 
 async function atualizarCategoria(id, nome, tipo) {
-    if (processandoAcaoModal) return;
-    if (!await verificarSenhaAdmin("editar categoria")) return;
-    
+    if (processandoAcaoModal) return false;
+    if (!await verificarSenhaAdmin("editar categoria")) return false;
+
     processandoAcaoModal = true;
     mostrarLoading("Atualizando categoria...");
-    const dados = obterDados();
-    const categoria = dados.categorias.find(c => Number(c.id) === Number(id));
-    if (categoria) {
-        categoria.nome = nome;
+    try {
+        const dados = obterDados();
+        const categoria = dados.categorias.find(c => String(c.id) === String(id));
+        const usuarioAtualId = Number(obterUsuarioAtualId(dados));
+
+        if (!categoria) throw new Error('Categoria não encontrada.');
+
+        // Impede que usuários comuns alterem categorias padrão do sistema
+        if (categoria.classificacao === 'padrao') {
+            throw new Error('Categorias padrão do sistema não podem ser alteradas.');
+        }
+
+        const nomeNormalizado = normalizarTexto(nome);
+        const duplicada = dados.categorias.some(c =>
+            String(c.id) !== String(id) &&
+            c.tipo === tipo &&
+            normalizarTexto(c.nome) === nomeNormalizado
+        );
+        if (duplicada) throw new Error('Já existe outra categoria com este nome e tipo.');
+
+        categoria.nome = String(nome).trim();
         categoria.tipo = tipo;
+        categoria.updatedAt = new Date().toISOString();
+
+        registrarLogInterno(dados, "EDIÇÃO CATEGORIA", `Categoria ID ${id} alterada para: ${categoria.nome}`);
         await salvarDados(dados);
-        await registrarLog("EDIÇÃO CATEGORIA", `Categoria ID ${id} alterada para: ${nome} (${tipo})`);
-        
+
         esconderLoading();
         processandoAcaoModal = false;
         await mostrarAlertaModal("Categoria atualizada com sucesso!");
         if (typeof renderizarCategorias === 'function') renderizarCategorias();
-    } else {
+        return true;
+    } catch (erro) {
         esconderLoading();
         processandoAcaoModal = false;
+        await mostrarAlertaModal(erro.message || 'Não foi possível atualizar a categoria.');
+        return false;
     }
-}
-
-async function excluirCategoria(id) {
-    if (processandoAcaoModal) return;
-    if (!await verificarSenhaAdmin("excluir categoria")) return;
-    
-    processandoAcaoModal = true;
-    mostrarLoading("Excluindo categoria...");
-    const dados = obterDados();
-    dados.categorias = dados.categorias.filter(c => Number(c.id) !== Number(id));
-    await salvarDados(dados);
-    await registrarLog("EXCLUSÃO CATEGORIA", `Categoria ID ${id} excluída`);
-    
-    esconderLoading();
-    processandoAcaoModal = false;
-    await mostrarAlertaModal("Categoria excluída com sucesso!");
-    if (typeof renderizarCategorias === 'function') renderizarCategorias();
-}
-
-function renderizarCategorias() {
-    const dados = obterDados();
-    const lista = document.getElementById('listaCategorias');
-    if (!lista) return;
-    lista.innerHTML = '';
-    
-    const filtroSelect = document.getElementById('filtroTipoCategoria');
-    const filtroValor = filtroSelect ? filtroSelect.value : 'todos';
-
-    let categoriasFiltradas = dados.categorias;
-    if (filtroValor !== 'todos') {
-        categoriasFiltradas = dados.categorias.filter(c => c.tipo === filtroValor);
-    }
-
-    if (categoriasFiltradas.length === 0) {
-        lista.innerHTML = '<li>Nenhuma categoria encontrada para este filtro.</li>';
-        return;
-    }
-
-    categoriasFiltradas.forEach(cat => {
-        const li = document.createElement('li');
-        li.innerHTML = `
-            <span>${cat.nome} (<strong>${cat.tipo.toUpperCase()}</strong>)</span>
-            <div>
-                <button onclick="prepararEdicaoCategoria(${cat.id}, '${cat.nome}', '${cat.tipo}')" class="btn-acao-icone editar" title="Editar"><img src="imagens/editar.png" alt="Editar"></button>
-                <button onclick="excluirCategoriaPrompt(${cat.id})" class="btn-acao-icone excluir" title="Excluir"><img src="imagens/excluir.png" alt="Excluir"></button>
-            </div>
-        `;
-        lista.appendChild(li);
-    });
-}
-
-// --- Gestão de Cartões e Benefícios (VR / VA) ---
-async function adicionarCartao(nome, limiteTotal, fechamento, vencimento, tipoCartao = 'credito') {
-    if (processandoAcaoModal) return;
-    if (!await verificarSenhaAdmin("cadastrar cartão")) return;
-    
-    processandoAcaoModal = true;
-    mostrarLoading("Salvando cartão...");
-    const dados = obterDados();
-    const usuarioId = parseInt(localStorage.getItem('usuarioLogado'));
-    const novaId = dados.cartoes.length > 0 ? Number(dados.cartoes[dados.cartoes.length - 1].id) + 1 : 1;
-    
-    dados.cartoes.push({ 
-        id: novaId, 
-        usuarioId, 
-        nome, 
-        limiteTotal: Number(limiteTotal), 
-        fechamento: Number(fechamento),
-        vencimento: Number(vencimento),
-        tipoCartao: tipoCartao // 'credito' ou 'beneficio' (VR/VA)
-    });
-    
-    await salvarDados(dados);
-    await registrarLog("CADASTRO CARTÃO", `Cartão criado: ${nome} (${tipoCartao}), Valor Inicial/Limite: R$ ${limiteTotal}`);
-    
-    esconderLoading();
-    processandoAcaoModal = false;
-    await mostrarAlertaModal("Cartão/Benefício cadastrado com sucesso!");
-    if (typeof renderizarCartoes === 'function') renderizarCartoes();
-}
-
-function renderizarCartoes() {
-    const dados = obterDados();
-    const grid = document.getElementById('gridCartoes');
-    if (!grid) return;
-    grid.innerHTML = '';
-
-    if (dados.cartoes.length === 0) {
-        grid.innerHTML = '<p>Nenhum cartão ou benefício cadastrado.</p>';
-        return;
-    }
-
-    dados.cartoes.forEach(cartao => {
-        const isBeneficio = cartao.tipoCartao === 'beneficio';
-        
-        const gastosUtilizados = dados.lancamentos
-            .filter(l => Number(l.cartaoId) === Number(cartao.id) && !l.pago)
-            .reduce((acc, l) => acc + Number(l.valor), 0);
-
-        let infoHtml = '';
-        if (isBeneficio) {
-            const saldoAtual = Number(cartao.limiteTotal) - gastosUtilizados;
-            infoHtml = `
-                <p style="font-size: 0.85rem; font-weight: normal; margin-bottom: 4px;">Tipo: <strong>Vale-Alimentação / Refeição (VR/VA)</strong></p>
-                <p style="font-size: 0.95rem; margin-top: 6px;">Carga Mensal: R$ ${Number(cartao.limiteTotal).toFixed(2)}</p>
-                <p style="font-size: 0.95rem;" class="negativo">Gasto no Mês: R$ ${gastosUtilizados.toFixed(2)}</p>
-                <p style="font-size: 0.95rem;" class="positivo">Saldo Disponível: R$ ${saldoAtual.toFixed(2)}</p>
-            `;
-        } else {
-            const disponivel = Number(cartao.limiteTotal) - gastosUtilizados;
-            infoHtml = `
-                <p style="font-size: 0.85rem; font-weight: normal; margin-bottom: 4px;">Fechamento: dia ${cartao.fechamento} | Vencimento: dia ${cartao.vencimento}</p>
-                <p style="font-size: 0.95rem; margin-top: 6px;">Limite Total: R$ ${Number(cartao.limiteTotal).toFixed(2)}</p>
-                <p style="font-size: 0.95rem;" class="negativo">Utilizado: R$ ${gastoUtilizado.toFixed(2)}</p>
-                <p style="font-size: 0.95rem;" class="positivo">Disponível: R$ ${disponivel.toFixed(2)}</p>
-            `;
-        }
-
-        const box = document.createElement('div');
-        box.className = 'stat-box';
-        box.style.textAlign = 'left';
-        box.innerHTML = `
-            <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px;">
-                <h3 style="margin: 0; font-size: 1rem; color: var(--accent);">${cartao.nome}</h3>
-                <div style="display: flex; gap: 4px;">
-                    <button onclick="excluirCartao(${cartao.id})" class="btn-acao-icone excluir" title="Excluir"><img src="imagens/excluir.png" alt="Excluir"></button>
-                </div>
-            </div>
-            ${infoHtml}
-        `;
-        grid.appendChild(box);
-    });
-}
-
-async function atualizarCartaoNoBanco(id, nome, limiteTotal, fechamento, vencimento) {
-    if (processandoAcaoModal) return;
-    if (!await verificarSenhaAdmin("editar cartão")) return;
-    
-    processandoAcaoModal = true;
-    mostrarLoading("Atualizando cartão...");
-    const dados = obterDados();
-    const cartao = dados.cartoes.find(c => Number(c.id) === Number(id));
-    
-    if (cartao) {
-        cartao.nome = nome;
-        cartao.limiteTotal = Number(limiteTotal);
-        cartao.fechamento = Number(fechamento);
-        cartao.vencimento = Number(vencimento);
-        
-        await salvarDados(dados);
-        await registrarLog("EDIÇÃO CARTÃO", `Cartão ID ${id} atualizado para: ${nome}`);
-        
-        esconderLoading();
-        processandoAcaoModal = false;
-        await mostrarAlertaModal("Cartão atualizado com sucesso!");
-        if (typeof renderizarCartoes === 'function') renderizarCartoes();
-    } else {
-        esconderLoading();
-        processandoAcaoModal = false;
-    }
-}
-
-async function excluirCartao(id) {
-    if (processandoAcaoModal) return;
-    if (!await verificarSenhaAdmin("excluir cartão")) return;
-    const confirmar = await mostrarConfirmacaoModal("Deseja realmente excluir este cartão?");
-    if (!confirmar) return;
-
-    processandoAcaoModal = true;
-    mostrarLoading("Excluindo cartão...");
-    const dados = obterDados();
-    dados.cartoes = dados.cartoes.filter(c => Number(c.id) !== Number(id));
-    
-    await salvarDados(dados);
-    await registrarLog("EXCLUSÃO CARTÃO", `Cartão ID ${id} excluído`);
-    
-    esconderLoading();
-    processandoAcaoModal = false;
-    await mostrarAlertaModal("Cartão excluído com sucesso!");
-    if (typeof renderizarCartoes === 'function') renderizarCartoes();
 }
 
 function popularSelectsLancamento() {
     const dados = obterDados();
+    const selectTipo = document.getElementById('tipoLancamento');
     const selectCartao = document.getElementById('cartaoLancamento');
 
-    atualizarFiltroCategoriasPorTipo('saida');
+    const tipoInicial = selectTipo?.value === 'entrada' ? 'entrada' : 'saida';
+    atualizarFiltroCategoriasPorTipo(tipoInicial);
 
     if (selectCartao) {
         selectCartao.innerHTML = '';
-        dados.cartoes.forEach(c => {
+
+        const usuarioAtualId = Number(obterUsuarioAtualId(dados));
+        const cartoesUsuario = dados.cartoes
+            .filter(c => c.ativo !== false)
+            .filter(c => Number(c.usuarioId) === usuarioAtualId);
+
+        if (cartoesUsuario.length === 0) {
+            const opt = document.createElement('option');
+            opt.value = '';
+            opt.textContent = 'Nenhum cartão ativo cadastrado';
+            selectCartao.appendChild(opt);
+            return;
+        }
+
+        cartoesUsuario.forEach(c => {
             const opt = document.createElement('option');
             opt.value = c.id;
-            opt.innerText = c.nome;
+            opt.textContent = c.nome;
             selectCartao.appendChild(opt);
         });
     }
 }
 
-function atualizarFiltroCategoriasPorTipo(tipo) {
+function atualizarFiltroCategoriasPorTipo(tipo, categoriaIdPreferida = null) {
     const dados = obterDados();
     const selectCat = document.getElementById('categoriaLancamento');
-    if (!selectCat) return;
+    if (!selectCat) return false;
+
+    const tipoNormalizado = tipo === 'entrada' ? 'entrada' : 'saida';
+    const categoriaAtual = categoriaIdPreferida ?? selectCat.value;
+
+    const filtradas = dados.categorias
+        .filter(c => c.tipo === tipoNormalizado)
+        .sort((a, b) => normalizarTexto(a.nome).localeCompare(normalizarTexto(b.nome), 'pt-BR'));
 
     selectCat.innerHTML = '';
-    const filtradas = dados.categorias.filter(c => c.tipo === tipo);
-    
+
     if (filtradas.length === 0) {
         const opt = document.createElement('option');
-        opt.value = "";
-        opt.innerText = "Nenhuma categoria cadastrada para este tipo";
+        opt.value = '';
+        opt.textContent = `Nenhuma categoria de ${tipoNormalizado === 'entrada' ? 'entrada' : 'saída'} cadastrada`;
         selectCat.appendChild(opt);
-        return;
+        selectCat.disabled = true;
+        selectCat.dataset.tipoAtual = tipoNormalizado;
+        return false;
     }
+
+    selectCat.disabled = false;
 
     filtradas.forEach(cat => {
         const opt = document.createElement('option');
-        opt.value = cat.id;
-        opt.innerText = cat.nome;
+        opt.value = String(cat.id);
+        opt.textContent = cat.nome;
         selectCat.appendChild(opt);
     });
 
-    if (typeof verificarCategoriaSalario === 'function') {
-        verificarCategoriaSalario();
-    }
+    const existeCategoriaPreferida = filtradas.some(
+        cat => String(cat.id) === String(categoriaAtual)
+    );
+
+    selectCat.value = existeCategoriaPreferida
+        ? String(categoriaAtual)
+        : String(filtradas[0].id);
+
+    selectCat.dataset.tipoAtual = tipoNormalizado;
+
+    verificarCategoriaSalario();
+
+    return true;
 }
 
 function tratarMudancaTipoLancamento() {
-    const tipo = document.getElementById('tipoLancamento').value;
+    const selectTipo = document.getElementById('tipoLancamento');
+    if (!selectTipo) return;
+
+    const tipo = selectTipo.value === 'entrada' ? 'entrada' : 'saida';
+
     atualizarFiltroCategoriasPorTipo(tipo);
-    
+
     const blocoHE = document.getElementById('blocoHoraExtra');
     const blocoFormaPgto = document.getElementById('blocoFormaPagamentoContainer');
     const blocoCartao = document.getElementById('blocoCartao');
     const blocoEssencial = document.getElementById('blocoServicoEssencial');
     const labelData = document.getElementById('labelDataReferencia');
+    const inputHE = document.getElementById('valorHoraExtra');
 
-    if (tipo === 'entrada') {
-        if (blocoHE) blocoHE.style.display = 'block';
-        if (blocoFormaPgto) blocoFormaPgto.style.display = 'none';
+    const ehEntrada = tipo === 'entrada';
+
+    if (blocoHE) blocoHE.style.display = ehEntrada ? 'block' : 'none';
+    if (blocoFormaPgto) blocoFormaPgto.style.display = ehEntrada ? 'none' : 'block';
+    if (blocoEssencial) blocoEssencial.style.display = ehEntrada ? 'none' : 'block';
+
+    if (labelData) {
+        labelData.textContent = ehEntrada
+            ? 'Data de recebimento'
+            : 'Data de vencimento / referência';
+    }
+
+    if (ehEntrada) {
         if (blocoCartao) blocoCartao.style.display = 'none';
-        if (blocoEssencial) blocoEssencial.style.display = 'none';
-        if (labelData) labelData.innerText = 'Data de Recebimento:';
-    } else {
-        if (blocoHE) blocoHE.style.display = 'none';
-        const inputHE = document.getElementById('valorHoraExtra');
         if (inputHE) inputHE.value = '0';
-        if (blocoFormaPgto) blocoFormaPgto.style.display = 'block';
-        if (blocoEssencial) blocoEssencial.style.display = 'block';
-        if (labelData) labelData.innerText = 'Data de Vencimento / Referência:';
-        if (typeof tratarMudancaFormaPagamento === 'function') {
-            tratarMudancaFormaPagamento();
+    } else {
+        tratarMudancaFormaPagamento();
+    }
+}
+
+function tratarMudancaFormaPagamento() {
+    const selectForma = document.getElementById('formaPagamento');
+    const blocoCartao = document.getElementById('blocoCartao');
+    const blocoVencimento = document.getElementById('blocoVencimento');
+    const selectStatus = document.getElementById('statusPagamento');
+
+    if (!selectForma) return;
+
+    const usaCartao = selectForma.value === 'CARTAO';
+
+    if (blocoCartao) blocoCartao.style.display = usaCartao ? 'block' : 'none';
+    if (blocoVencimento) blocoVencimento.style.display = usaCartao ? 'none' : 'block';
+
+    if (selectStatus) {
+        if (usaCartao || selectForma.value === 'BOLETO' || selectForma.value === 'FIXO') {
+            selectStatus.value = 'pendente';
+        } else if (selectForma.value === 'DINHEIRO') {
+            selectStatus.value = 'pago';
         }
     }
 }
 
+function inicializarControlesLancamento() {
+    const tipoSelect = document.getElementById('tipoLancamento');
+    const formaPagamento = document.getElementById('formaPagamento');
+    const categoriaSelect = document.getElementById('categoriaLancamento');
+
+    if (!tipoSelect) return;
+
+    if (tipoSelect.dataset.controleInicializado !== 'true') {
+        tipoSelect.addEventListener('change', tratarMudancaTipoLancamento);
+        tipoSelect.dataset.controleInicializado = 'true';
+    }
+
+    if (formaPagamento && formaPagamento.dataset.controleInicializado !== 'true') {
+        formaPagamento.addEventListener('change', tratarMudancaFormaPagamento);
+        formaPagamento.dataset.controleInicializado = 'true';
+    }
+
+    if (categoriaSelect && categoriaSelect.dataset.controleInicializado !== 'true') {
+        categoriaSelect.addEventListener('change', verificarCategoriaSalario);
+        categoriaSelect.dataset.controleInicializado = 'true';
+    }
+
+    tratarMudancaTipoLancamento();
+}
+
 async function adicionarLancamentoComParcelas(dadosForm) {
-    if (processandoAcaoModal) return;
+    if (processandoAcaoModal) return false;
     processandoAcaoModal = true;
     mostrarLoading("Salvando lançamento...");
+
+    try {
+        const dados = obterDados();
+        const usuarioId = Number(localStorage.getItem('usuarioLogado'));
+        const valorTotal = numeroSeguro(dadosForm.valorTotal);
+        const qtdGerar = dadosForm.formaPagamento === 'FIXO'
+            ? 12
+            : Math.min(48, Math.max(1, inteiroSeguro(dadosForm.qtdParcelas, 1)));
+
+        if (!dadosForm.descricao?.trim() || valorTotal <= 0 || !dadosForm.vencimento) {
+            throw new Error('Preencha descrição, valor e data corretamente.');
+        }
+
+        const categoriaId = String(dadosForm.categoriaId ?? '').trim();
+        const categoria = dados.categorias.find(
+            c => String(c.id) === categoriaId
+        );
+
+        if (!categoriaId || !categoria) {
+            throw new Error('Selecione uma categoria válida.');
+        }
+
+        if (categoria.tipo !== dadosForm.tipo) {
+            throw new Error(
+                `A categoria "${categoria.nome}" não pertence ao tipo de lançamento selecionado.`
+            );
+        }
+
+        const formasSaidaValidas = ['DINHEIRO', 'BOLETO', 'FIXO', 'CARTAO'];
+        if (
+            dadosForm.tipo === 'saida' &&
+            !formasSaidaValidas.includes(dadosForm.formaPagamento)
+        ) {
+            throw new Error('Forma de pagamento inválida.');
+        }
+
+        // Verifica se o bem vinculado é compartilhado para forçar o escopo como 'casal'
+        let escopoFinal = dadosForm.tipo === 'saida' ? (dadosForm.escopo || 'casal') : 'casal';
+        if (dadosForm.bemId) {
+            const bemObj = (dados.bens || []).find(b => String(b.id) === String(dadosForm.bemId));
+            if (bemObj && bemObj.compartilhado) {
+                escopoFinal = 'casal';
+            }
+        }
+
+        const valoresParcelas = dadosForm.formaPagamento === 'FIXO'
+            ? Array.from({ length: qtdGerar }, () => Number(valorTotal.toFixed(2)))
+            : dividirValorExato(valorTotal, qtdGerar);
+        const valoresHoraExtra = dadosForm.horaExtra
+            ? dividirValorExato(dadosForm.horaExtra, qtdGerar)
+            : Array.from({ length: qtdGerar }, () => 0);
+
+        const dataBase = criarDataLocal(dadosForm.vencimento);
+        if (!dataBase) throw new Error('Data de vencimento inválida.');
+
+        let proximaId = dados.lancamentos.reduce((m, l) => Math.max(m, Number(l.id) || 0), 0) + 1;
+        const parcelamentoId = qtdGerar > 1 ? gerarId('parc') : null;
+        
+        // Localiza o objeto do cartão caso a forma de pagamento seja CARTAO
+        let cartaoObj = null;
+        if (dadosForm.formaPagamento === 'CARTAO' && dadosForm.cartaoId) {
+            cartaoObj = (dados.cartoes || []).find(c => String(c.id) === String(dadosForm.cartaoId));
+        }
+
+        const hojeData = new Date();
+
+        for (let i = 1; i <= qtdGerar; i++) {
+            const dataVenc = adicionarMesesClamped(dataBase, i - 1);
+            const descricaoParcelada = qtdGerar > 1
+                ? `${String(dadosForm.descricao).trim()} (${i}/${qtdGerar})`
+                : String(dadosForm.descricao).trim();
+            const pagamento = dadosForm.formaPagamento === 'FIXO' ? 'BOLETO' : dadosForm.formaPagamento;
+            
+            // Lógica refinada de Status do Pagamento para Parcelamentos / Cartão
+            let estaParcelaPaga = false;
+
+            if (dadosForm.tipo === 'entrada') {
+                estaParcelaPaga = dadosForm.statusInicial ? (dadosForm.statusInicial === 'pago') : true;
+            } else if (dadosForm.formaPagamento === 'CARTAO' && cartaoObj) {
+                const anoV = dataVenc.getFullYear();
+                const mesV = dataVenc.getMonth(); // 0 a 11
+                const diaFechamento = Number(cartaoObj.fechamento || 1);
+                
+                // O fechamento da fatura ocorre no mês anterior ao vencimento
+                const dataFechamentoFatura = new Date(anoV, mesV - 1, diaFechamento);
+
+                // Se a data atual for posterior ao fechamento desta fatura específica, ela já fechou (pendente)
+                // Se a data atual for anterior ao fechamento, as parcelas anteriores ou a atual ainda não passaram pelo fechamento
+                if (hojeData > dataFechamentoFatura) {
+                    estaParcelaPaga = false; // Fatura já fechada / em aberto para pagamento
+                } else {
+                    // Se o fechamento ainda não ocorreu, considera-se quitada/antecipada em ciclos retroativos ou conforme regra
+                    estaParcelaPaga = (i < qtdGerar); 
+                }
+            } else {
+                estaParcelaPaga = dadosForm.statusInicial ? (dadosForm.statusInicial === 'pago') : false;
+            }
+
+            dados.lancamentos.push({
+                id: proximaId++,
+                usuarioId,
+                descricao: descricaoParcelada,
+                valor: valoresParcelas[i - 1],
+                tipo: dadosForm.tipo,
+                categoriaId,
+                formaPagamento: pagamento,
+                cartaoId: dadosForm.cartaoId || null,
+                bemId: dadosForm.bemId ? Number(dadosForm.bemId) : null,
+                dataCompra: dadosForm.dataCompra || null,
+                vencimento: dataParaString(dataVenc),
+                recorrencia: dadosForm.formaPagamento === 'FIXO' ? 'mensal' : 'unica',
+                parcelaAtual: i,
+                totalParcelas: qtdGerar,
+                parcelamentoId,
+                observacao: dadosForm.observacao || '',
+                horaExtra: valoresHoraExtra[i - 1],
+                servicoEssencial: dadosForm.tipo === 'saida' ? (dadosForm.servicoEssencial || 'nao') : 'nao',
+                escopo: escopoFinal,
+                pago: estaParcelaPaga,
+                status: estaParcelaPaga ? 'pago' : 'pendente',
+                createdAt: new Date().toISOString(),
+                updatedAt: new Date().toISOString()
+            });
+        }
+
+        if (typeof salvarMemoriaAdiantamentoSeNecessario === 'function') {
+            salvarMemoriaAdiantamentoSeNecessario(dadosForm.descricao, valoresParcelas[0]);
+        }
+        registrarLogInterno(dados, "NOVO LANÇAMENTO", `Lançamento criado: ${dadosForm.descricao}, Valor total: ${formatarMoeda(valorTotal)} (${qtdGerar}x)`, {
+            entidade: 'lancamento',
+            parcelamentoId
+        });
+        await salvarDados(dados);
+
+        esconderLoading();
+        processandoAcaoModal = false;
+        await mostrarAlertaModal("Lançamento cadastrado com sucesso!");
+        if (typeof carregarDashboard === 'function') carregarDashboard();
+        if (typeof carregarRelatorios === 'function') carregarRelatorios();
+        return true;
+    } catch (erro) {
+        console.error(erro);
+        esconderLoading();
+        processandoAcaoModal = false;
+        await mostrarAlertaModal(erro.message || 'Não foi possível cadastrar o lançamento.');
+        return false;
+    }
+}
+
+async function adicionarContaLotePorPeriodo(descricao, valorParcela, dataInicio, qtdMeses, categoriaId, bemId = null) {
+    mostrarLoading("Gerando contas em lote...");
     const dados = obterDados();
     const usuarioId = parseInt(localStorage.getItem('usuarioLogado'));
-    let proximaId = dados.lancamentos.length > 0 ? Number(dados.lancamentos[dados.lancamentos.length - 1].id) + 1 : 1;
-
-    const valorParcela = dadosForm.formaPagamento === 'FIXO' ? Number(dadosForm.valorTotal.toFixed(2)) : Number((dadosForm.valorTotal / dadosForm.qtdParcelas).toFixed(2));
-    const qtdGerar = dadosForm.formaPagamento === 'FIXO' ? 12 : dadosForm.qtdParcelas;
-    const valorHoraExtraParcela = dadosForm.horaExtra ? Number((dadosForm.horaExtra / qtdGerar).toFixed(2)) : 0;
     
-    const [ano, mes, dia] = dadosForm.vencimento.split('-').map(Number);
-    const dataBase = new Date(ano, mes - 1, dia);
+    // Se o bem vinculado for compartilhado, força o escopo como casal
+    let escopoLote = 'casal';
+    if (bemId) {
+        const bemObj = (dados.bens || []).find(b => String(b.id) === String(bemId));
+        if (bemObj && !bemObj.compartilhado) {
+            escopoLote = 'individual';
+        }
+    }
 
-    for (let i = 1; i <= qtdGerar; i++) {
-        let dataVenc = new Date(dataBase.getFullYear(), dataBase.getMonth() + (i - 1), dataBase.getDate());
+    let proximaIdLanc = dados.lancamentos.reduce((m, l) => Math.max(m, Number(l.id) || 0), 0) + 1;
+    const parcelamentoId = qtdMeses > 1 ? gerarId('lote') : null;
+
+    for (let i = 0; i < qtdMeses; i++) {
+        let dataVenc = adicionarMesesClamped(dataInicio, i);
         
         const anoVenc = dataVenc.getFullYear();
         const mesVenc = String(dataVenc.getMonth() + 1).padStart(2, '0');
         const diaVenc = String(dataVenc.getDate()).padStart(2, '0');
         const dataVencStr = `${anoVenc}-${mesVenc}-${diaVenc}`;
 
-        const descricaoParcelada = qtdGerar > 1 
-            ? `${dadosForm.descricao} (${i}/${qtdGerar})` 
-            : dadosForm.descricao;
+        const mesAnoVenc = `${anoVenc}-${mesVenc}`;
+        const mesAnoAtual = `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`;
+        const jaPassou = mesAnoVenc < mesAnoAtual;
 
         const novoLancamento = {
-            id: proximaId++,
+            id: proximaIdLanc++,
             usuarioId,
-            descricao: descricaoParcelada,
-            valor: valorParcela,
-            tipo: dadosForm.tipo,
-            categoriaId: dadosForm.categoriaId,
-            formaPagamento: dadosForm.formaPagamento === 'FIXO' ? 'BOLETO' : dadosForm.formaPagamento,
-            cartaoId: dadosForm.cartaoId || null,
+            descricao: `${descricao} (${i + 1}/${qtdMeses})`,
+            valor: Number(valorParcela.toFixed(2)),
+            tipo: 'saida',
+            categoriaId: Number(categoriaId),
+            formaPagamento: 'BOLETO',
+            cartaoId: null,
+            bemId: bemId ? Number(bemId) : null,
             vencimento: dataVencStr,
             recorrencia: 'unica',
-            parcelaAtual: i,
-            totalParcelas: qtdGerar,
-            observacao: dadosForm.observacao || '',
-            horaExtra: valorHoraExtraParcela,
-            servicoEssencial: dadosForm.tipo === 'saida' ? (dadosForm.servicoEssencial || 'nao') : 'nao',
-            pago: dadosForm.tipo === 'entrada' ? true : false
+            parcelaAtual: i + 1,
+            totalParcelas: qtdMeses,
+            parcelamentoId,
+            observacao: 'Gerado por lote retroativo/período',
+            horaExtra: 0,
+            servicoEssencial: 'nao',
+            escopo: escopoLote,
+            pago: false,
+            status: jaPassou ? 'atrasado' : 'pendente',
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString()
         };
 
         dados.lancamentos.push(novoLancamento);
     }
 
-    salvarMemoriaAdiantamentoSeNecessario(dadosForm.descricao, valorParcela);
-
+    registrarLogInterno(dados, "CONTA LOTE PERÍODO", `Lote por período criado: ${descricao} (${qtdMeses} meses)`);
     await salvarDados(dados);
-    await registrarLog("NOVO LANÇAMENTO", `Lançamento criado: ${dadosForm.descricao}, Valor: R$ ${valorParcela} (${qtdGerar}x)`);
     
     esconderLoading();
-    processandoAcaoModal = false;
-    await mostrarAlertaModal("Lançamento cadastrado com sucesso!");
-    if (typeof carregarDashboard === 'function') carregarDashboard();
+    await mostrarAlertaModal("Lotes criados com sucesso!");
     if (typeof carregarRelatorios === 'function') carregarRelatorios();
 }
 
+async function adicionarFinanciamentoComRecorrencia(nome, recorrente, valorParcela, qtdMeses, primeiroVencimento, categoriaId = null, bemId = null) {
+    if (processandoAcaoModal) return false;
+    if (!await verificarSenhaAdmin("cadastrar contrato de financiamento")) return false;
+
+    processandoAcaoModal = true;
+    mostrarLoading("Cadastrando financiamento...");
+
+    try {
+        const dados = obterDados();
+        const usuarioId = Number(localStorage.getItem('usuarioLogado'));
+        const nomeFinal = String(nome || '').trim();
+        const valorFinal = numeroSeguro(valorParcela);
+        const meses = Math.min(360, Math.max(1, inteiroSeguro(qtdMeses, 1)));
+        const dataBase = criarDataLocal(primeiroVencimento);
+        const catFinalId = categoriaId || dados.categorias.find(c => normalizarTexto(c.nome).includes('financiamento'))?.id || dados.categorias.find(c => c.tipo === 'saida')?.id || null;
+
+        if (!nomeFinal || valorFinal <= 0 || !dataBase || !catFinalId) {
+            throw new Error('Preencha os dados do financiamento corretamente.');
+        }
+
+        let escopoFin = 'casal';
+        if (bemId) {
+            const bemObj = (dados.bens || []).find(b => String(b.id) === String(bemId));
+            if (bemObj && !bemObj.compartilhado) {
+                escopoFin = 'individual';
+            }
+        }
+
+        const financiamentoId = dados.financiamentos.reduce((m, f) => Math.max(m, Number(f.id) || 0), 0) + 1;
+        const parcelamentoId = gerarId('finparc');
+        const totalMeses = recorrente === 'sim' ? meses : 1;
+
+        dados.financiamentos.push({
+            id: financiamentoId,
+            usuarioId,
+            nome: nomeFinal,
+            bemId: bemId ? Number(bemId) : null,
+            totalMeses,
+            mesesPagos: 0,
+            valorParcela: Number(valorFinal.toFixed(2)),
+            categoriaId: catFinalId,
+            primeiroVencimento,
+            ativo: true,
+            createdAt: new Date().toISOString()
+        });
+
+        let proximaIdLanc = dados.lancamentos.reduce((m, l) => Math.max(m, Number(l.id) || 0), 0) + 1;
+        const parcelas = dividirValorExato(valorFinal * totalMeses, totalMeses);
+
+        for (let i = 1; i <= totalMeses; i++) {
+            const dataVenc = adicionarMesesClamped(dataBase, i - 1);
+            dados.lancamentos.push({
+                id: proximaIdLanc++,
+                usuarioId,
+                descricao: `Financiamento: ${nomeFinal} (${i}/${totalMeses})`,
+                valor: parcelas[i - 1],
+                tipo: 'saida',
+                categoriaId: catFinalId,
+                formaPagamento: 'BOLETO',
+                cartaoId: null,
+                bemId: bemId ? Number(bemId) : null,
+                vencimento: dataParaString(dataVenc),
+                recorrencia: 'mensal',
+                parcelaAtual: i,
+                totalParcelas: totalMeses,
+                parcelamentoId,
+                financiamentoId,
+                observacao: 'Gerado automaticamente pelo contrato',
+                horaExtra: 0,
+                servicoEssencial: 'nao',
+                escopo: escopoFin,
+                pago: false,
+                status: 'pendente',
+                createdAt: new Date().toISOString(),
+                updatedAt: new Date().toISOString()
+            });
+        }
+
+        registrarLogInterno(dados, "CADASTRO FINANCIAMENTO", `Contrato criado: ${nomeFinal} (${totalMeses} meses)`, {
+            entidade: 'financiamento', entidadeId: financiamentoId
+        });
+        await salvarDados(dados);
+
+        esconderLoading();
+        processandoAcaoModal = false;
+        await mostrarAlertaModal("Financiamento cadastrado com sucesso!");
+        if (typeof carregarRelatorios === 'function') carregarRelatorios();
+        return true;
+    } catch (erro) {
+        console.error(erro);
+        esconderLoading();
+        processandoAcaoModal = false;
+        await mostrarAlertaModal(erro.message || 'Não foi possível cadastrar o financiamento.');
+        return false;
+    }
+}
+
 async function atualizarLancamentoNoBanco(id, novosDados) {
+    const dados = obterDados();
+    const lancamento = dados.lancamentos.find(l => Number(l.id) === Number(id));
+    if (!lancamento) {
+        await mostrarAlertaModal("Lançamento não encontrado.");
+        return;
+    }
+
+    // Validação da relação (se é compra parcelada ou financiamento)
+    const grupoParcelamentoId = resolverParcelamentoId(lancamento);
+    const financiamentoId = resolverFinanciamentoIdPorLancamento(lancamento, dados);
+    const ehVinculado = Boolean(grupoParcelamentoId) || Boolean(financiamentoId) || (lancamento.totalParcelas && lancamento.totalParcelas > 1);
+
+    let aplicarParaTodas = false;
+    if (ehVinculado) {
+        const escolha = await mostrarOpcaoEscopoModal("Este lançamento faz parte de um financiamento ou compra parcelada. Deseja tornar essa modificação para todas outras parcelas?");
+        if (escolha === null) return; // Cancelado pelo usuário
+        aplicarParaTodas = (escolha === 'todas');
+    }
+
     const motivo = await mostrarPromptTextoModal("Justificativa Obrigatória", "Informe o motivo da edição deste lançamento:");
     if (!motivo) return;
 
-    mostrarLoading("Atualizando lançamento...");
-    const dados = obterDados();
-    const lancamento = dados.lancamentos.find(l => Number(l.id) === Number(id));
-    if (lancamento) {
+    mostrarLoading("Atualizando lançamento(s)...");
+
+    const usuarioId = localStorage.getItem('usuarioLogado');
+    const u = dados.usuarios.find(user => Number(user.id) === Number(usuarioId));
+    const nomeUsuario = u ? u.nome : "Desconhecido";
+    const dataHoraAtual = new Date().toLocaleString('pt-BR');
+
+    if (aplicarParaTodas) {
+        // Seleciona todos os lançamentos do mesmo grupo (financiamento ou parcelamento)
+        const relacionados = financiamentoId 
+            ? dados.lancamentos.filter(l => Number(l.financiamentoId) === Number(financiamentoId))
+            : dados.lancamentos.filter(l => String(l.parcelamentoId) === String(grupoParcelamentoId));
+
+        relacionados.forEach(l => {
+            const descricaoAntiga = l.descricao;
+            const valorAntigo = l.valor;
+
+            // Mantém o sufixo do número da parcela (ex: " (2/12)") e atualiza o restante
+            const sufixoMatch = l.descricao.match(/\s\(\d+\/\d+\)$/);
+            const sufixo = sufixoMatch ? sufixoMatch[0] : '';
+            const baseNovaDescricao = novosDados.descricao.replace(/\s\(\d+\/\d+\)$/, '').trim();
+            l.descricao = sufixo ? `${baseNovaDescricao}${sufixo}` : baseNovaDescricao;
+
+            l.tipo = novosDados.tipo;
+            l.categoriaId = novosDados.categoriaId;
+            l.formaPagamento = novosDados.formaPagamento;
+            l.observacao = novosDados.observacao;
+            l.servicoEssencial = novosDados.tipo === 'saida' ? (novosDados.servicoEssencial || 'nao') : 'nao';
+            l.escopo = novosDados.tipo === 'saida' ? (novosDados.escopo || 'casal') : 'casal';
+            l.updatedAt = new Date().toISOString();
+
+            if (novosDados.formaPagamento === 'CARTAO') {
+                l.cartaoId = novosDados.cartaoId || l.cartaoId || null;
+            }
+
+            dados.edicao_movimento.push({
+                dataHora: dataHoraAtual,
+                usuario: nomeUsuario,
+                lancamentoId: l.id,
+                descricaoAntiga: descricaoAntiga,
+                descricaoNova: l.descricao,
+                valorAntigo: valorAntigo,
+                valorNovo: l.valor,
+                motivo: `[EM LOTE] ${motivo}`
+            });
+        });
+
+        registrarLogInterno(dados, "EDIÇÃO EM LOTE", `Atualizadas ${relacionados.length} parcelas vinculadas. Motivo: ${motivo}`);
+    } else {
+        // Atualiza apenas a parcela selecionada individualmente
         const descricaoAntiga = lancamento.descricao;
         const valorAntigo = lancamento.valor;
 
@@ -790,17 +1656,20 @@ async function atualizarLancamentoNoBanco(id, novosDados) {
         lancamento.tipo = novosDados.tipo;
         lancamento.categoriaId = novosDados.categoriaId;
         lancamento.formaPagamento = novosDados.formaPagamento;
-        lancamento.valor = Number(novosDados.valor);
+        lancamento.valor = Number(numeroSeguro(novosDados.valor).toFixed(2));
         lancamento.observacao = novosDados.observacao;
         lancamento.vencimento = novosDados.vencimento;
+        lancamento.updatedAt = new Date().toISOString();
+
+        if (novosDados.formaPagamento === 'CARTAO') {
+            lancamento.cartaoId = novosDados.cartaoId || lancamento.cartaoId || null;
+            lancamento.dataCompra = novosDados.dataCompra || lancamento.dataCompra || null;
+        }
         lancamento.servicoEssencial = novosDados.tipo === 'saida' ? (novosDados.servicoEssencial || 'nao') : 'nao';
-        
-        const usuarioId = localStorage.getItem('usuarioLogado');
-        const u = dados.usuarios.find(user => user.id == usuarioId);
-        const nomeUsuario = u ? u.nome : "Desconhecido";
+        lancamento.escopo = novosDados.tipo === 'saida' ? (novosDados.escopo || 'casal') : 'casal';
 
         dados.edicao_movimento.push({
-            dataHora: new Date().toLocaleString('pt-BR'),
+            dataHora: dataHoraAtual,
             usuario: nomeUsuario,
             lancamentoId: id,
             descricaoAntiga: descricaoAntiga,
@@ -810,358 +1679,280 @@ async function atualizarLancamentoNoBanco(id, novosDados) {
             motivo: motivo
         });
 
-        await salvarDados(dados);
-        await registrarLog("EDIÇÃO LANÇAMENTO", `Lançamento ID ${id} atualizado. Motivo: ${motivo}`);
-        
-        esconderLoading();
-        await mostrarAlertaModal("Lançamento atualizado com sucesso!");
-        if (typeof carregarDashboard === 'function') carregarDashboard();
-        if (typeof carregarRelatorios === 'function') carregarRelatorios();
-    } else {
-        esconderLoading();
-    }
-}
-
-async function adicionarFinanciamentoComRecorrencia(nome, recorrente, valorParcela, qtdMeses, primeiroVencimento, categoriaId = null) {
-    if (processandoAcaoModal) return;
-    if (!await verificarSenhaAdmin("cadastrar contrato de financiamento")) return;
-    
-    processandoAcaoModal = true;
-    mostrarLoading("Cadastrando financiamento...");
-    const dados = obterDados();
-    const usuarioId = parseInt(localStorage.getItem('usuarioLogado'));
-    const novaId = dados.financiamentos.length > 0 ? Number(dados.financiamentos[dados.financiamentos.length - 1].id) + 1 : 1;
-
-    const catFinalId = categoriaId || (dados.categorias.find(c => c.nome.toLowerCase().includes('financiamento')) ? dados.categorias.find(c => c.nome.toLowerCase().includes('financiamento')).id : (dados.categorias[0] ? dados.categorias[0].id : 1));
-
-    const novoFinanciamento = {
-        id: novaId,
-        usuarioId,
-        nome,
-        totalMeses: recorrente === 'sim' ? qtdMeses : 12,
-        mesesPagos: 0
-    };
-
-    dados.financiamentos.push(novoFinanciamento);
-
-    if (recorrente === 'sim' && qtdMeses > 0 && valorParcela > 0) {
-        let proximaIdLanc = dados.lancamentos.length > 0 ? Number(dados.lancamentos[dados.lancamentos.length - 1].id) + 1 : 1;
-
-        const [ano, mes, dia] = primeiroVencimento.split('-').map(Number);
-        const dataBase = new Date(ano, mes - 1, dia);
-
-        for (let i = 1; i <= qtdMeses; i++) {
-            let dataVenc = new Date(dataBase.getFullYear(), dataBase.getMonth() + (i - 1), dataBase.getDate());
-            
-            const anoVenc = dataVenc.getFullYear();
-            const mesVenc = String(dataVenc.getMonth() + 1).padStart(2, '0');
-            const diaVenc = String(dataVenc.getDate()).padStart(2, '0');
-            const dataVencStr = `${anoVenc}-${mesVenc}-${diaVenc}`;
-
-            const novoLancamento = {
-                id: proximaIdLanc++,
-                usuarioId,
-                descricao: `Financiamento: ${nome} (${i}/${qtdMeses})`,
-                valor: Number(valorParcela.toFixed(2)),
-                tipo: 'saida',
-                categoriaId: catFinalId,
-                formaPagamento: 'BOLETO',
-                cartaoId: null,
-                vencimento: dataVencStr,
-                recorrencia: 'unica',
-                parcelaAtual: i,
-                totalParcelas: qtdMeses,
-                observacao: 'Gerado automaticamente pelo contrato',
-                horaExtra: 0,
-                servicoEssencial: 'nao',
-                pago: false
-            };
-
-            dados.lancamentos.push(novoLancamento);
-        }
+        registrarLogInterno(dados, "EDIÇÃO LANÇAMENTO", `Lançamento ID ${id} atualizado. Motivo: ${motivo}`);
     }
 
     await salvarDados(dados);
-    await registrarLog("CADASTRO FINANCIAMENTO", `Contrato criado: ${nome} (${qtdMeses} meses)`);
-    
     esconderLoading();
-    processandoAcaoModal = false;
-    await mostrarAlertaModal("Financiamento cadastrado com sucesso!");
+    await mostrarAlertaModal("Lançamento(s) atualizado(s) com sucesso!");
+    
+    if (typeof carregarDashboard === 'function') carregarDashboard();
     if (typeof carregarRelatorios === 'function') carregarRelatorios();
 }
 
 async function excluirFinanciamento(id) {
-    if (processandoAcaoModal) return;
-    if (!await verificarSenhaAdmin("excluir financiamento")) return;
+    if (processandoAcaoModal) return false;
+    if (!await verificarSenhaAdmin("excluir financiamento")) return false;
 
     const confirmar = await mostrarConfirmacaoModal("Deseja realmente excluir este contrato de financiamento e todas as suas parcelas associadas?");
-    if (!confirmar) return;
+    if (!confirmar) return false;
 
     processandoAcaoModal = true;
     mostrarLoading("Excluindo financiamento...");
-    const dados = obterDados();
-    const fin = dados.financiamentos.find(f => Number(f.id) === Number(id));
-    
-    if (fin) {
-        dados.financiamentos = dados.financiamentos.filter(f => Number(f.id) !== Number(id));
-        
-        dados.lancamentos = dados.lancamentos.filter(l => {
-            const eFinanciamento = l.tipo === 'saida' && l.descricao.toLowerCase().includes(`financiamento: ${fin.nome.toLowerCase()}`);
-            return !eFinanciamento;
+
+    try {
+        const dados = obterDados();
+        const fin = dados.financiamentos.find(f => String(f.id) === String(id));
+        if (!fin) throw new Error('Financiamento não encontrado.');
+
+        const parcelas = dados.lancamentos.filter(l =>
+            String(l.financiamentoId) === String(id) ||
+            (l.tipo === 'saida' && normalizarTexto(l.descricao).includes(normalizarTexto(`Financiamento: ${fin.nome}`)))
+        );
+
+        parcelas.forEach(l => {
+            if (!Array.isArray(dados.exclusao_movimento)) dados.exclusao_movimento = [];
+            const usuario = obterUsuarioAtual(dados);
+            dados.exclusao_movimento.push({
+                id: gerarId('exc'),
+                dataHora: new Date().toLocaleString('pt-BR'),
+                usuario: usuario ? usuario.nome : 'Desconhecido',
+                lancamentoId: l.id,
+                descricao: l.descricao,
+                valor: l.valor,
+                motivo: '[FINANCIAMENTO] Exclusão do contrato'
+            });
         });
 
+        dados.financiamentos = dados.financiamentos.filter(f => String(f.id) !== String(id));
+        dados.lancamentos = dados.lancamentos.filter(l => !parcelas.some(p => String(p.id) === String(l.id)));
+        registrarLogInterno(dados, "EXCLUSÃO FINANCIAMENTO", `Contrato ID ${id} (${fin.nome}) e ${parcelas.length} parcela(s) excluídos`, {
+            entidade: 'financiamento', entidadeId: id
+        });
         await salvarDados(dados);
-        await registrarLog("EXCLUSÃO FINANCIAMENTO", `Contrato ID ${id} (${fin.nome}) e suas parcelas foram excluídos`);
-        
+
         esconderLoading();
         processandoAcaoModal = false;
         await mostrarAlertaModal("Financiamento e suas parcelas foram excluídos com sucesso!");
         if (typeof carregarRelatorios === 'function') carregarRelatorios();
-    } else {
+        return true;
+    } catch (erro) {
+        console.error(erro);
         esconderLoading();
         processandoAcaoModal = false;
+        await mostrarAlertaModal(erro.message || 'Não foi possível excluir o financiamento.');
+        return false;
     }
 }
 
 async function alternarStatusPagamento(id) {
+    if (processandoAcaoModal) return false;
+    processandoAcaoModal = true;
     mostrarLoading("Atualizando status...");
-    const dados = obterDados();
-    const lancamento = dados.lancamentos.find(l => Number(l.id) === Number(id));
-    
-    if (!lancamento) {
+    try {
+        const dados = obterDados();
+        const lancamento = dados.lancamentos.find(l => String(l.id) === String(id));
+        if (!lancamento) throw new Error('Lançamento não encontrado.');
+
+        const novoPago = !Boolean(lancamento.pago);
+        lancamento.pago = novoPago;
+        lancamento.status = novoPago ? 'pago' : (lancamento.vencimento && lancamento.vencimento < dataLocalYYYYMMDD() ? 'atrasado' : 'pendente');
+        lancamento.dataPagamento = novoPago ? dataLocalYYYYMMDD() : null;
+        lancamento.usuarioPagamentoId = novoPago ? obterUsuarioAtualId(dados) : null;
+        lancamento.updatedAt = new Date().toISOString();
+
+        registrarLogInterno(dados, "STATUS PAGAMENTO", `Lançamento ID ${id} (${lancamento.descricao}) marcado como ${novoPago ? 'PAGO' : 'PENDENTE'}`, {
+            entidade: 'lancamento', entidadeId: id
+        });
+        await salvarDados(dados);
+
         esconderLoading();
-        return;
+        processandoAcaoModal = false;
+        
+        // Executa as funções de atualização apenas se elas existirem no contexto da página atual
+        if (typeof carregarRelatorios === 'function') carregarRelatorios();
+        if (typeof carregarDashboard === 'function') carregarDashboard();
+        if (typeof renderizarCartoes === 'function') renderizarCartoes();
+        return true;
+    } catch (erro) {
+        console.error(erro);
+        esconderLoading();
+        processandoAcaoModal = false;
+        await mostrarAlertaModal(erro.message || 'Não foi possível atualizar o status.');
+        return false;
     }
-
-    lancamento.pago = !lancamento.pago;
-    await salvarDados(dados);
-    await registrarLog("STATUS PAGAMENTO", `Lançamento ID ${id} (${lancamento.descricao}) marcado como ${lancamento.pago ? 'PAGO' : 'PENDENTE'}`);
-
-    esconderLoading();
-    if (typeof carregarRelatorios === 'function') carregarRelatorios();
-    if (typeof carregarDashboard === 'function') carregarDashboard();
-    if (typeof renderizarCartoes === 'function') renderizarCartoes();
 }
 
-// --- Dashboard com Filtro de Mês, Lembretes e Gráficos ---
-function carregarDashboard() {
-    const dados = obterDados();
-    
-    const usuariosMap = {};
-    dados.usuarios.forEach(u => {
-        usuariosMap[u.id] = u.nome;
-    });
+async function salvarFinanciamentoForm(event) {
+    event.preventDefault();
+    const nome = document.getElementById('nomeFinanciamento')?.value?.trim();
+    const valorParcela = numeroSeguro(document.getElementById('valorParcelaFin')?.value);
+    const qtdMeses = inteiroSeguro(document.getElementById('qtdMesesFin')?.value, 1);
+    const categoriaId = document.getElementById('categoriaFinanciamento')?.value || null;
+    const primeiroVencimento = document.getElementById('primeiroVencimentoFin')?.value;
 
-    const selectCatDash = document.getElementById('filtroCategoriaDashboard');
-    if (selectCatDash && selectCatDash.options.length <= 1) {
-        const valorAtualCat = selectCatDash.value;
-        selectCatDash.innerHTML = '<option value="todas">Todas as Categorias</option>';
-        
-        dados.categorias
-            .filter(cat => cat.tipo === 'saida')
-            .forEach(cat => {
-                const opt = document.createElement('option');
-                opt.value = cat.id;
-                opt.innerText = cat.nome;
-                selectCatDash.appendChild(opt);
-            });
-            
-        if (valorAtualCat) selectCatDash.value = valorAtualCat;
+    const sucesso = await adicionarFinanciamentoComRecorrencia(
+        nome, 'sim', valorParcela, qtdMeses, primeiroVencimento, categoriaId
+    );
+
+    if (sucesso) {
+        document.getElementById('formFinanciamento')?.reset();
+        const hoje = dataLocalYYYYMMDD();
+        const campo = document.getElementById('primeiroVencimentoFin');
+        if (campo) campo.value = hoje;
     }
+}
 
-    const filtroMesInput = document.getElementById('filtroMesAno');
-    const mesAnoSelecionado = filtroMesInput ? filtroMesInput.value : '';
-    const categoriaSelecionadaId = selectCatDash ? selectCatDash.value : 'todas';
+function carregarDashboard() {
+    const mesAno = document.getElementById('filtroMesAno').value;
+    const escopo = document.getElementById('filtroEscopoDashboardGeral').value;
+    const tipoFiltroLanc = document.getElementById('filtroTipoUltimosLancamentos').value;
 
-    const lancamentosFiltrados = dados.lancamentos.filter(l => {
-        if (mesAnoSelecionado && l.vencimento && !l.vencimento.startsWith(mesAnoSelecionado)) {
-            return false;
-        }
-        if (categoriaSelecionadaId !== 'todas' && Number(l.categoriaId) !== Number(categoriaSelecionadaId)) {
-            return false;
-        }
-        return true;
+    const dados = obterDados();
+    const usuarioId = localStorage.getItem('usuarioLogado');
+    const usuario = dados.usuarios.find(u => Number(u.id) === Number(usuarioId)) || {};
+    
+    // Passa o escopo selecionado para o filtro restritivo respeitar Individual vs Casal
+    const lancamentos = filtrarDadosPorPermissao(dados.lancamentos || [], dados, escopo);
+    const categorias = dados.categorias || [];
+    const cartoes = filtrarDadosPorPermissao(dados.cartoes || [], dados, escopo).filter(c => c.ativo !== false);
+
+    // Cálculo do Patrimônio Total de Bens (próprios + compartilhados se houver parceiro)
+    const bens = filtrarDadosPorPermissao(dados.bens || [], dados, escopo);
+    const bensValidos = bens.filter(b => {
+        if (b.ativo === false) return false;
+        const eSeu = Number(b.usuarioId) === Number(usuarioId) || !b.usuarioId;
+        const eCompartilhado = b.compartilhado && usuario.parceiroId;
+        return eSeu || eCompartilhado;
+    });
+    const valorTotalPatrimonio = bensValidos.reduce((acc, b) => acc + Number(b.valor || 0), 0);
+    document.getElementById('totalPatrimonioBens').textContent = `R$ ${valorTotalPatrimonio.toLocaleString('pt-BR', {minimumFractionDigits: 2})}`;
+
+    const filtrados = lancamentos.filter(l => {
+        const dataOk = (l.vencimento || l.data || '').startsWith(mesAno);
+        const escopoOk = escopo === 'todos' || (l.tipo === 'entrada') || (l.escopo || 'casal') === escopo;
+        return dataOk && escopoOk;
     });
 
     let totalEntradas = 0;
     let totalSaidas = 0;
-    let totalSaidasCartao = 0;
-    let totalSaidasOutros = 0;
+    let totalFaturas = 0;
+    let totalParcelas = 0;
+    let totalFinanciamentos = 0;
 
-    lancamentosFiltrados.forEach(l => {
+    filtrados.forEach(l => {
+        const val = Number(l.valor || 0);
+        const descLower = (l.descricao || '').toLowerCase();
+
         if (l.tipo === 'entrada') {
-            totalEntradas += Number(l.valor);
-        }
-        if (l.tipo === 'saida') {
-            const val = Number(l.valor);
+            totalEntradas += val;
+        } else {
             totalSaidas += val;
-            if (l.formaPagamento === 'CARTAO' || l.cartaoId) {
-                totalSaidasCartao += val;
-            } else {
-                totalSaidasOutros += val;
+            
+            // Lógica Exclusiva para separar Financiamentos x Parcelas x Faturas
+            if (l.financiamentoId || descLower.includes('financiamento')) {
+                totalFinanciamentos += val;
+            } else if ((l.totalParcelas && Number(l.totalParcelas) > 1) || descLower.includes('parcela')) {
+                totalParcelas += val;
+            } else if (descLower.includes('fatura') || descLower.includes('cartão')) {
+                totalFaturas += val;
             }
         }
     });
 
-    document.getElementById('totalEntradas').innerText = `R$ ${totalEntradas.toFixed(2)}`;
-    document.getElementById('totalSaidas').innerText = `R$ ${totalSaidas.toFixed(2)}`;
+    const saldoGeral = totalEntradas - totalSaidas;
+
+    document.getElementById('totalEntradas').textContent = `R$ ${totalEntradas.toLocaleString('pt-BR', {minimumFractionDigits: 2})}`;
+    document.getElementById('totalSaidas').textContent = `R$ ${totalSaidas.toLocaleString('pt-BR', {minimumFractionDigits: 2})}`;
     
-    const elSaidasCartao = document.getElementById('saidasCartao');
-    const elSaidasOutros = document.getElementById('saidasOutros');
-    if (elSaidasCartao) elSaidasCartao.innerText = `R$ ${totalSaidasCartao.toFixed(2)}`;
-    if (elSaidasOutros) elSaidasOutros.innerText = `R$ ${totalSaidasOutros.toFixed(2)}`;
-    
-    const saldo = totalEntradas - totalSaidas;
     const elSaldo = document.getElementById('saldoGeral');
-    elSaldo.innerText = `R$ ${saldo.toFixed(2)}`;
-    elSaldo.className = saldo >= 0 ? 'positivo' : 'negativo';
+    elSaldo.textContent = `R$ ${saldoGeral.toLocaleString('pt-BR', {minimumFractionDigits: 2})}`;
+    elSaldo.className = `stat-value ${saldoGeral >= 0 ? 'positivo' : 'negativo'}`;
 
-    atualizarGraficosDashboard(totalEntradas, totalSaidas, dados);
-
-    const ulProximos = document.getElementById('listaProximosPagamentos');
-    if (ulProximos) {
-        ulProximos.innerHTML = '';
-        
-        const hoje = new Date();
-        hoje.setHours(0, 0, 0, 0);
-        const hojeStr = hoje.toISOString().split('T')[0];
-
-        const daqui30Dias = new Date();
-        daqui30Dias.setDate(hoje.getDate() + 30);
-        daqui30Dias.setHours(23, 59, 59, 999);
-        const daqui30DiasStr = daqui30Dias.toISOString().split('T')[0];
-
-        const contasNormaisPendentes = lancamentosFiltrados.filter(l => {
-            if (l.tipo !== 'saida' || l.formaPagamento === 'CARTAO' || l.pago || !l.vencimento) return false;
-            return l.vencimento >= hojeStr && l.vencimento <= daqui30DiasStr;
-        });
-
-        const faturasConsolidadasMap = {};
-        dados.lancamentos.filter(l => l.tipo === 'saida' && l.formaPagamento === 'CARTAO' && l.cartaoId && l.vencimento && !l.pago).forEach(l => {
-            const cartao = dados.cartoes.find(c => Number(c.id) === Number(l.cartaoId));
-            const nomeCartao = cartao ? cartao.nome : 'Cartão';
-            const mesVencimentoFatura = l.vencimento.substring(0, 7);
-            const chaveFatura = `${l.cartaoId}_${mesVencimentoFatura}`;
-
-            if (!faturasConsolidadasMap[chaveFatura]) {
-                faturasConsolidadasMap[chaveFatura] = {
-                    tipoItem: 'fatura',
-                    cartaoId: l.cartaoId,
-                    nomeCartao: nomeCartao,
-                    vencimento: l.vencimento,
-                    valorTotal: 0
-                };
-            }
-            faturasConsolidadasMap[chaveFatura].valorTotal += Number(l.valor);
-        });
-
-        const faturasPendentesPeriodo = Object.values(faturasConsolidadasMap).filter(f => {
-            return f.vencimento >= hojeStr && f.vencimento <= daqui30DiasStr;
-        });
-
-        const listaProximosGeral = [...contasNormaisPendentes, ...faturasPendentesPeriodo];
-
-        if (listaProximosGeral.length === 0) {
-            ulProximos.innerHTML = '<li>Nenhum pagamento pendente para os próximos 30 dias com este filtro.</li>';
-        } else {
-            listaProximosGeral.sort((a, b) => a.vencimento.localeCompare(b.vencimento));
-            listaProximosGeral.forEach(item => {
-                const li = document.createElement('li');
-                const [ano, mes, dia] = item.vencimento.split('-');
-                const dataFormatada = `${dia}/${mes}/${ano}`;
-
-                if (item.tipoItem === 'fatura') {
-                    li.innerHTML = `
-                        <span><strong>Fatura - ${item.nomeCartao}</strong> (Vence: ${dataFormatada})</span>
-                        <div style="display: flex; align-items: center; gap: 8px;">
-                            <button onclick="abrirDetalhamentoFatura('${item.cartaoId}', '${item.vencimento.substring(0, 7)}')" class="btn-acao-icone visualizar" title="Visualizar Detalhes"><img src="imagens/visualizar.png" alt="Visualizar"></button>
-                            <strong class="negativo">R$ ${item.valorTotal.toFixed(2)}</strong>
-                        </div>
-                    `;
-                } else {
-                    let textoFormaPgto = item.formaPagamento;
-                    li.innerHTML = `
-                        <span><strong>${item.descricao}</strong> (Vence: ${dataFormatada}) <br><small style="color: var(--text-muted);">Pagamento: <strong>${textoFormaPgto}</strong></small></span>
-                        <strong class="negativo">R$ ${Number(item.valor).toFixed(2)}</strong>
-                    `;
-                }
-                ulProximos.appendChild(li);
-            });
-        }
+    const kpiFaturas = document.getElementById('kpiCardFaturas');
+    if (totalFaturas > 0) {
+        document.getElementById('totalFaturasMes').textContent = `R$ ${totalFaturas.toLocaleString('pt-BR', {minimumFractionDigits: 2})}`;
+        kpiFaturas.style.display = 'block';
+    } else {
+        kpiFaturas.style.display = 'none';
     }
 
-    const selectTipoLanc = document.getElementById('filtroTipoUltimosLancamentos');
-    const tipoSelecionado = selectTipoLanc ? selectTipoLanc.value : 'todos';
+    const kpiParcelas = document.getElementById('kpiCardParcelas');
+    if (totalParcelas > 0) {
+        document.getElementById('totalParcelasMes').textContent = `R$ ${totalParcelas.toLocaleString('pt-BR', {minimumFractionDigits: 2})}`;
+        kpiParcelas.style.display = 'block';
+    } else {
+        kpiParcelas.style.display = 'none';
+    }
 
-    let lancamentosTabela = lancamentosFiltrados.filter(l => {
-        if (tipoSelecionado !== 'todos' && l.tipo !== tipoSelecionado) {
-            return false;
-        }
-        return true;
-    });
+    const kpiFinanciamentos = document.getElementById('kpiCardFinanciamentos');
+    if (totalFinanciamentos > 0) {
+        document.getElementById('totalFinanciamentosMes').textContent = `R$ ${totalFinanciamentos.toLocaleString('pt-BR', {minimumFractionDigits: 2})}`;
+        kpiFinanciamentos.style.display = 'block';
+    } else {
+        kpiFinanciamentos.style.display = 'none';
+    }
 
-    const tbody = document.getElementById('tabelaUltimosLancamentos');
-    if (!tbody) return;
-    tbody.innerHTML = '';
+    const cardCartoes = document.getElementById('cardGraficoCartoes');
+    if (cardCartoes) {
+        cardCartoes.style.display = cartoes.length === 0 ? 'none' : 'flex';
+    }
+
+    const tbodyLanc = document.getElementById('tabelaUltimosLancamentos');
+    tbodyLanc.innerHTML = '';
+
+    const lancamentosTabela = filtrados.filter(l => tipoFiltroLanc === 'todos' || l.tipo === tipoFiltroLanc);
 
     if (lancamentosTabela.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="7" style="text-align: center;">Nenhum lançamento encontrado para os filtros selecionados.</td></tr>`;
-        return;
+        tbodyLanc.innerHTML = `<tr><td colspan="7" style="text-align: center;">Nenhum lançamento encontrado.</td></tr>`;
+    } else {
+        lancamentosTabela.forEach(l => {
+            const catObj = categorias.find(c => Number(c.id) === Number(l.categoriaId)) || { nome: 'Geral' };
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td>${l.usuario || 'Sistema'}</td>
+                <td><strong>${l.descricao}</strong></td>
+                <td>${catObj.nome}</td>
+                <td>${l.dataPagamento ? l.dataPagamento.split('-').reverse().join('/') : '-'}</td>
+                <td>${l.vencimento ? l.vencimento.split('-').reverse().join('/') : '-'}</td>
+                <td class="${l.tipo === 'entrada' ? 'positivo' : 'negativo'}">R$ ${Number(l.valor || 0).toLocaleString('pt-BR', {minimumFractionDigits: 2})}</td>
+                <td>
+                    <button onclick="window.location.href='editar-lancamento.html?id=${l.id}'" class="btn-acao-icone editar" title="Editar"><img src="imagens/editar.png" alt="Editar"></button>
+                    <button onclick="removerLancamentoInteligente(${l.id})" class="btn-acao-icone excluir" title="Excluir"><img src="imagens/excluir.png" alt="Excluir"></button>
+                </td>
+            `;
+            tbodyLanc.appendChild(tr);
+        });
     }
 
-    const ultimos = [...lancamentosTabela].reverse();
-    ultimos.forEach(l => {
-        const cat = dados.categorias.find(c => Number(c.id) === Number(l.categoriaId));
-        
-        let textoFormaPgtoTabela = l.formaPagamento;
-        if (l.tipo === 'entrada') {
-            textoFormaPgtoTabela = 'Entrada / Receita';
-        } else if (l.formaPagamento === 'CARTAO' && l.cartaoId) {
-            const cartaoObj = dados.cartoes.find(c => Number(c.id) === Number(l.cartaoId));
-            textoFormaPgtoTabela = cartaoObj ? `Cartão (${cartaoObj.nome})` : 'Cartão';
-        }
-
-        const tr = document.createElement('tr');
-        tr.innerHTML = `
-            <td>${usuariosMap[l.usuarioId] || 'Desconhecido'}</td>
-            <td>${l.descricao} ${l.horaExtra ? `<br><small style="color:#10b981;">(HE inclusa: R$ ${Number(l.horaExtra).toFixed(2)})</small>` : ''} ${l.observacao ? `<br><small style="color:#64748b;">Obs: ${l.observacao}</small>` : ''}</td>
-            <td>${cat ? cat.nome : '-'}</td>
-            <td>${textoFormaPgtoTabela}</td>
-            <td>${l.vencimento}</td>
-            <td class="${l.tipo === 'entrada' ? 'positivo' : 'negativo'}">R$ ${Number(l.valor).toFixed(2)}</td>
-            <td>
-                <button onclick="window.location.href='editar-lancamento.html?id=${l.id}'" class="btn-acao-icone editar" title="Editar"><img src="imagens/editar.png" alt="Editar"></button>
-                <button onclick="removerLancamentoInteligente(${l.id})" class="btn-acao-icone excluir" title="Excluir"><img src="imagens/excluir.png" alt="Excluir"></button>
-            </td>
-        `;
-        tbody.appendChild(tr);
-    });
+    atualizarGraficosDashboard(totalEntradas, totalSaidas, dados);
 }
 
 function atualizarGraficosDashboard(totalEntradas, totalSaidas, dados) {
     const usuarioLogadoId = parseInt(localStorage.getItem('usuarioLogado'));
+    const escopoAtual = document.getElementById('filtroEscopoDashboardGeral')?.value || 'casal';
 
     const canvasES = document.getElementById('graficoEntradasSaidas');
     if (canvasES) {
-        if (chartEntradasSaidasInstance) {
-            chartEntradasSaidasInstance.destroy();
-        }
+        if (chartEntradasSaidasInstance) chartEntradasSaidasInstance.destroy();
+        
+        const dadosES = (totalEntradas > 0 || totalSaidas > 0) ? [totalEntradas, totalSaidas] : [1, 1];
+        const coresES = (totalEntradas > 0 || totalSaidas > 0) ? ['#10b981', '#ef4444'] : ['#cbd5e1', '#cbd5e1'];
+
         chartEntradasSaidasInstance = new Chart(canvasES, {
             type: 'pie',
             data: {
                 labels: ['Entradas', 'Saídas'],
                 datasets: [{
-                    data: [totalEntradas, totalSaidas],
-                    backgroundColor: ['#10b981', '#ef4444'],
+                    data: dadosES,
+                    backgroundColor: coresES,
                     borderWidth: 1
                 }]
             },
             options: {
                 responsive: true,
                 maintainAspectRatio: false,
-                plugins: {
-                    legend: { position: 'bottom', labels: { boxWidth: 12 } }
-                }
+                plugins: { legend: { position: 'bottom', labels: { boxWidth: 12 } } }
             }
         });
     }
@@ -1171,7 +1962,10 @@ function atualizarGraficosDashboard(totalEntradas, totalSaidas, dados) {
     const selectCatDash = document.getElementById('filtroCategoriaDashboard');
     const categoriaSelecionadaId = selectCatDash ? selectCatDash.value : 'todas';
 
-    const lancamentosPeriodo = dados.lancamentos.filter(l => {
+    // Aplica o filtro restritivo de permissões e escopo para evitar dados cruzados (como de outros perfis)
+    const lancamentosPermitidos = filtrarDadosPorPermissao(dados.lancamentos || [], dados, escopoAtual);
+
+    const lancamentosPeriodo = lancamentosPermitidos.filter(l => {
         if (l.tipo !== 'saida') return false;
         if (mesAnoSelecionado && l.vencimento && !l.vencimento.startsWith(mesAnoSelecionado)) return false;
         if (categoriaSelecionadaId !== 'todas' && Number(l.categoriaId) !== Number(categoriaSelecionadaId)) return false;
@@ -1195,9 +1989,7 @@ function atualizarGraficosDashboard(totalEntradas, totalSaidas, dados) {
 
     const canvasCat = document.getElementById('graficoGastosCategorias');
     if (canvasCat) {
-        if (chartGastosCategoriasInstance) {
-            chartGastosCategoriasInstance.destroy();
-        }
+        if (chartGastosCategoriasInstance) chartGastosCategoriasInstance.destroy();
         
         const dadosGrafico = valoresCategorias.length > 0 ? valoresCategorias : [1];
         const rotulosGrafico = labelsCategorias.length > 0 ? labelsCategorias : ['Sem gastos'];
@@ -1216,9 +2008,7 @@ function atualizarGraficosDashboard(totalEntradas, totalSaidas, dados) {
             options: {
                 responsive: true,
                 maintainAspectRatio: false,
-                plugins: {
-                    legend: { position: 'bottom', labels: { boxWidth: 12 } }
-                }
+                plugins: { legend: { position: 'bottom', labels: { boxWidth: 12 } } }
             }
         });
     }
@@ -1237,9 +2027,7 @@ function atualizarGraficosDashboard(totalEntradas, totalSaidas, dados) {
 
     const canvasServicos = document.getElementById('graficoServicosEssenciais');
     if (canvasServicos) {
-        if (chartServicosEssenciaisInstance) {
-            chartServicosEssenciaisInstance.destroy();
-        }
+        if (chartServicosEssenciaisInstance) chartServicosEssenciaisInstance.destroy();
 
         const dadosServicos = (totalEssencial > 0 || totalNaoEssencial > 0) ? [totalEssencial, totalNaoEssencial] : [1];
         const coresServicos = (totalEssencial > 0 || totalNaoEssencial > 0) ? ['#10b981', '#f59e0b'] : ['#cbd5e1'];
@@ -1257,15 +2045,13 @@ function atualizarGraficosDashboard(totalEntradas, totalSaidas, dados) {
             options: {
                 responsive: true,
                 maintainAspectRatio: false,
-                plugins: {
-                    legend: { position: 'bottom', labels: { boxWidth: 12 } }
-                }
+                plugins: { legend: { position: 'bottom', labels: { boxWidth: 12 } } }
             }
         });
     }
 
     const selectFiltroCartao = document.getElementById('filtroGraficoCartao');
-    const cartoesUsuario = dados.cartoes.filter(c => c.usuarioId === usuarioLogadoId);
+    const cartoesUsuario = filtrarDadosPorPermissao(dados.cartoes || [], dados, escopoAtual).filter(c => c.ativo !== false);
     
     if (selectFiltroCartao) {
         const valorAtual = selectFiltroCartao.value;
@@ -1285,11 +2071,11 @@ function atualizarGraficosDashboard(totalEntradas, totalSaidas, dados) {
 
     cartoesUsuario.forEach(cartao => {
         if (cartaoSelecionadoId === 'todos' || Number(cartao.id) === Number(cartaoSelecionadoId)) {
-            const gastoUtilizado = dados.lancamentos
+            const gastoUtilizado = lancamentosPermitidos
                 .filter(l => Number(l.cartaoId) === Number(cartao.id) && !l.pago)
                 .reduce((acc, l) => acc + Number(l.valor), 0);
             
-            totalLimiteGeral += Number(cartao.limiteTotal);
+            totalLimiteGeral += Number(cartao.limite || cartao.limiteTotal || 0);
             totalUsadoGeral += gastoUtilizado;
         }
     });
@@ -1298,31 +2084,30 @@ function atualizarGraficosDashboard(totalEntradas, totalSaidas, dados) {
 
     const canvasCartao = document.getElementById('graficoCartoesLimite');
     if (canvasCartao) {
-        if (chartCartoesLimiteInstance) {
-            chartCartoesLimiteInstance.destroy();
-        }
+        if (chartCartoesLimiteInstance) chartCartoesLimiteInstance.destroy();
+        
+        const dadosCartao = (totalUsadoGeral > 0 || totalDisponivelGeral > 0) ? [totalUsadoGeral, totalDisponivelGeral] : [1, 1];
+        const coresCartao = (totalUsadoGeral > 0 || totalDisponivelGeral > 0) ? ['#f59e0b', '#3b82f6'] : ['#cbd5e1', '#cbd5e1'];
+
         chartCartoesLimiteInstance = new Chart(canvasCartao, {
             type: 'pie',
             data: {
                 labels: ['Limite Usado', 'Limite Disponível'],
                 datasets: [{
-                    data: [totalUsadoGeral, totalDisponivelGeral],
-                    backgroundColor: ['#f59e0b', '#3b82f6'],
+                    data: dadosCartao,
+                    backgroundColor: coresCartao,
                     borderWidth: 1
                 }]
             },
             options: {
                 responsive: true,
                 maintainAspectRatio: false,
-                plugins: {
-                    legend: { position: 'bottom', labels: { boxWidth: 12 } }
-                }
+                plugins: { legend: { position: 'bottom', labels: { boxWidth: 12 } } }
             }
         });
     }
 }
 
-// --- Relatórios com Consolidação Completa ---
 function carregarRelatorios() {
     const dados = obterDados();
     
@@ -1377,16 +2162,21 @@ function carregarRelatorios() {
         if (l.tipo === 'saida') totalSaidasES += valor;
     });
 
+    // CORREÇÃO: Garante valores seguros para o gráfico não sumir caso esteja zerado
     const canvasRelES = document.getElementById('graficoRelatorioEntradasSaidas');
     if (canvasRelES) {
         if (chartRelatorioESInstance) chartRelatorioESInstance.destroy();
+        
+        const dadosES = (totalEntradasES > 0 || totalSaidasES > 0) ? [totalEntradasES, totalSaidasES] : [1, 1];
+        const coresES = (totalEntradasES > 0 || totalSaidasES > 0) ? ['#10b981', '#ef4444'] : ['#cbd5e1', '#cbd5e1'];
+
         chartRelatorioESInstance = new Chart(canvasRelES, {
             type: 'pie',
             data: {
                 labels: ['Entradas', 'Saídas'],
                 datasets: [{
-                    data: [totalEntradasES, totalSaidasES],
-                    backgroundColor: ['#10b981', '#ef4444'],
+                    data: dadosES,
+                    backgroundColor: coresES,
                     borderWidth: 1
                 }]
             },
@@ -1483,236 +2273,6 @@ function carregarRelatorios() {
             }
         });
     }
-
-    const elTotalHe = document.getElementById('totalHoraExtraPeriodo');
-    if (elTotalHe) {
-        const totalHe = lancamentosPeriodo.reduce((acc, l) => acc + Number(l.horaExtra || 0), 0);
-        elTotalHe.innerText = `R$ ${totalHe.toFixed(2)}`;
-    }
-
-    const divCat = document.getElementById('relatorioCategorias');
-    if (divCat) {
-        divCat.innerHTML = '';
-        const gastosPorCat = {};
-
-        lancamentosPeriodo.filter(l => l.tipo === 'saida').forEach(l => {
-            gastosPorCat[l.categoriaId] = (gastosPorCat[l.categoriaId] || 0) + Number(l.valor);
-        });
-
-        if (Object.keys(gastosPorCat).length === 0) {
-            divCat.innerHTML = '<p>Nenhum gasto registrado neste período.</p>';
-        } else {
-            let indexCor = 0;
-            for (let catId in gastosPorCat) {
-                const cat = dados.categorias.find(c => Number(c.id) == Number(catId));
-                const corAtual = coresPadraoRel[indexCor % coresPadraoRel.length];
-                
-                const p = document.createElement('p');
-                p.style.color = corAtual;
-                p.style.fontWeight = 'bold';
-                p.innerHTML = `${cat ? cat.nome : 'Outros'}: R$ ${gastosPorCat[catId].toFixed(2)}`;
-                divCat.appendChild(p);
-
-                indexCor++;
-            }
-        }
-    }
-
-    const selectCartaoParc = document.getElementById('filtroCartaoParcelamento');
-    if (selectCartaoParc && selectCartaoParc.options.length <= 1) {
-        const valorAtualCartaoParc = selectCartaoParc.value;
-        selectCartaoParc.innerHTML = '<option value="todos">Todos os Cartões</option>';
-        dados.cartoes.forEach(c => {
-            const opt = document.createElement('option');
-            opt.value = c.id;
-            opt.innerText = c.nome;
-            selectCartaoParc.appendChild(opt);
-        });
-        if (valorAtualCartaoParc) selectCartaoParc.value = valorAtualCartaoParc;
-    }
-
-    const cartaoFiltroId = selectCartaoParc ? selectCartaoParc.value : 'todos';
-
-    const tbodyParcelas = document.getElementById('tabelaParcelamentos');
-    if (tbodyParcelas) {
-        tbodyParcelas.innerHTML = '';
-        
-        const parcelasMes = lancamentosPeriodo.filter(l => {
-            if (l.formaPagamento !== 'CARTAO' || !(l.totalParcelas > 1)) return false;
-            if (cartaoFiltroId !== 'todos' && Number(l.cartaoId) !== Number(cartaoFiltroId)) return false;
-            return true;
-        });
-        
-        if (parcelasMes.length === 0) {
-            tbodyParcelas.innerHTML = `<tr><td colspan="5" style="text-align: center;">Nenhum parcelamento encontrado para este filtro.</td></tr>`;
-        } else {
-            parcelasMes.forEach(l => {
-                const tr = document.createElement('tr');
-                tr.innerHTML = `
-                    <td>${l.descricao} ${l.observacao ? `<br><small style="color:#64748b;">Obs: ${l.observacao}</small>` : ''}</td>
-                    <td style="text-align: center;"><strong>${l.parcelaAtual}</strong> / ${l.totalParcelas}</td>
-                    <td style="text-align: right;">R$ ${Number(l.valor).toFixed(2)}</td>
-                    <td style="text-align: center;">${l.vencimento}</td>
-                    <td style="text-align: center;">
-                        <button onclick="abrirDetalhamentoParcelamento(${l.id})" class="btn-acao-icone visualizar" title="Visualizar Detalhes"><img src="imagens/visualizar.png" alt="Visualizar"></button>
-                    </td>
-                `;
-                tbodyParcelas.appendChild(tr);
-            });
-        }
-    }
-
-    const divFin = document.getElementById('listaFinanciamentos');
-    if (divFin) {
-        divFin.innerHTML = '';
-        if (!dados.financiamentos || dados.financiamentos.length === 0) {
-            divFin.innerHTML = '<p>Nenhum financiamento cadastrado.</p>';
-        } else {
-            dados.financiamentos.forEach(f => {
-                const parcelasPagasReais = dados.lancamentos.filter(l => 
-                    l.tipo === 'saida' && 
-                    l.descricao.toLowerCase().includes(`financiamento: ${f.nome.toLowerCase()}`) && 
-                    l.pago === true
-                ).length;
-
-                const box = document.createElement('div');
-                box.className = 'stat-box';
-                box.style.marginBottom = '12px';
-                box.style.textAlign = 'left';
-                box.innerHTML = `
-                    <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; flex-wrap: wrap;">
-                        <div>
-                            <h3 style="margin-bottom: 4px;">${f.nome}</h3>
-                            <p style="font-size: 0.95rem; font-weight: normal;">Progresso: <strong>${parcelasPagasReais}</strong> / ${f.totalMeses} meses pagos</p>
-                        </div>
-                        <div style="display: flex; gap: 6px;">
-                            <button onclick="window.location.href='detalhes-financiamento.html?id=${f.id}'" class="btn-acao-icone visualizar" title="Visualizar"><img src="imagens/visualizar.png" alt="Visualizar"></button>
-                            <button onclick="excluirFinanciamento(${f.id})" class="btn-acao-icone excluir" title="Excluir"><img src="imagens/excluir.png" alt="Excluir"></button>
-                        </div>
-                    </div>
-                `;
-                divFin.appendChild(box);
-            });
-        }
-    }
-
-    const tbodyContas = document.getElementById('tabelaContasAPagar');
-    const tbodyContasPagas = document.getElementById('tabelaContasPagas');
-    
-    if (tbodyContas && tbodyContasPagas) {
-        tbodyContas.innerHTML = '';
-        tbodyContasPagas.innerHTML = '';
-
-        const todasSaidas = lancamentosPeriodo.filter(l => l.tipo === 'saida' && l.vencimento);
-
-        const contasNormais = todasSaidas.filter(l => l.formaPagamento !== 'CARTAO' && (
-            !mesAnoSelecionado || l.vencimento.startsWith(mesAnoSelecionado) || (!l.pago && l.vencimento < `${mesAnoSelecionado}-01`)
-        ));
-
-        const faturasConsolidadasMap = {};
-        
-        todasSaidas.filter(l => l.formaPagamento === 'CARTAO' && l.cartaoId).forEach(l => {
-            const cartao = dados.cartoes.find(c => Number(c.id) === Number(l.cartaoId));
-            const nomeCartao = cartao ? cartao.nome : 'Cartão Desconhecido';
-            const mesVencimentoFatura = l.vencimento.substring(0, 7);
-
-            if (mesAnoSelecionado && mesVencimentoFatura !== mesAnoSelecionado && l.pago) return;
-            if (mesAnoSelecionado && !l.pago && mesVencimentoFatura > mesAnoSelecionado) return;
-
-            const chaveFatura = `${l.cartaoId}_${mesVencimentoFatura}`;
-
-            if (!faturasConsolidadasMap[chaveFatura]) {
-                faturasConsolidadasMap[chaveFatura] = {
-                    idVirtual: chaveFatura,
-                    cartaoId: l.cartaoId,
-                    nomeCartao: nomeCartao,
-                    vencimento: l.vencimento,
-                    valorTotal: 0,
-                    pago: true,
-                    itens: []
-                };
-            }
-
-            faturasConsolidadasMap[chaveFatura].valorTotal += Number(l.valor);
-            faturasConsolidadasMap[chaveFatura].itens.push(l);
-            if (!l.pago) {
-                faturasConsolidadasMap[chaveFatura].pago = false;
-            }
-        });
-
-        const listaFaturas = Object.values(faturasConsolidadasMap);
-        const itensPendentes = [...contasNormais.filter(l => !l.pago), ...listaFaturas.filter(f => !f.pago)];
-        const itensPagos = [...contasNormais.filter(l => l.pago), ...listaFaturas.filter(f => f.pago)];
-
-        if (itensPendentes.length === 0) {
-            tbodyContas.innerHTML = `<tr><td colspan="4" style="text-align: center;">Nenhuma conta ou fatura pendente.</td></tr>`;
-        } else {
-            itensPendentes.sort((a, b) => a.vencimento.localeCompare(b.vencimento));
-            itensPendentes.forEach(item => {
-                const tr = document.createElement('tr');
-                const [ano, mes, dia] = item.vencimento.split('-');
-                const dataFormatada = `${dia}/${mes}/${ano}`;
-
-                if (item.nomeCartao) {
-                    tr.innerHTML = `
-                        <td><strong>Fatura - ${item.nomeCartao}</strong></td>
-                        <td>${dataFormatada}</td>
-                        <td class="negativo">R$ ${item.valorTotal.toFixed(2)}</td>
-                        <td>
-                            <button onclick="abrirDetalhamentoFatura('${item.cartaoId}', '${item.vencimento.substring(0, 7)}')" class="btn-acao-icone visualizar" title="Visualizar Detalhes"><img src="imagens/visualizar.png" alt="Visualizar"></button>
-                            <button onclick="alternarStatusFaturaConsolidada('${item.cartaoId}', '${item.vencimento.substring(0, 7)}', true)" class="btn-acao-icone pagar" title="Marcar Fatura Paga"><img src="imagens/pagar.png" alt="Pagar"></button>
-                        </td>
-                    `;
-                } else {
-                    tr.innerHTML = `
-                        <td>${item.descricao} ${item.observacao ? `<br><small style="color:#64748b;">Obs: ${item.observacao}</small>` : ''}</td>
-                        <td>${dataFormatada}</td>
-                        <td>R$ ${Number(item.valor).toFixed(2)}</td>
-                        <td>
-                            <button onclick="alternarStatusPagamento(${item.id})" class="btn-acao-icone pagar" title="Marcar Pago"><img src="imagens/pagar.png" alt="Pagar"></button>
-                            <button onclick="removerLancamentoRelatorio(${item.id})" class="btn-acao-icone excluir" title="Excluir"><img src="imagens/excluir.png" alt="Excluir"></button>
-                        </td>
-                    `;
-                }
-                tbodyContas.appendChild(tr);
-            });
-        }
-
-        if (itensPagos.length === 0) {
-            tbodyContasPagas.innerHTML = `<tr><td colspan="4" style="text-align: center;">Nenhuma conta ou fatura paga neste período.</td></tr>`;
-        } else {
-            itensPagos.sort((a, b) => a.vencimento.localeCompare(b.vencimento));
-            itensPagos.forEach(item => {
-                const tr = document.createElement('tr');
-                const [ano, mes, dia] = item.vencimento.split('-');
-                const dataFormatada = `${dia}/${mes}/${ano}`;
-                const estiloLinha = 'opacity: 0.7;';
-
-                if (item.nomeCartao) {
-                    tr.innerHTML = `
-                        <td style="${estiloLinha}"><strong>Fatura - ${item.nomeCartao}</strong></td>
-                        <td style="${estiloLinha}">${dataFormatada}</td>
-                        <td class="positivo" style="${estiloLinha}">R$ ${item.valorTotal.toFixed(2)}</td>
-                        <td>
-                            <button onclick="abrirDetalhamentoFatura('${item.cartaoId}', '${item.vencimento.substring(0, 7)}')" class="btn-acao-icone visualizar" title="Visualizar Detalhes"><img src="imagens/visualizar.png" alt="Visualizar"></button>
-                            <button onclick="alternarStatusFaturaConsolidada('${item.cartaoId}', '${item.vencimento.substring(0, 7)}', false)" class="btn-acao-icone desfazer" title="Marcar Pendente"><img src="imagens/desfazer.png" alt="Desfazer"></button>
-                        </td>
-                    `;
-                } else {
-                    tr.innerHTML = `
-                        <td style="${estiloLinha}">${item.descricao}</td>
-                        <td style="${estiloLinha}">${dataFormatada}</td>
-                        <td style="${estiloLinha}">R$ ${Number(item.valor).toFixed(2)}</td>
-                        <td>
-                            <button onclick="alternarStatusPagamento(${item.id})" class="btn-acao-icone desfazer" title="Desfazer"><img src="imagens/desfazer.png" alt="Desfazer"></button>
-                            <button onclick="removerLancamentoRelatorio(${item.id})" class="btn-acao-icone excluir" title="Excluir"><img src="imagens/excluir.png" alt="Excluir"></button>
-                        </td>
-                    `;
-                }
-                tbodyContasPagas.appendChild(tr);
-            });
-        }
-    }
 }
 
 async function alternarStatusFaturaConsolidada(cartaoId, anoMes, statusPago) {
@@ -1721,10 +2281,14 @@ async function alternarStatusFaturaConsolidada(cartaoId, anoMes, statusPago) {
     dados.lancamentos.forEach(l => {
         if (Number(l.cartaoId) === Number(cartaoId) && l.vencimento && l.vencimento.startsWith(anoMes)) {
             l.pago = statusPago;
+            l.status = statusPago ? 'pago' : 'pendente';
+            l.dataPagamento = statusPago ? dataLocalYYYYMMDD() : null;
+            l.usuarioPagamentoId = statusPago ? obterUsuarioAtualId(dados) : null;
+            l.updatedAt = new Date().toISOString();
         }
     });
+    registrarLogInterno(dados, "STATUS FATURA", `Fatura do cartão ID ${cartaoId} (${anoMes}) marcada como ${statusPago ? 'PAGA' : 'PENDENTE'}`);
     await salvarDados(dados);
-    await registrarLog("STATUS FATURA", `Fatura do cartão ID ${cartaoId} (${anoMes}) marcada como ${statusPago ? 'PAGA' : 'PENDENTE'}`);
     esconderLoading();
     carregarRelatorios();
 }
@@ -1783,55 +2347,123 @@ function abrirDetalhamentoFatura(cartaoId, anoMes) {
     document.body.appendChild(overlay);
 }
 
-function abrirDetalhamentoParcelamento(lancamentoId) {
+function abrirDetalhamentoParcelamento(lancamentoId, paginaAtual = 1) {
     const dados = obterDados();
-    const lancamentoSelecionado = dados.lancamentos.find(l => Number(l.id) === Number(lancamentoId));
-    if (!lancamentoSelecionado) return;
+    const lancamento = (dados.lancamentos || []).find(l => Number(l.id) === Number(lancamentoId));
+    if (!lancamento) return;
 
-    const descricaoBase = lancamentoSelecionado.descricao.replace(/\s\(\d+\/\d+\)$/, '').trim();
+    const chaveGrupo = lancamento.parcelamentoId || descricaoBaseParcelamento(lancamento.descricao);
+    const parcelasGrupo = (dados.lancamentos || []).filter(l => 
+        (lancamento.parcelamentoId && l.parcelamentoId === lancamento.parcelamentoId) ||
+        (!lancamento.parcelamentoId && descricaoBaseParcelamento(l.descricao) === chaveGrupo)
+    );
 
-    const todasAsParcelas = dados.lancamentos.filter(l => {
-        const descL = l.descricao.replace(/\s\(\d+\/\d+\)$/, '').trim();
-        return descL.toLowerCase() === descricaoBase.toLowerCase() && Number(l.cartaoId) === Number(lancamentoSelecionado.cartaoId);
+    // Ordena por vencimento
+    parcelasGrupo.sort((a, b) => new Date(a.vencimento) - new Date(b.vencimento));
+
+    const itensPorPagina = 30;
+    const totalParcelas = parcelasGrupo.length || Number(lancamento.totalParcelas) || 1;
+    const totalPaginas = Math.ceil(totalParcelas / itensPorPagina);
+    const paginaSegura = Math.max(1, Math.min(paginaAtual, totalPaginas));
+
+    const inicio = (paginaSegura - 1) * itensPorPagina;
+    const fim = inicio + itensPorPagina;
+    const parcelasPagina = parcelasGrupo.slice(inicio, fim);
+
+    const valorParcela = Number(lancamento.valor || 0);
+    const valorTotalCompra = parcelasGrupo.reduce((acc, p) => acc + Number(p.valor || 0), 0);
+    
+    const usuarioObj = (dados.usuarios || []).find(u => Number(u.id) === Number(lancamento.usuarioId));
+    const nomeResponsavel = usuarioObj ? usuarioObj.nome : 'Usuário';
+
+    let infoFormaPagamento = '';
+    const forma = lancamento.formaPagamento;
+    if (forma === 'CARTAO') {
+        const cartaoObj = (dados.cartoes || []).find(c => String(c.id) === String(lancamento.cartaoId));
+        infoFormaPagamento = `Cartão Utilizado: ${cartaoObj ? cartaoObj.nome : 'Crédito'}`;
+    } else if (forma === 'BOLETO') {
+        infoFormaPagamento = `Forma de Pagamento: Boleto / Conta`;
+    } else if (forma === 'FIXO') {
+        infoFormaPagamento = `Forma de Pagamento: Conta fixa / mensal`;
+    } else {
+        infoFormaPagamento = `Forma de Pagamento: ${forma || 'Não informada'}`;
+    }
+
+    let linhasTabelaHtml = '';
+    parcelasPagina.forEach((p, idx) => {
+        const numeroReal = inicio + idx + 1;
+        linhasTabelaHtml += `
+            <tr>
+                <td style="text-align: center;">${numeroReal}/${totalParcelas}</td>
+                <td>${formatarDataBR(p.vencimento)}</td>
+                <td style="text-align: right;">R$ ${Number(p.valor || 0).toFixed(2)}</td>
+                <td style="text-align: center;"><span class="status-badge ${p.pago ? 'status-pago' : 'status-pendente'}">${p.pago ? 'Pago' : 'Pendente'}</span></td>
+            </tr>
+        `;
     });
 
-    todasAsParcelas.sort((a, b) => a.vencimento.localeCompare(b.vencimento));
+    let paginacaoHtml = '';
+    if (totalPaginas > 1) {
+        paginacaoHtml = `
+            <div style="display: flex; justify-content: space-between; align-items: center; margin: 15px 0; gap: 10px;">
+                <button type="button" class="btn-secundario" ${paginaSegura === 1 ? 'disabled style="opacity: 0.5;"' : ''} onclick="abrirDetalhamentoParcelamento(${lancamentoId}, ${paginaSegura - 1})">← Anterior</button>
+                <span style="font-size: 0.85rem; font-weight: bold;">Página ${paginaSegura} de ${totalPaginas}</span>
+                <button type="button" class="btn-secundario" ${paginaSegura === totalPaginas ? 'disabled style="opacity: 0.5;"' : ''} onclick="abrirDetalhamentoParcelamento(${lancamentoId}, ${paginaSegura + 1})">Próxima →</button>
+            </div>
+        `;
+    }
 
-    const primeiraParcela = todasAsParcelas[0];
-    const ultimaParcela = todasAsParcelas[todasAsParcelas.length - 1];
+    // Fecha modal anterior se já estiver aberto para atualizar a página
+    document.querySelectorAll('.modal-overlay-detalhe-parcelas').forEach(el => el.remove());
 
-    const valorTotalCompra = todasAsParcelas.reduce((acc, p) => acc + Number(p.valor), 0);
-    const qtdTotalParcelas = lancamentoSelecionado.totalParcelas || todasAsParcelas.length;
+    const htmlDetalhes = `
+        <div style="text-align: left; display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px; font-size: 0.9rem;">
+            <p><strong>Descrição:</strong> ${escaparHTML(descricaoBaseParcelamento(lancamento.descricao))}</p>
+            <p><strong>Valor Total:</strong> R$ ${valorTotalCompra.toLocaleString('pt-BR', {minimumFractionDigits: 2})} (${totalParcelas}x de R$ ${valorParcela.toFixed(2)})</p>
+            <p><strong>${infoFormaPagamento}</strong> | <strong>Responsável:</strong> ${escaparHTML(nomeResponsavel)}</p>
+        </div>
 
-    const cartaoObj = dados.cartoes.find(c => Number(c.id) === Number(lancamentoSelecionado.cartaoId));
-    const nomeCartao = cartaoObj ? cartaoObj.nome : 'Cartão não informado';
+        <h4 style="margin: 10px 0 6px 0; font-size: 0.95rem; text-align: left;">Parcelas do Período (${inicio + 1} a ${Math.min(fim, totalParcelas)} de ${totalParcelas}):</h4>
+        
+        ${paginacaoHtml}
 
-    const usuarioObj = dados.usuarios.find(u => Number(u.id) === Number(lancamentoSelecionado.usuarioId));
-    const nomeUsuario = usuarioObj ? usuarioObj.nome : 'Desconhecido';
+        <div class="tabela-container" style="max-height: 240px; overflow-y: auto; border: 1px solid var(--border); border-radius: 8px;">
+            <table class="tabela" style="width: 100%; font-size: 0.85rem;">
+                <thead>
+                    <tr>
+                        <th style="text-align: center;">Parcela</th>
+                        <th>Vencimento</th>
+                        <th style="text-align: right;">Valor</th>
+                        <th style="text-align: center;">Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${linhasTabelaHtml}
+                </tbody>
+            </table>
+        </div>
 
-    const dataCompra = primeiraParcela ? primeiraParcela.vencimento : '-';
-    const dataUltima = ultimaParcela ? ultimaParcela.vencimento : '-';
+        ${paginacaoHtml}
+
+        <div class="modal-buttons modal-buttons-center" style="margin-top: 15px;">
+            <button type="button" data-fechar style="background-color: var(--primary); width: 100%;">Fechar</button>
+        </div>
+    `;
 
     const overlay = document.createElement('div');
-    overlay.className = 'modal-overlay';
+    overlay.className = 'modal-overlay modal-overlay-detalhe-parcelas';
     overlay.innerHTML = `
-        <div class="modal-box" style="max-width: 600px; width: 95%;">
-            <h3>Detalhes do Parcelamento</h3>
-            <p style="margin-bottom: 16px; font-size: 1rem; font-weight: bold; color: var(--accent);">${descricaoBase}</p>
-            
-            <div style="display: flex; flex-direction: column; gap: 10px; margin-bottom: 20px; text-align: left; font-size: 0.95rem;">
-                <p><strong>Valor Total da Compra:</strong> R$ ${valorTotalCompra.toFixed(2)}</p>
-                <p><strong>Cartão Utilizado:</strong> ${nomeCartao}</p>
-                <p><strong>Responsável pelo Lançamento:</strong> ${nomeUsuario}</p>
-                <p><strong>Data da Compra (Primeira Parcela):</strong> ${dataCompra}</p>
-                <p><strong>Quantidade de Parcelas:</strong> ${qtdTotalParcelas}x (Valor da Parcela: R$ ${Number(lancamentoSelecionado.valor).toFixed(2)})</p>
-                <p><strong>Data da Última Parcela:</strong> ${dataUltima}</p>
-            </div>
-
-            <button onclick="this.closest('.modal-overlay').remove()" style="width: 100%; background-color: var(--primary);">Fechar</button>
+        <div class="modal-box" style="max-width: 650px; width: 95%;">
+            <h3>Detalhes do Financiamento / Parcelamento</h3>
+            ${htmlDetalhes}
         </div>
     `;
     document.body.appendChild(overlay);
+
+    overlay.querySelector('[data-fechar]').onclick = () => fecharModal(overlay);
+    overlay.addEventListener('click', e => {
+        if (e.target === overlay) fecharModal(overlay);
+    });
 }
 
 async function removerLancamento(id) {
@@ -1860,8 +2492,8 @@ async function removerLancamento(id) {
     });
 
     dados.lancamentos = dados.lancamentos.filter(l => Number(l.id) !== Number(id));
+    registrarLogInterno(dados, "EXCLUSÃO LANÇAMENTO", `Lançamento ID ${id} (${lanc.descricao}) excluído. Motivo: ${motivo}`);
     await salvarDados(dados);
-    await registrarLog("EXCLUSÃO LANÇAMENTO", `Lançamento ID ${id} (${lanc.descricao}) excluído. Motivo: ${motivo}`);
     
     esconderLoading();
     await mostrarAlertaModal("Lançamento excluído com sucesso!");
@@ -1894,23 +2526,24 @@ async function removerLancamentoRelatorio(id) {
     });
 
     dados.lancamentos = dados.lancamentos.filter(l => Number(l.id) !== Number(id));
+    registrarLogInterno(dados, "EXCLUSÃO LANÇAMENTO", `Lançamento ID ${id} (${lanc.descricao}) excluído. Motivo: ${motivo}`);
     await salvarDados(dados);
-    await registrarLog("EXCLUSÃO LANÇAMENTO", `Lançamento ID ${id} (${lanc.descricao}) excluído. Motivo: ${motivo}`);
     
     esconderLoading();
     await mostrarAlertaModal("Lançamento excluído com sucesso!");
     carregarRelatorios();
 }
 
-async function adicionarContaLotePorPeriodo(descricao, valorParcela, dataInicio, qtdMeses, categoriaId) {
+async function adicionarContaLotePorPeriodo(descricao, valorParcela, dataInicio, qtdMeses, categoriaId, bemId = null) {
     mostrarLoading("Gerando contas em lote...");
     const dados = obterDados();
     const usuarioId = parseInt(localStorage.getItem('usuarioLogado'));
     
-    let proximaIdLanc = dados.lancamentos.length > 0 ? Number(dados.lancamentos[dados.lancamentos.length - 1].id) + 1 : 1;
+    let proximaIdLanc = dados.lancamentos.reduce((m, l) => Math.max(m, Number(l.id) || 0), 0) + 1;
+    const parcelamentoId = qtdMeses > 1 ? gerarId('lote') : null;
 
     for (let i = 0; i < qtdMeses; i++) {
-        let dataVenc = new Date(dataInicio.getFullYear(), dataInicio.getMonth() + i, dataInicio.getDate());
+        let dataVenc = adicionarMesesClamped(dataInicio, i);
         
         const anoVenc = dataVenc.getFullYear();
         const mesVenc = String(dataVenc.getMonth() + 1).padStart(2, '0');
@@ -1930,21 +2563,26 @@ async function adicionarContaLotePorPeriodo(descricao, valorParcela, dataInicio,
             categoriaId: Number(categoriaId),
             formaPagamento: 'BOLETO',
             cartaoId: null,
+            bemId: bemId ? Number(bemId) : null,
             vencimento: dataVencStr,
             recorrencia: 'unica',
             parcelaAtual: i + 1,
             totalParcelas: qtdMeses,
+            parcelamentoId,
             observacao: 'Gerado por lote retroativo/período',
             horaExtra: 0,
             servicoEssencial: 'nao',
-            pago: jaPassou
+            pago: false,
+            status: jaPassou ? 'atrasado' : 'pendente',
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString()
         };
 
         dados.lancamentos.push(novoLancamento);
     }
 
+    registrarLogInterno(dados, "CONTA LOTE PERÍODO", `Lote por período criado: ${descricao} (${qtdMeses} meses)`);
     await salvarDados(dados);
-    await registrarLog("CONTA LOTE PERÍODO", `Lote por período criado: ${descricao} (${qtdMeses} meses)`);
     
     esconderLoading();
     await mostrarAlertaModal("Lotes criados com sucesso!");
@@ -1979,11 +2617,12 @@ async function removerLancamentoInteligente(id) {
     const lanc = dados.lancamentos.find(l => Number(l.id) === Number(id));
     if (!lanc) return;
 
-    const ehParceladoOuLote = lanc.totalParcelas && lanc.totalParcelas > 1;
+    const grupoParcelamentoId = resolverParcelamentoId(lanc);
+    const ehParceladoOuLote = Boolean(grupoParcelamentoId) || (lanc.totalParcelas && lanc.totalParcelas > 1);
 
     let escopo = 'esta';
     if (ehParceladoOuLote) {
-        escopo = await mostrarOpcaoEscopoModal(`Este lançamento possui ${lanc.totalParcelas} parcelas/registros associados. Deseja excluir apenas esta parcela ou todas?`);
+        escopo = await mostrarOpcaoEscopoModal(`Este lançamento possui ${lanc.totalParcelas || 'vários'} registros associados. Deseja excluir apenas esta parcela ou todas?`);
         if (!escopo) return;
     }
 
@@ -2007,29 +2646,28 @@ async function removerLancamentoInteligente(id) {
         });
 
         dados.lancamentos = dados.lancamentos.filter(l => Number(l.id) !== Number(id));
-        await registrarLog("EXCLUSÃO LANÇAMENTO", `Lançamento ID ${id} (${lanc.descricao}) excluído. Motivo: ${motivo}`);
+        registrarLogInterno(dados, "EXCLUSÃO LANÇAMENTO", `Lançamento ID ${id} (${lanc.descricao}) excluído. Motivo: ${motivo}`);
     } else if (escopo === 'todas') {
-        const descricaoBase = lanc.descricao.replace(/\s\(\d+\/\d+\)$/, '').trim();
-        
-        dados.lancamentos.forEach(l => {
-            const descL = l.descricao.replace(/\s\(\d+\/\d+\)$/, '').trim();
-            if (descL === descricaoBase) {
-                dados.exclusao_movimento.push({
-                    dataHora: dataHoraAtual,
-                    usuario: nomeUsuario,
-                    lancamentoId: l.id,
-                    descricao: l.descricao,
-                    valor: l.valor,
-                    motivo: `[LOTE] ${motivo}`
-                });
-            }
+        const descricaoBase = descricaoBaseParcelamento(lanc.descricao);
+        const relacionados = grupoParcelamentoId
+            ? dados.lancamentos.filter(l => String(l.parcelamentoId) === String(grupoParcelamentoId))
+            : dados.lancamentos.filter(l => descricaoBaseParcelamento(l.descricao) === descricaoBase);
+
+        relacionados.forEach(l => {
+            dados.exclusao_movimento.push({
+                id: gerarId('exc'),
+                dataHora: dataHoraAtual,
+                usuario: nomeUsuario,
+                lancamentoId: l.id,
+                descricao: l.descricao,
+                valor: l.valor,
+                motivo: `[LOTE] ${motivo}`
+            });
         });
 
-        dados.lancamentos = dados.lancamentos.filter(l => {
-            const descL = l.descricao.replace(/\s\(\d+\/\d+\)$/, '').trim();
-            return descL !== descricaoBase;
-        });
-        await registrarLog("EXCLUSÃO LOTE", `Todas as parcelas de "${descricaoBase}" foram excluídas. Motivo: ${motivo}`);
+        const idsRelacionados = new Set(relacionados.map(l => String(l.id)));
+        dados.lancamentos = dados.lancamentos.filter(l => !idsRelacionados.has(String(l.id)));
+        registrarLogInterno(dados, "EXCLUSÃO LOTE", `Todas as parcelas de "${descricaoBase}" foram excluídas. Motivo: ${motivo}`);
     }
 
     await salvarDados(dados);
@@ -2046,7 +2684,7 @@ async function adicionarSalarioFracionado(descricaoBase, valorTotalSalario, cate
 
     const dados = obterDados();
     const usuarioId = parseInt(localStorage.getItem('usuarioLogado'));
-    let proximaId = dados.lancamentos.length > 0 ? Number(dados.lancamentos[dados.lancamentos.length - 1].id) + 1 : 1;
+    let proximaId = dados.lancamentos.reduce((m, l) => Math.max(m, Number(l.id) || 0), 0) + 1;
 
     const [ano, mes, _] = dataReferencia.split('-').map(Number);
 
@@ -2098,8 +2736,8 @@ async function adicionarSalarioFracionado(descricaoBase, valorTotalSalario, cate
 
     dados.lancamentos.push(...entradasSalario);
 
+    registrarLogInterno(dados, "SALÁRIO FRACIONADO", `Adiantamento e saldo cadastrados para ${descricaoBase}: R$ ${valorTotalSalario}`);
     await salvarDados(dados);
-    await registrarLog("SALÁRIO FRACIONADO", `Adiantamento e saldo cadastrados para ${descricaoBase}: R$ ${valorTotalSalario}`);
 
     esconderLoading();
     processandoAcaoModal = false;
@@ -2108,37 +2746,60 @@ async function adicionarSalarioFracionado(descricaoBase, valorTotalSalario, cate
     if (typeof carregarRelatorios === 'function') carregarRelatorios();
 }
 
-// --- Detecção e Preenchimento Automático por Categoria (Adiantamento Salário) ---
 function verificarCategoriaSalario() {
     const selectCat = document.getElementById('categoriaLancamento');
-    const tipoLanc = document.getElementById('tipoLancamento').value;
-    if (!selectCat || tipoLanc !== 'entrada') return;
+    const tipoSelect = document.getElementById('tipoLancamento');
+
+    if (!selectCat || !tipoSelect || tipoSelect.value !== 'entrada') {
+        return;
+    }
 
     const dados = obterDados();
-    const catSelecionada = dados.categorias.find(c => Number(c.id) === Number(selectCat.value));
-    
-    if (catSelecionada && catSelecionada.nome.toLowerCase().includes('adiantamento')) {
+    const catSelecionada = dados.categorias.find(
+        c => String(c.id) === String(selectCat.value)
+    );
+
+    if (
+        catSelecionada &&
+        normalizarTexto(catSelecionada.nome).includes('adiantamento')
+    ) {
         carregarEPreencherAdiantamentoMemorizado();
     }
 }
 
 function carregarEPreencherAdiantamentoMemorizado() {
-    const inputValor = document.getElementById('valorTotal') || document.getElementById('valorLancamento');
-    const inputData = document.getElementById('vencimentoLancamento') || document.getElementById('vencimento') || document.querySelector('input[type="date"]');
-    
+    const inputValor =
+        document.getElementById('valorTotalLancamento') ||
+        document.getElementById('valorTotal') ||
+        document.getElementById('valorLancamento');
+
+    const inputData =
+        document.getElementById('vencimentoLancamento') ||
+        document.getElementById('vencimento');
+
     const usuarioId = localStorage.getItem('usuarioLogado');
     const chaveMemoria = `adiantamentoSalario_u${usuarioId}`;
     const salvoStr = localStorage.getItem(chaveMemoria);
 
     if (salvoStr) {
-        const salvo = JSON.parse(salvoStr);
-        if (inputValor && salvo.valor) {
-            inputValor.value = salvo.valor;
+        try {
+            const salvo = JSON.parse(salvoStr);
+
+            if (inputValor && salvo?.valor != null) {
+                inputValor.value = salvo.valor;
+            }
+        } catch (erro) {
+            console.warn(
+                'Não foi possível ler a memória do adiantamento:',
+                erro
+            );
+            localStorage.removeItem(chaveMemoria);
         }
     }
 
     if (inputData && inputData.value) {
         const partes = inputData.value.split('-');
+
         if (partes.length === 3) {
             partes[2] = '15';
             inputData.value = partes.join('-');
@@ -2157,4 +2818,557 @@ function salvarMemoriaAdiantamentoSeNecessario(descricao, valor) {
         const chaveMemoria = `adiantamentoSalario_u${usuarioId}`;
         localStorage.setItem(chaveMemoria, JSON.stringify({ descricao, valor }));
     }
+}
+
+function renderizarSinoNotificacoes() {
+    // Reaproveita o botão de notificação que já existe no HTML de cada página
+    // (#btnNotificacoesHeader), em vez de criar um segundo botão em outro lugar do cabeçalho.
+    const sinoBtn = document.getElementById('btnNotificacoesHeader');
+    if (!sinoBtn) return;
+
+    const dados = obterDados();
+    const usuarioId = localStorage.getItem('usuarioLogado');
+    const notificacoes = dados.notificacoes || [];
+    
+    // Conta quantas notificações não lidas o usuário tem
+    const naoLidas = notificacoes.filter(n => Number(n.usuarioDestinoId) === Number(usuarioId) && !n.lida).length;
+
+    const imagemIcone = naoLidas > 0 ? 'imagens/notific1.png' : 'imagens/notific.png';
+
+    sinoBtn.title = naoLidas > 0 ? `Você tem ${naoLidas} nova(s) notificação(ões)` : 'Central de Notificações';
+    sinoBtn.style.position = 'relative';
+
+    sinoBtn.innerHTML = `
+        <img src="${imagemIcone}" alt="Notificações" style="width: 22px; height: 22px; object-fit: contain;" onerror="this.style.display='none'">
+        ${naoLidas > 0 ? `<span style="position: absolute; top: 2px; right: 2px; background: var(--danger); color: #fff; font-size: 0.6rem; padding: 1px 4px; border-radius: 50%; font-weight: bold;">${naoLidas}</span>` : ''}
+    `;
+
+    sinoBtn.onclick = () => abrirCentralNotificacoes();
+}
+
+function abrirCentralNotificacoes() {
+    const dados = obterDados();
+    const usuarioId = localStorage.getItem('usuarioLogado');
+    const notificacoes = (dados.notificacoes || []).filter(n => Number(n.usuarioDestinoId) === Number(usuarioId));
+
+    // Marca todas como lidas ao abrir
+    notificacoes.forEach(n => n.lida = true);
+    salvarDados(dados, { sincronizar: false });
+
+    let itensHtml = '';
+    if (notificacoes.length === 0) {
+        itensHtml = `<p style="text-align: center; color: var(--text-muted); padding: 20px;">Nenhuma notificação no momento.</p>`;
+    } else {
+        notificacoes.reverse().forEach(n => {
+            let acoesHtml = '';
+            if (n.tipo === 'solicitacao_parceiro' && n.statusAprovacao === 'pendente') {
+                acoesHtml = `
+                    <div style="margin-top: 8px; display: flex; gap: 8px;">
+                        <button onclick="responderSolicitacaoParceiro('${n.id}', true)" style="background: var(--success); padding: 6px 12px; font-size: 0.8rem;">Aprovar</button>
+                        <button onclick="responderSolicitacaoParceiro('${n.id}', false)" style="background: var(--danger); padding: 6px 12px; font-size: 0.8rem;">Negar</button>
+                    </div>
+                `;
+            } else if (n.statusAprovacao && n.statusAprovacao !== 'pendente') {
+                acoesHtml = `<p style="font-size: 0.78rem; font-weight: bold; margin-top: 4px; color: ${n.statusAprovacao === 'aprovado' ? 'var(--success)' : 'var(--danger)'};">Status: ${n.statusAprovacao.toUpperCase()}</p>`;
+            }
+
+            itensHtml += `
+                <div style="background: var(--surface-2); padding: 12px; border-radius: 8px; margin-bottom: 8px; text-align: left; border-left: 4px solid var(--primary);">
+                    <strong style="font-size: 0.9rem; color: var(--text-main);">${n.titulo}</strong>
+                    <p style="font-size: 0.85rem; margin-top: 4px; color: var(--text-muted);">${n.mensagem}</p>
+                    <small style="font-size: 0.7rem; color: var(--text-muted);">${n.createdAt ? new Date(n.createdAt).toLocaleString('pt-BR') : ''}</small>
+                    ${acoesHtml}
+                </div>
+            `;
+        });
+    }
+
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    overlay.innerHTML = `
+        <div class="modal-box" style="max-width: 500px; width: 95%;">
+            <h3>Central de Notificações</h3>
+            <div style="max-height: 350px; overflow-y: auto; margin: 16px 0; padding-right: 4px;">
+                ${itensHtml}
+            </div>
+            <button onclick="this.closest('.modal-overlay').remove(); window.location.reload();" style="width: 100%; background-color: var(--primary);">Fechar</button>
+        </div>
+    `;
+    document.body.appendChild(overlay);
+}
+
+async function responderSolicitacaoParceiro(notificacaoId, aprovado) {
+    const dados = obterDados();
+    const notif = (dados.notificacoes || []).find(n => String(n.id) === String(notificacaoId));
+    if (!notif) return;
+
+    notif.statusAprovacao = aprovado ? 'aprovado' : 'negado';
+    
+    const usuarioDestino = dados.usuarios.find(u => Number(u.id) === Number(notif.usuarioDestinoId));
+    const remetente = dados.usuarios.find(u => Number(u.id) === Number(notif.remetenteId));
+
+    if (aprovado && usuarioDestino && remetente) {
+        // Vincula o parceiro reciprocamente
+        usuarioDestino.parceiroId = remetente.id;
+        remetente.parceiroId = usuarioDestino.id;
+
+        // Notifica o remetente que foi aprovado
+        dados.notificacoes.push({
+            id: gerarId('notif'),
+            usuarioDestinoId: remetente.id,
+            remetenteId: usuarioDestino.id,
+            tipo: 'resposta_parceiro',
+            titulo: 'Parceiro Aprovado! 🤝',
+            mensagem: `${usuarioDestino.nome} aprovou o seu atrelamento como parceiro no sistema.`,
+            lida: false,
+            statusAprovacao: 'aprovado',
+            createdAt: new Date().toISOString()
+        });
+    }
+
+    registrarLogInterno(dados, "PARCEIRO", `Solicitação de parceiro ${aprovado ? 'aprovada' : 'negada'} entre usuários.`);
+    await salvarDados(dados);
+    await mostrarAlertaModal(aprovado ? "Parceiro atrelado com sucesso!" : "Solicitação negada.");
+    document.querySelector('.modal-overlay')?.remove();
+    abrirCentralNotificacoes();
+}
+
+async function abrirModalPrimeiroAcesso() {
+    const { overlay } = criarModalBase({
+        titulo: 'Primeiro Acesso - Cadastro',
+        mensagem: 'Cadastre suas informações para começar a usar o sistema.',
+        htmlExtra: `
+            <div style="margin-top: 15px; display: flex; flex-direction: column; gap: 12px; text-align: left;">
+                <div>
+                    <label style="font-size: 0.85rem; font-weight: bold; color: var(--text-main);">Nome de Usuário (Login):</label>
+                    <input type="text" class="modal-input" id="regUsuario" placeholder="Ex: samuel" autocomplete="off" style="min-height: 44px;">
+                </div>
+                <div>
+                    <label style="font-size: 0.85rem; font-weight: bold; color: var(--text-main);">Nome Completo:</label>
+                    <input type="text" class="modal-input" id="regNome" placeholder="Ex: Samuel Silva" autocomplete="off" style="min-height: 44px;">
+                </div>
+                <div>
+                    <label style="font-size: 0.85rem; font-weight: bold; color: var(--text-main);">Senha Inicial:</label>
+                    <input type="password" class="modal-input" id="regSenha" placeholder="Digite sua senha" autocomplete="off" style="min-height: 44px;">
+                </div>
+            </div>
+            <div class="modal-buttons" style="margin-top: 20px;">
+                <button type="button" class="btn-secundario" data-cancelar>Cancelar</button>
+                <button type="button" data-confirmar>Cadastrar</button>
+            </div>
+        `
+    });
+
+    const inputUsuario = overlay.querySelector('#regUsuario');
+    const inputNome = overlay.querySelector('#regNome');
+    const inputSenha = overlay.querySelector('#regSenha');
+
+    setTimeout(() => inputUsuario?.focus(), 0);
+
+    overlay.querySelector('[data-cancelar]').onclick = () => fecharModal(overlay);
+
+    overlay.querySelector('[data-confirmar]').onclick = async () => {
+        const usuario = inputUsuario.value.trim();
+        const nome = inputNome.value.trim();
+        const senha = inputSenha.value.trim();
+
+        if (!usuario || !nome || !senha) {
+            await mostrarAlertaModal('Preencha todos os campos para continuar.');
+            return;
+        }
+
+        const dados = obterDados();
+        if (!Array.isArray(dados.usuarios)) dados.usuarios = [];
+
+        const jaExiste = dados.usuarios.some(u => normalizarTexto(u.usuario || u.nome) === normalizarTexto(usuario));
+        if (jaExiste) {
+            await mostrarAlertaModal('Este nome de usuário já está cadastrado.');
+            return;
+        }
+
+        const novoId = dados.usuarios.reduce((max, u) => Math.max(max, Number(u.id) || 0), 0) + 1;
+
+        dados.usuarios.push({
+            id: novoId,
+            usuario: usuario,
+            nome: nome,
+            pin: senha,
+            senha: senha,
+            ativo: true
+        });
+
+        registrarLogInterno(dados, "CADASTRO USUÁRIO", `Novo usuário cadastrado via Primeiro Acesso: ${nome} (${usuario})`);
+        await salvarDados(dados);
+
+        fecharModal(overlay);
+        await mostrarAlertaModal('Cadastro realizado com sucesso! Agora você já pode fazer o login.');
+    };
+}
+
+async function atualizarLancamentoInteligente(id, novosDados) {
+    const dados = obterDados();
+    const lancamento = dados.lancamentos.find(l => Number(l.id) === Number(id));
+    if (!lancamento) {
+        await mostrarAlertaModal("Lançamento não encontrado.");
+        return;
+    }
+
+    // Validação da relação (se é compra parcelada ou financiamento)
+    const grupoParcelamentoId = resolverParcelamentoId(lancamento);
+    const financiamentoId = resolverFinanciamentoIdPorLancamento(lancamento, dados);
+    const ehVinculado = Boolean(grupoParcelamentoId) || Boolean(financiamentoId) || (lancamento.totalParcelas && lancamento.totalParcelas > 1);
+
+    let aplicarParaTodas = false;
+    if (ehVinculado) {
+        const escolha = await mostrarOpcaoEscopoModal("Este lançamento faz parte de um financiamento ou compra parcelada. Deseja tornar essa modificação para todas outras parcelas?");
+        if (escolha === null) return; // Cancelado pelo utilizador
+        aplicarParaTodas = (escolha === 'todas');
+    }
+
+    const motivo = await mostrarPromptTextoModal("Justificativa Obrigatória", "Informe o motivo da edição deste lançamento:");
+    if (!motivo) return;
+
+    mostrarLoading("Atualizando lançamento(s)...");
+
+    const usuarioId = localStorage.getItem('usuarioLogado');
+    const u = dados.usuarios.find(user => Number(user.id) === Number(usuarioId));
+    const nomeUsuario = u ? u.nome : "Desconhecido";
+    const dataHoraAtual = new Date().toLocaleString('pt-BR');
+
+    if (aplicarParaTodas) {
+        // Seleciona todos os lançamentos do mesmo grupo (financiamento ou parcelamento)
+        const relacionados = financiamentoId 
+            ? dados.lancamentos.filter(l => Number(l.financiamentoId) === Number(financiamentoId))
+            : dados.lancamentos.filter(l => String(l.parcelamentoId) === String(grupoParcelamentoId));
+
+        relacionados.forEach(l => {
+            const descricaoAntiga = l.descricao;
+            const valorAntigo = l.valor;
+
+            // Mantém o prefixo/sufixo do número da parcela (ex: " (2/12)") e atualiza o resto
+            const sufixoMatch = l.descricao.match(/\s\(\d+\/\d+\)$/);
+            const sufixo = sufixoMatch ? sufixoMatch[0] : '';
+            const baseNovaDescricao = novosDados.descricao.replace(/\s\(\d+\/\d+\)$/, '').trim();
+            l.descricao = sufixo ? `${baseNovaDescricao}${sufixo}` : baseNovaDescricao;
+
+            l.tipo = novosDados.tipo;
+            l.categoriaId = novosDados.categoriaId;
+            l.formaPagamento = novosDados.formaPagamento;
+            // Se for lote/financiamento, preserva o valor individual de cada parcela ou aplica o novo se desejado
+            l.observacao = novosDados.observacao;
+            l.servicoEssencial = novosDados.tipo === 'saida' ? (novosDados.servicoEssencial || 'nao') : 'nao';
+            l.escopo = novosDados.tipo === 'saida' ? (novosDados.escopo || 'casal') : 'casal';
+            l.updatedAt = new Date().toISOString();
+
+            if (novosDados.formaPagamento === 'CARTAO') {
+                l.cartaoId = novosDados.cartaoId || l.cartaoId || null;
+            }
+
+            dados.edicao_movimento.push({
+                dataHora: dataHoraAtual,
+                usuario: nomeUsuario,
+                lancamentoId: l.id,
+                descricaoAntiga: descricaoAntiga,
+                descricaoNova: l.descricao,
+                valorAntigo: valorAntigo,
+                valorNovo: l.valor,
+                motivo: `[EM LOTE] ${motivo}`
+            });
+        });
+
+        registrarLogInterno(dados, "EDIÇÃO EM LOTE", `Atualizadas ${relacionados.length} parcelas vinculadas. Motivo: ${motivo}`);
+    } else {
+        // Atualiza apenas a parcela selecionada individualmente
+        const descricaoAntiga = lancamento.descricao;
+        const valorAntigo = lancamento.valor;
+
+        lancamento.descricao = novosDados.descricao;
+        lancamento.tipo = novosDados.tipo;
+        lancamento.categoriaId = novosDados.categoriaId;
+        lancamento.formaPagamento = novosDados.formaPagamento;
+        lancamento.valor = Number(numeroSeguro(novosDados.valor).toFixed(2));
+        lancamento.observacao = novosDados.observacao;
+        lancamento.vencimento = novosDados.vencimento;
+        lancamento.updatedAt = new Date().toISOString();
+
+        if (novosDados.formaPagamento === 'CARTAO') {
+            lancamento.cartaoId = novosDados.cartaoId || lancamento.cartaoId || null;
+            lancamento.dataCompra = novosDados.dataCompra || lancamento.dataCompra || null;
+        }
+        lancamento.servicoEssencial = novosDados.tipo === 'saida' ? (novosDados.servicoEssencial || 'nao') : 'nao';
+        lancamento.escopo = novosDados.tipo === 'saida' ? (novosDados.escopo || 'casal') : 'casal';
+
+        dados.edicao_movimento.push({
+            dataHora: dataHoraAtual,
+            usuario: nomeUsuario,
+            lancamentoId: id,
+            descricaoAntiga: descricaoAntiga,
+            descricaoNova: novosDados.descricao,
+            valorAntigo: valorAntigo,
+            valorNovo: novosDados.valor,
+            motivo: motivo
+        });
+
+        registrarLogInterno(dados, "EDIÇÃO LANÇAMENTO", `Lançamento ID ${id} atualizado. Motivo: ${motivo}`);
+    }
+
+    await salvarDados(dados);
+    esconderLoading();
+    await mostrarAlertaModal("Lançamento(s) atualizado(s) com sucesso!");
+    
+    if (typeof carregarDashboard === 'function') carregarDashboard();
+    if (typeof carregarRelatorios === 'function') carregarRelatorios();
+}
+
+function calcularStatusParcelaCartao(dataVencimentoStr, cartaoObj, dataCompraStr) {
+    if (!cartaoObj || !cartaoObj.fechamento) return 'pendente';
+    
+    const hoje = new Date();
+    const [anoVenc, mesVenc, diaVenc] = String(dataVencimentoStr).split('-').map(Number);
+    
+    // Data de fechamento da fatura correspondente ao mês/ano do vencimento
+    // Geralmente o fechamento ocorre alguns dias antes do vencimento no mesmo ciclo ou mês anterior
+    const dataFechamento = new Date(anoVenc, mesVenc - 1, Number(cartaoObj.fechamento));
+    // Se o dia de fechamento for menor que o vencimento, o fechamento costuma ser no mês anterior
+    dataFechamento.setMonth(dataFechamento.getMonth() - 1);
+
+    // Se a data atual já passou da data de fechamento desta fatura, considera-se que a fatura já fechou (portanto, pendente de pagamento se não paga)
+    // Se a data atual é ANTERIOR ao fechamento, as parcelas anteriores a este ciclo assumem-se pagas.
+    if (hoje > dataFechamento) {
+        return 'pendente';
+    } else {
+        return 'pago';
+    }
+}
+
+function redirecionarNovoLancamento(tipoAcao) {
+    if (tipoAcao === 'entrada') {
+        window.location.href = 'lancamentos.html?tipo=entrada';
+        return;
+    }
+
+    if (tipoAcao === 'saida') {
+        window.location.href = 'lancamentos.html?tipo=saida&forma=DINHEIRO';
+        return;
+    }
+
+    if (tipoAcao === 'cartao') {
+        const dados = obterDados();
+        const usuarioAtualId = Number(obterUsuarioAtualId(dados));
+        const cartoes = (dados.cartoes || []).filter(c => c.ativo !== false && Number(c.usuarioId) === usuarioAtualId);
+
+        if (!cartoes.length) {
+            mostrarAlertaModal('Nenhum cartão ativo cadastrado para o seu usuário. Cadastre um cartão primeiro em Cadastros > Cartões.');
+            return;
+        }
+
+        const hoje = new Date();
+        const diaAtual = hoje.getDate(); // Ex: 24
+
+        let cartaoEscolhido = cartoes[0];
+
+        // Lógica de intervalo:
+        // Cartão 1 (Vencimento dia 13): Vigência do dia 13 até 25
+        // Cartão 2 (Vencimento dia 26): Vigência do dia 26 até 12
+        cartoes.forEach(c => {
+            const vencimento = Number(c.diaVencimento || c.vencimento || 1);
+            
+            if (vencimento === 13) {
+                if (diaAtual >= 13 && diaAtual <= 25) {
+                    cartaoEscolhido = c;
+                }
+            } else if (vencimento === 26) {
+                if (diaAtual >= 26 || diaAtual <= 12) {
+                    cartaoEscolhido = c;
+                }
+            }
+        });
+
+        const cartaoId = cartaoEscolhido ? cartaoEscolhido.id : cartoes[0].id;
+        window.location.href = `lancamentos.html?tipo=saida&forma=CARTAO&cartaoId=${cartaoId}`;
+    }
+}
+
+async function adicionarCategoria(nome, tipo) {
+    if (processandoAcaoModal) return false;
+    if (!await verificarSenhaAdmin("cadastrar categoria")) return false;
+    
+    processandoAcaoModal = true;
+    mostrarLoading("Cadastrando categoria...");
+    const dados = obterDados();
+    const nomeNormalizado = normalizarTexto(nome);
+    const usuarioAtualId = Number(obterUsuarioAtualId(dados));
+    const ID_SISTEMA = 5;
+
+    if (!nomeNormalizado || !['entrada', 'saida'].includes(tipo)) {
+        esconderLoading();
+        processandoAcaoModal = false;
+        await mostrarAlertaModal('Dados da categoria inválidos.');
+        return false;
+    }
+
+    const duplicada = dados.categorias.some(c => {
+        const criadorId = Number(c.criadopor);
+        const mesmoNomeTipo = c.tipo === tipo && normalizarTexto(c.nome) === nomeNormalizado;
+        const pertenceAoContexto = criadorId === ID_SISTEMA || criadorId === usuarioAtualId;
+        return mesmoNomeTipo && pertenceAoContexto;
+    });
+
+    if (duplicada) {
+        esconderLoading();
+        processandoAcaoModal = false;
+        await mostrarAlertaModal('Já existe uma categoria com este nome e tipo.');
+        return false;
+    }
+
+    const novaId = dados.categorias.reduce((m, c) => Math.max(m, Number(c.id) || 0), 0) + 1;
+    dados.categorias.push({ 
+        id: novaId, 
+        nome: String(nome).trim(), 
+        tipo, 
+        classificacao: 'personalizado', 
+        criadopor: usuarioAtualId 
+    });
+
+    registrarLogInterno(dados, "CADASTRO CATEGORIA", `Categoria personalizada criada: ${nome} (${tipo})`);
+    await salvarDados(dados);
+    
+    esconderLoading();
+    processandoAcaoModal = false;
+    await mostrarAlertaModal("Categoria cadastrada com sucesso!");
+    if (typeof renderizarCategorias === 'function') renderizarCategorias();
+    return true;
+}
+
+async function atualizarCategoria(id, nome, tipo) {
+    if (processandoAcaoModal) return false;
+    if (!await verificarSenhaAdmin("editar categoria")) return false;
+
+    processandoAcaoModal = true;
+    mostrarLoading("Atualizando categoria...");
+    try {
+        const dados = obterDados();
+        const categoria = dados.categorias.find(c => String(c.id) === String(id));
+        const nomeNormalizado = normalizarTexto(nome);
+        
+        if (!categoria || !nomeNormalizado || !['entrada', 'saida'].includes(tipo)) {
+            throw new Error('Dados da categoria inválidos.');
+        }
+
+        if (categoria.classificacao === 'padrao' || Number(categoria.criadopor) === 5) {
+            throw new Error('Categorias padrão do sistema não podem ser alteradas.');
+        }
+
+        const duplicada = dados.categorias.some(c =>
+            String(c.id) !== String(id) &&
+            c.tipo === tipo &&
+            normalizarTexto(c.nome) === nomeNormalizado
+        );
+        if (duplicada) throw new Error('Já existe outra categoria com este nome e tipo.');
+
+        const tipoAntigo = categoria.tipo;
+        categoria.nome = String(nome).trim();
+        categoria.tipo = tipo;
+        categoria.updatedAt = new Date().toISOString();
+
+        if (tipoAntigo !== tipo) {
+            dados.lancamentos.forEach(l => {
+                if (String(l.categoriaId) === String(id)) {
+                    l.updatedAt = new Date().toISOString();
+                }
+            });
+        }
+
+        registrarLogInterno(dados, "EDIÇÃO CATEGORIA", `Categoria ID ${id} alterada para: ${categoria.nome} (${tipo})`);
+        await salvarDados(dados);
+
+        esconderLoading();
+        processandoAcaoModal = false;
+        await mostrarAlertaModal("Categoria atualizada com sucesso!");
+        if (typeof renderizarCategorias === 'function') renderizarCategorias();
+        return true;
+    } catch (erro) {
+        esconderLoading();
+        processandoAcaoModal = false;
+        await mostrarAlertaModal(erro.message || 'Não foi possível atualizar a categoria.');
+        return false;
+    }
+}
+
+async function excluirCategoria(id) {
+    if (processandoAcaoModal) return false;
+    if (!await verificarSenhaAdmin("excluir categoria")) return false;
+    
+    processandoAcaoModal = true;
+    mostrarLoading("Excluindo categoria...");
+    const dados = obterDados();
+    const categoria = dados.categorias.find(c => String(c.id) === String(id));
+
+    if (categoria && (categoria.classificacao === 'padrao' || Number(categoria.criadopor) === 5)) {
+        esconderLoading();
+        processandoAcaoModal = false;
+        await mostrarAlertaModal('Categorias padrão do sistema não podem ser excluídas.');
+        return false;
+    }
+
+    const emUso = dados.lancamentos.some(l => Number(l.categoriaId) === Number(id)) ||
+        dados.financiamentos.some(f => Number(f.categoriaId) === Number(id));
+    
+    if (emUso) {
+        esconderLoading();
+        processandoAcaoModal = false;
+        await mostrarAlertaModal('Esta categoria está vinculada a lançamentos ou financiamentos e não pode ser excluída.');
+        return false;
+    }
+
+    dados.categorias = dados.categorias.filter(c => String(c.id) !== String(id));
+    registrarLogInterno(dados, "EXCLUSÃO CATEGORIA", `Categoria ID ${id} excluída`);
+    await salvarDados(dados);
+    
+    esconderLoading();
+    processandoAcaoModal = false;
+    await mostrarAlertaModal("Categoria excluída com sucesso!");
+    if (typeof renderizarCategorias === 'function') renderizarCategorias();
+    return true;
+}
+
+function renderizarCategorias() {
+    const dados = obterDados();
+    const lista = document.getElementById('listaCategorias');
+    if (!lista) return;
+    lista.innerHTML = '';
+    
+    const filtroSelect = document.getElementById('filtroTipoCategoria');
+    const filtroValor = filtroSelect ? filtroSelect.value : 'todos';
+
+    let categoriasPermitidas = dados.categorias || [];
+
+    if (filtroValor !== 'todos') {
+        categoriasPermitidas = categoriasPermitidas.filter(c => c.tipo === filtroValor);
+    }
+
+    if (categoriasPermitidas.length === 0) {
+        lista.innerHTML = '<li>Nenhuma categoria encontrada.</li>';
+        return;
+    }
+
+    // Lista com os nomes exatos das categorias que quer considerar como padrão do sistema
+    const nomesPadrao = ["alimentação", "moradia / contas", "salário", "financiamentos", "lazer", "transporte", "internet", "energia/luz", "carro", "pet"];
+
+    categoriasPermitidas.forEach(cat => {
+        const nomeLower = String(cat.nome || '').trim().toLowerCase();
+        const ehPadrao = nomesPadrao.includes(nomeLower);
+
+        const li = document.createElement('li');
+        li.innerHTML = `
+            <span>${cat.nome} (<strong>${cat.tipo.toUpperCase()}</strong>) - <span style="font-size:0.75rem; color:var(--text-muted);">${ehPadrao ? 'Padrão' : 'Personalizada'}</span></span>
+            <div>
+                ${!ehPadrao ? `
+                    <button onclick="prepararEdicaoCategoria(${cat.id}, '${cat.nome}', '${cat.tipo}')" class="btn-acao-icone editar" title="Editar"><img src="imagens/editar.png" alt="Editar"></button>
+                    <button onclick="excluirCategoriaPrompt(${cat.id})" class="btn-acao-icone excluir" title="Excluir"><img src="imagens/excluir.png" alt="Excluir"></button>
+                ` : `<span style="font-size: 0.75rem; color: var(--text-muted);">Sistema</span>`}
+            </div>
+        `;
+        lista.appendChild(li);
+    });
 }

@@ -7,59 +7,6 @@
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
- <header class="app-header">
-    <div class="header-inner">
-        <div class="header-left">
-            <div class="brand">
-                <span class="brand-title">Controle Financeiro</span>
-                <span class="brand-subtitle">Gestão Inteligente</span>
-            </div>
-            <div class="header-perfil-sync">
-                <span id="usuarioLogadoNome" class="user-chip"></span>
-                <span id="syncStatusIcon" title="Sincronizado" style="cursor: pointer; display: flex; align-items: center;">
-                    <img src="imagens/nuvem.png" alt="Sync" style="width: 22px; height: 22px;">
-                </span>
-            </div>
-        </div>
-
-        <!-- Centro: Navegação Principal -->
-        <nav class="app-nav-center" aria-label="Navegação principal">
-            <a href="dashboard.html">Início</a>
-            <div class="nav-dropdown" style="position: relative;">
-                <a href="#" onclick="event.preventDefault();" style="cursor: pointer;">Cadastros ▾</a>
-                <div class="nav-dropdown-content" style="position: absolute; top: 100%; left: 0;">
-                    <a href="cartoes.html">Cartões</a>
-                    <a href="categorias.html">Categorias</a>
-                    <a href="bens.html">Bens</a>
-                    <a href="financiamentos.html">Financiamentos</a>
-                </div>
-            </div>
-            <a href="lancamentos.html">Lançamentos</a>
-            <a href="central-pagamentos.html">Central de Pagamentos</a>
-            <a href="relatorios.html">Relatórios</a>
-        </nav>
-
-        <div class="header-right">
-            <div class="header-tools">
-                <button type="button" onclick="alternarTemaVisual()" title="Alternar tema">
-                    <img src="imagens/modo_escuro.jpg" alt="Tema">
-                </button>
-                <a href="configuracoes.html" title="Configurações">
-                    <img src="imagens/config.png" alt="Configurações">
-                </a>
-                <button type="button" title="Notificações" id="btnNotificacoesHeader">
-                    <img src="imagens/notificacao.png" alt="Notificações" onerror="this.style.display='none'">
-                </button>
-            </div>
-            
-            <div class="header-tools" style="border-left: 1px solid var(--border-color, #e5e7eb); padding-left: 18px;">
-                <a href="index.html" onclick="event.preventDefault(); deslogarSistema()" class="btn-sair-extremo" title="Sair do sistema">
-                    <img src="imagens/exit.png" alt="Sair">
-                </a>
-            </div>
-        </div>
-    </div>
-</header>
 
     <main class="container">
         <div class="page-heading">
@@ -146,9 +93,16 @@
         </section>
     </main>
 
-    <script src="script.js"></script>
+   <script src="script.js"></script>
     <script>
-        verificarAutenticacao();
+        document.addEventListener('DOMContentLoaded', async () => {
+            injetarHeader();
+            const autenticado = await verificarAutenticacao();
+            if (autenticado) {
+                carregarFormulario();
+            }
+        });
+
         const urlParams = new URLSearchParams(window.location.search);
         const lancamentoId = Number(urlParams.get('id'));
         const returnUrl = urlParams.get('returnUrl');
@@ -252,7 +206,7 @@
             const forma = formaEl ? formaEl.value : '';
             const tipoEl = document.getElementById('editTipo');
             const tipo = tipoEl ? tipoEl.value : 'saida';
-            const blocoCartao = document.getElementById('blocoEditCartao');
+            const blocoCart = document.getElementById('blocoEditCartao');
             if (blocoCart) {
                 blocoCart.style.display = (tipo === 'saida' && forma === 'CARTAO') ? 'block' : 'none';
             }
@@ -263,7 +217,7 @@
             if (!lancamento) return;
             const tipo = document.getElementById('editTipo')?.value || 'saida';
             const formaPagamento = document.getElementById('editFormaPagamento')?.value || 'BOLETO';
-            const valor = parseFloat(document.getElementById('editValor')?.value) || 0;
+            const valor = numeroSeguro(document.getElementById('editValor')?.value);
             const cartaoId = (tipo === 'saida' && formaPagamento === 'CARTAO') ? (document.getElementById('editCartao')?.value || null) : null;
 
             if (!Number.isFinite(valor) || valor <= 0) {
@@ -295,8 +249,6 @@
                 voltarOrigem();
             }
         }
-
-        carregarFormulario();
     </script>
 </body>
 </html>

@@ -7,58 +7,6 @@
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
-   <header class="app-header">
-    <div class="header-inner">
-        <div class="header-left">
-            <div class="brand">
-                <span class="brand-title">Controle Financeiro</span>
-                <span class="brand-subtitle">Gestão Inteligente</span>
-            </div>
-            <div class="header-perfil-sync">
-                <span id="usuarioLogadoNome" class="user-chip"></span>
-                <span id="syncStatusIcon" title="Sincronizado" style="cursor: pointer; display: flex; align-items: center;">
-                    <img src="imagens/nuvem.png" alt="Sync" style="width: 22px; height: 22px;">
-                </span>
-            </div>
-        </div>
-
-        <nav class="app-nav-center" aria-label="Navegação principal">
-            <a href="dashboard.html">Início</a>
-            <div class="nav-dropdown" style="position: relative;">
-                <a href="#" onclick="event.preventDefault();" style="cursor: pointer;">Cadastros ▾</a>
-                <div class="nav-dropdown-content" style="position: absolute; top: 100%; left: 0;">
-                    <a href="cartoes.html">Cartões</a>
-                    <a href="categorias.html">Categorias</a>
-                    <a href="bens.html">Bens</a>
-                    <a href="financiamentos.html">Financiamentos</a>
-                </div>
-            </div>
-            <a href="lancamentos.html">Lançamentos</a>
-            <a href="central-pagamentos.html">Central de Pagamentos</a>
-            <a href="relatorios.html">Relatórios</a>
-        </nav>
-        
-        <div class="header-right">
-            <div class="header-tools">
-                <button type="button" onclick="alternarTemaVisual()" title="Alternar tema">
-                    <img src="imagens/modo_escuro.jpg" alt="Tema">
-                </button>
-                <a href="configuracoes.html" title="Configurações">
-                    <img src="imagens/config.png" alt="Configurações">
-                </a>
-                <button type="button" title="Notificações" id="btnNotificacoesHeader">
-                    <img src="imagens/notificacao.png" alt="Notificações" onerror="this.style.display='none'">
-                </button>
-            </div>
-            
-            <div class="header-tools" style="border-left: 1px solid var(--border-color, #e5e7eb); padding-left: 18px;">
-                <a href="index.html" onclick="event.preventDefault(); deslogarSistema()" class="btn-sair-extremo" title="Sair do sistema">
-                    <img src="imagens/exit.png" alt="Sair">
-                </a>
-            </div>
-        </div>
-    </div>
-</header>
 
     <main class="container">
         <div class="page-heading">
@@ -121,12 +69,23 @@
 
     <script src="script.js"></script>
     <script>
-        verificarAutenticacao();
         const urlParams = new URLSearchParams(window.location.search);
         const lancamentoIdUrl = urlParams.get('id');
         const parcelamentoIdUrl = urlParams.get('parcelamentoId');
         let paginaAtualParcelas = 1;
         const itensPorPaginaParc = 30;
+
+        document.addEventListener('DOMContentLoaded', async () => {
+            injetarHeader();
+            const autenticado = await verificarAutenticacao();
+            if (autenticado) {
+                if (!lancamentoIdUrl && !parcelamentoIdUrl) {
+                    mostrarAlertaModal('Identificador do parcelamento não especificado.').then(() => window.location.href = 'central-pagamentos.html');
+                } else {
+                    carregarDetalhesParceladaPagina();
+                }
+            }
+        });
 
         function obterParcelasDoGrupo(dados) {
             const lancamentos = dados.lancamentos || [];
@@ -146,7 +105,7 @@
             return [];
         }
 
-        function statusBadge(lancamento) {
+         function statusBadge(lancamento) {
             const status = lancamento.status || (lancamento.pago ? 'pago' : 'pendente');
             const texto = status === 'pago' ? 'Pago' : status === 'atrasado' ? 'Atrasado' : 'Pendente';
             const classe = status === 'pago' ? 'status-pago' : status === 'atrasado' ? 'status-atrasado' : 'status-pendente';
@@ -264,8 +223,9 @@
         async function editarValorParcelaGrupo(lancamentoId) {
             const valorStr = await mostrarPromptModal('Editar valor da parcela', 'Digite o novo valor (R$):');
             if (valorStr === null) return;
-            const novoValor = Number(String(valorStr).replace(',', '.'));
-            if (!Number.isFinite(novoValor) || novoValor <= 0) {
+            // Correção: Uso de numeroSeguro com conversão de vírgula
+            const novoValor = numeroSeguro(String(valorStr).replace(',', '.'));
+            if (novoValor <= 0) {
                 await mostrarAlertaModal('Valor inválido.'); 
                 return;
             }

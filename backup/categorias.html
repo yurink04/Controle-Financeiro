@@ -2,65 +2,97 @@
 <html lang="pt-BR">
 <head>
     <meta charset="UTF-8">
-    <title>Categorias - Controle Financeiro</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Categorias | Controle Financeiro</title>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
-    <header>
-        <h1>Controle Financeiro</h1>
-        <span id="usuarioLogadoNome"></span>
-        <nav>
-            <a href="dashboard.html">Início</a>
-            <a href="categorias.html" class="active">Categorias</a>
-            <a href="cartoes.html">Cartões</a>
-            <a href="lancamentos.html">Lançamentos</a>
-            <a href="relatorios.html">Relatórios</a>
-            <a href="admin-logs.html" style="color: #ef4444; font-weight: bold;">Admin Logs</a>
-            
-            <button type="button" onclick="alternarTemaVisual()" class="btn-icone-tema" title="Alternar Modo Escuro / Claro">
-                <img src="imagens/modo_escuro.jpg" alt="Modo Escuro">
-            </button>
-
-            <a href="index.html" onclick="localStorage.removeItem('usuarioLogado')">Sair</a>
-        </nav>
-    </header>
-
-    <main class="container">
-        <div class="form-card">
-            <h2 id="tituloFormCategoria">Cadastrar Nova Categoria</h2>
-            <form onsubmit="salvarCategoriaForm(event)">
-                <input type="hidden" id="catIdEdit">
-                
-                <label>Nome da Categoria:</label>
-                <input type="text" id="nomeCategoria" placeholder="Ex: Alimentação, Combustível, Salário" required>
-
-                <label>Tipo:</label>
-                <select id="tipoCategoria">
-                    <option value="saida">Saída (Despesa / Boleto / Financiamento)</option>
-                    <option value="entrada">Entrada (Receita)</option>
-                </select>
-
-                <button type="submit" id="btnSalvarCat" style="margin-top: 20px;">Salvar Categoria</button>
-                <button type="button" id="btnCancelarCat" onclick="cancelarEdicaoCategoria()" style="background-color: #7f8c8d; margin-top: 10px; display: none;">Cancelar Edição</button>
-            </form>
+<header class="app-header">
+    <div class="header-inner">
+        <!-- Esquerdo: Controle Financeiro + Perfil/Sync -->
+        <div class="header-left">
+            <div class="brand">
+                <span class="brand-title">Controle Financeiro</span>
+                <span class="brand-subtitle">Gestão Inteligente</span>
+            </div>
+            <div class="header-perfil-sync">
+                <span id="usuarioLogadoNome" class="user-chip"></span>
+                <!-- Ícone de Sincronização ou Status -->
+                <span id="syncStatusIcon" title="Sincronizado" style="cursor: pointer; display: flex; align-items: center;">
+                    <img src="imagens/nuvem.png" alt="Sync" style="width: 22px; height: 22px;">
+                </span>
+            </div>
         </div>
 
-        <div class="form-card" style="margin-top: 20px;">
-            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; margin-bottom: 15px;">
-                <h2>Categorias Cadastradas</h2>
-                <div style="display: flex; align-items: center; gap: 8px;">
-                    <label for="filtroTipoCategoria" style="font-weight: bold; font-size: 14px;">Filtrar:</label>
-                    <select id="filtroTipoCategoria" onchange="renderizarCategorias()" style="width: auto; padding: 6px;">
-                        <option value="todos">Todas</option>
-                        <option value="saida">Apenas Saídas</option>
-                        <option value="entrada">Apenas Entradas</option>
-                    </select>
+       <!-- Centro: Navegação Principal -->
+        <nav class="app-nav-center" aria-label="Navegação principal">
+            <a href="dashboard.html">Início</a>
+            <div class="nav-dropdown" style="position: relative;">
+                <a href="#" onclick="event.preventDefault();" style="cursor: pointer;">Cadastros ▾</a>
+                <div class="nav-dropdown-content" style="position: absolute; top: 100%; left: 0;">
+                    <a href="cartoes.html">Cartões</a>
+                    <a href="categorias.html">Categorias</a>
+                    <a href="bens.html">Bens</a>
+                    <a href="financiamentos.html">Financiamentos</a>
                 </div>
             </div>
-            <ul id="listaCategorias" class="lista-simples">
-                <!-- Preenchido via JS -->
-            </ul>
+            <a href="lancamentos.html">Lançamentos</a>
+            <a href="central-pagamentos.html">Central de Pagamentos</a>
+            <a href="relatorios.html">Relatórios</a>
+        </nav>
+        
+        <!-- Direito: Tema, Configurações, Notificações e Sair separados -->
+        <div class="header-right">
+            <div class="header-tools">
+                <button type="button" onclick="alternarPrivacidade()" title="Ocultar/Mostrar Valores" id="btnPrivacidade">
+                    <img src="imagens/esconder.png" alt="Privacidade" id="imgPrivacidade">
+                </button>
+                <button type="button" onclick="alternarTemaVisual()" title="Alternar tema">
+                    <img src="imagens/modo_escuro.jpg" alt="Tema">
+                </button>
+                <a href="configuracoes.html" title="Configurações">
+                    <img src="imagens/config.png" alt="Configurações">
+                </a>
+                <!-- Ícone de Notificações -->
+                <button type="button" title="Notificações" id="btnNotificacoesHeader">
+                    <img src="imagens/notificacao.png" alt="Notificações" onerror="this.style.display='none'">
+                </button>
+            </div>
+            
+            <div class="header-tools" style="border-left: 1px solid var(--border-color, #e5e7eb); padding-left: 18px;">
+                <a href="index.html" onclick="event.preventDefault(); deslogarSistema()" class="btn-sair-extremo" title="Sair do sistema">
+                    <img src="imagens/exit.png" alt="Sair">
+                </a>
+            </div>
         </div>
+    </div>
+</header>
+
+    <main class="container">
+        <div class="page-heading"><div><h2>Categorias</h2><p>Organize receitas e despesas por tipo.</p></div></div>
+
+        <section class="form-card">
+            <div class="section-title"><div><h2 id="tituloFormCategoria">Nova categoria</h2><p>Os nomes repetidos no mesmo tipo são bloqueados.</p></div></div>
+            <form id="formCategoria" onsubmit="salvarCategoriaForm(event)">
+                <input type="hidden" id="catIdEdit">
+                <div class="form-grid-2">
+                    <div class="form-group"><label for="nomeCategoria">Nome da categoria</label><input type="text" id="nomeCategoria" maxlength="80" placeholder="Ex.: Alimentação" required></div>
+                    <div class="form-group"><label for="tipoCategoria">Tipo</label><select id="tipoCategoria"><option value="saida">Saída</option><option value="entrada">Entrada</option></select></div>
+                </div>
+                <div class="btn-row" style="margin-top:16px;">
+                    <button type="submit" id="btnSalvarCat">Salvar categoria</button>
+                    <button type="button" id="btnCancelarCat" class="btn-secondary" onclick="cancelarEdicaoCategoria()" style="display:none;">Cancelar edição</button>
+                </div>
+            </form>
+        </section>
+
+        <section class="form-card">
+            <div class="section-title">
+                <div><h2>Categorias cadastradas</h2><p>Edite ou remova categorias que não estejam em uso.</p></div>
+                <div class="filter-group"><label for="filtroTipoCategoria">Filtrar</label><select id="filtroTipoCategoria" onchange="renderizarCategorias()" style="width:auto;"><option value="todos">Todas</option><option value="saida">Saídas</option><option value="entrada">Entradas</option></select></div>
+            </div>
+            <ul id="listaCategorias" class="lista-simples"></ul>
+        </section>
     </main>
 
     <script src="script.js"></script>
@@ -71,46 +103,35 @@
         async function salvarCategoriaForm(event) {
             event.preventDefault();
             const idEdit = document.getElementById('catIdEdit').value;
-            const nome = document.getElementById('nomeCategoria').value;
+            const nome = document.getElementById('nomeCategoria').value.trim();
             const tipo = document.getElementById('tipoCategoria').value;
-
-            if (idEdit) {
-                await atualizarCategoria(idEdit, nome, tipo);
-                await mostrarAlertaModal('Categoria atualizada com sucesso!');
-            } else {
-                await adicionarCategoria(nome, tipo);
-                await mostrarAlertaModal('Categoria cadastrada com sucesso!');
-            }
-
-            cancelarEdicaoCategoria();
-            renderizarCategorias();
+            const ok = idEdit ? await atualizarCategoria(idEdit, nome, tipo) : await adicionarCategoria(nome, tipo);
+            if (ok) cancelarEdicaoCategoria();
         }
 
         function prepararEdicaoCategoria(id, nome, tipo) {
             document.getElementById('catIdEdit').value = id;
             document.getElementById('nomeCategoria').value = nome;
             document.getElementById('tipoCategoria').value = tipo;
-            document.getElementById('tituloFormCategoria').innerText = 'Editar Categoria';
-            document.getElementById('btnSalvarCat').innerText = 'Atualizar Categoria';
-            document.getElementById('btnCancelarCat').style.display = 'block';
+            document.getElementById('tituloFormCategoria').textContent = 'Editar categoria';
+            document.getElementById('btnSalvarCat').textContent = 'Atualizar categoria';
+            document.getElementById('btnCancelarCat').style.display = 'inline-flex';
+            document.getElementById('nomeCategoria').focus();
             window.scrollTo({ top: 0, behavior: 'smooth' });
         }
 
         function cancelarEdicaoCategoria() {
             document.getElementById('catIdEdit').value = '';
-            document.getElementById('nomeCategoria').value = '';
+            document.getElementById('formCategoria').reset();
             document.getElementById('tipoCategoria').value = 'saida';
-            document.getElementById('tituloFormCategoria').innerText = 'Cadastrar Nova Categoria';
-            document.getElementById('btnSalvarCat').innerText = 'Salvar Categoria';
+            document.getElementById('tituloFormCategoria').textContent = 'Nova categoria';
+            document.getElementById('btnSalvarCat').textContent = 'Salvar categoria';
             document.getElementById('btnCancelarCat').style.display = 'none';
         }
 
         async function excluirCategoriaPrompt(id) {
-            const confirmar = await mostrarConfirmacaoModal('Deseja realmente excluir esta categoria?');
-            if (confirmar) {
-                await excluirCategoria(id);
-                renderizarCategorias();
-            }
+            const ok = await mostrarConfirmacaoModal('Deseja realmente excluir esta categoria?');
+            if (ok) await excluirCategoria(id);
         }
     </script>
 </body>

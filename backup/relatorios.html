@@ -2,244 +2,653 @@
 <html lang="pt-BR">
 <head>
     <meta charset="UTF-8">
-    <title>Relatórios - Controle Financeiro</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Relatórios e Fechamento | Controle Financeiro</title>
     <link rel="stylesheet" href="style.css">
-    <!-- Chart.js para os gráficos -->
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        .tabela-fluida table.tabela {
+            min-width: 100% !important;
+        }
+
+        .page-heading {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: 18px;
+            flex-wrap: wrap;
+        }
+
+        .relatorios-toolbar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            margin-bottom: 18px;
+            width: 100%;
+            flex-wrap: wrap;
+        }
+
+        .menu-opcoes-container, .menu-personalizar-container {
+            position: relative;
+            display: inline-block;
+        }
+
+        .btn-toolbar-custom {
+            background: var(--surface-2);
+            color: var(--text-main);
+            border: 1px solid var(--border);
+            padding: 8px 14px;
+            border-radius: 10px;
+            cursor: pointer;
+            font-size: 0.9rem;
+            font-weight: 600;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            transition: var(--transition-fast);
+        }
+
+        .btn-toolbar-custom:hover {
+            background: var(--surface);
+            border-color: var(--border-strong);
+        }
+
+        .dropdown-menu-personalizar {
+            display: none;
+            position: absolute;
+            right: 0;
+            top: calc(100% + 6px);
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            box-shadow: var(--shadow-lg);
+            z-index: 100;
+            min-width: 240px;
+            padding: 12px;
+            animation: pageIn 0.15s ease both;
+        }
+
+        .dropdown-menu-personalizar label {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 0.85rem;
+            font-weight: 500;
+            cursor: pointer;
+            padding: 6px 0;
+            color: var(--text-main);
+        }
+
+        .dropdown-menu-personalizar input[type="checkbox"] {
+            width: 16px;
+            height: 16px;
+            accent-color: var(--primary);
+            cursor: pointer;
+        }
+
+        @media print {
+            body { background: #fff !important; color: #000 !important; }
+            header, .app-header, .relatorios-toolbar, .menu-opcoes-container, .menu-personalizar-container { display: none !important; }
+            .container { width: 100% !important; margin: 0 !important; padding: 0 !important; }
+            .form-card { box-shadow: none !important; border: 1px solid #ccc !important; break-inside: avoid; margin-bottom: 12px !important; }
+        }
+    </style>
 </head>
 <body>
-    <header>
-        <h1>Controle Financeiro</h1>
-        <span id="usuarioLogadoNome"></span>
-        <nav>
-            <a href="dashboard.html">Início</a>
-            <a href="categorias.html">Categorias</a>
-            <a href="cartoes.html">Cartões</a>
-            <a href="lancamentos.html">Lançamentos</a>
-            <a href="relatorios.html" class="active">Relatórios</a>
-            <a href="admin-logs.html" style="color: #ef4444; font-weight: bold;">Admin Logs</a>
-            
-            <button type="button" onclick="alternarTemaVisual()" class="btn-icone-tema" title="Alternar Modo Escuro / Claro">
-                <img src="imagens/modo_escuro.jpg" alt="Modo Escuro">
-            </button>
+   <header class="app-header">
+    <div class="header-inner">
+        <div class="header-left">
+            <div class="brand">
+                <span class="brand-title">Controle Financeiro</span>
+                <span class="brand-subtitle">Gestão Inteligente</span>
+            </div>
+            <div class="header-perfil-sync">
+                <span id="usuarioLogadoNome" class="user-chip"></span>
+                <span id="syncStatusIcon" title="Sincronizado" style="cursor: pointer; display: flex; align-items: center;">
+                    <img src="imagens/nuvem.png" alt="Sync" style="width: 22px; height: 22px;">
+                </span>
+            </div>
+        </div>
 
-            <a href="index.html" onclick="localStorage.removeItem('usuarioLogado')">Sair</a>
+        <nav class="app-nav-center" aria-label="Navegação principal">
+            <a href="dashboard.html">Início</a>
+            <div class="nav-dropdown" style="position: relative;">
+                <a href="#" onclick="event.preventDefault();" style="cursor: pointer;">Cadastros ▾</a>
+                <div class="nav-dropdown-content" style="position: absolute; top: 100%; left: 0;">
+                    <a href="cartoes.html">Cartões</a>
+                    <a href="categorias.html">Categorias</a>
+                    <a href="bens.html">Bens</a>
+                    <a href="financiamentos.html">Financiamentos</a>
+                </div>
+            </div>
+            <a href="lancamentos.html">Lançamentos</a>
+            <a href="central-pagamentos.html">Central de Pagamentos</a>
+            <a href="relatorios.html">Relatórios</a>
         </nav>
-    </header>
+
+        <div class="header-right">
+            <div class="header-tools">
+                <button type="button" onclick="alternarPrivacidade()" title="Ocultar/Mostrar Valores" id="btnPrivacidade">
+                    <img src="imagens/esconder.png" alt="Privacidade" id="imgPrivacidade">
+                </button>
+                <button type="button" onclick="alternarTemaVisual()" title="Alternar tema">
+                    <img src="imagens/modo_escuro.jpg" alt="Tema">
+                </button>
+                <a href="configuracoes.html" title="Configurações">
+                    <img src="imagens/config.png" alt="Configurações">
+                </a>
+                <button type="button" title="Notificações" id="btnNotificacoesHeader">
+                    <img src="imagens/notificacao.png" alt="Notificações" onerror="this.style.display='none'">
+                </button>
+            </div>
+            
+            <div class="header-tools" style="border-left: 1px solid var(--border-color, #e5e7eb); padding-left: 18px;">
+                <a href="index.html" onclick="event.preventDefault(); deslogarSistema()" class="btn-sair-extremo" title="Sair do sistema">
+                    <img src="imagens/exit.png" alt="Sair">
+                </a>
+            </div>
+        </div>
+    </div>
+</header>
 
     <main class="container">
-        <!-- Filtro de Período Avançado (Mesmo padrão do Dashboard) -->
-        <section class="form-card" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
-            <h2>Filtro de Relatório</h2>
-            <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
-                <button type="button" onclick="definirFiltroPeriodo('mesAtual')" id="btnMesAtual" style="background-color: var(--primary); padding: 6px 12px; font-size: 0.85rem; width: auto;">Mês Atual</button>
-                <button type="button" onclick="definirFiltroPeriodo('mesPassado')" id="btnMesPassado" style="background-color: #64748b; padding: 6px 12px; font-size: 0.85rem; width: auto;">Mês Passado</button>
-                <button type="button" onclick="definirFiltroPeriodo('todos')" id="btnTodos" style="background-color: #64748b; padding: 6px 12px; font-size: 0.85rem; width: auto;">Período Total</button>
-                
-                <input type="month" id="filtroMesAnoRelatorio" onchange="mudarFiltroMesManual()" style="width: auto; padding: 5px;">
-            </div>
-        </section>
-
-        <!-- 4 Campos de Resumo por Usuário -->
-        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 15px; margin-top: 20px; margin-bottom: 20px;">
-            <div class="stat-box" style="text-align: left;">
-                <h3 style="font-size: 0.9rem; margin-bottom: 5px;">Entradas - Samuel</h3>
-                <p id="relatorioEntradaSamuel" style="font-size: 1.2rem; font-weight: bold;" class="positivo">R$ 0,00</p>
-            </div>
-            <div class="stat-box" style="text-align: left;">
-                <h3 style="font-size: 0.9rem; margin-bottom: 5px;">Saídas - Samuel</h3>
-                <p id="relatorioSaidaSamuel" style="font-size: 1.2rem; font-weight: bold;" class="negativo">R$ 0,00</p>
-            </div>
-            <div class="stat-box" style="text-align: left;">
-                <h3 style="font-size: 0.9rem; margin-bottom: 5px;">Entradas - Mariana</h3>
-                <p id="relatorioEntradaMariana" style="font-size: 1.2rem; font-weight: bold;" class="positivo">R$ 0,00</p>
-            </div>
-            <div class="stat-box" style="text-align: left;">
-                <h3 style="font-size: 0.9rem; margin-bottom: 5px;">Saídas - Mariana</h3>
-                <p id="relatorioSaidaMariana" style="font-size: 1.2rem; font-weight: bold;" class="negativo">R$ 0,00</p>
+        <div class="page-heading">
+            <div>
+                <h2>Relatório Gerencial e Fechamento</h2>
+                <p>Análise contábil avançada, indicadores de desempenho e auditoria modular do período.</p>
             </div>
         </div>
 
-    <div class="form-card">
-    <h2>Gráficos e Estatísticas do Período</h2>
-    
-    <div style="margin-bottom: 20px; display: flex; gap: 15px; flex-wrap: wrap; align-items: center;">
-        <div>
-            <label for="filtroUsuarioGraficos">Filtrar Usuário:</label>
-            <select id="filtroUsuarioGraficos" onchange="carregarRelatorios()">
-                <option value="todos">Ambos (Geral)</option>
-                <option value="1">Samuel</option>
-                <option value="2">Mariana</option>
-            </select>
-        </div>
-        <div>
-            <label for="filtroServicoEssencialDashboard">Serviço Essencial:</label>
-            <select id="filtroServicoEssencialDashboard" onchange="carregarRelatorios()">
-                <option value="todos">Todos</option>
-                <option value="sim">Essenciais</option>
-                <option value="nao">Não Essenciais</option>
-            </select>
-        </div>
-    </div>
-
-    <!-- Grade unificada com os gráficos lado a lado -->
-    <div class="stats-grid" style="grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px;">
-        
-        <!-- Gráfico 1: Entradas e Saídas -->
-        <div class="stat-box" style="text-align: center;">
-            <h3 style="margin-bottom: 10px;">Entradas vs Saídas</h3>
-            <div class="grafico-container" style="height: 220px;">
-                <canvas id="graficoRelatorioEntradasSaidas"></canvas>
+        <div class="relatorios-toolbar">
+            <div class="filter-group">
+                <label for="filtroMesRelatorio" style="margin: 0;">Competência:</label>
+                <input type="month" id="filtroMesRelatorio" onchange="carregarRelatorioMensal()" style="min-width: 160px;">
             </div>
-        </div>
 
-        <!-- Gráfico 2: Gastos por Categoria -->
-        <div class="stat-box" style="text-align: center;">
-            <h3 style="margin-bottom: 10px;">Gastos por Categoria</h3>
-            <div class="grafico-container" style="height: 220px;">
-                <canvas id="graficoRelatorioCategorias"></canvas>
-            </div>
-        </div>
+            <div style="display: flex; gap: 8px; align-items: center;">
+                <div class="menu-personalizar-container">
+                    <button type="button" class="btn-toolbar-custom" onclick="alternarMenuPersonalizar(event)">⚙️ Personalizar Visão</button>
+                    <div id="dropdownMenuPersonalizar" class="dropdown-menu-personalizar" onclick="event.stopPropagation()">
+                        <p style="font-weight: 700; font-size: 0.8rem; margin-bottom: 8px; color: var(--text-muted);">EXIBIR BLOCOS:</p>
+                        <label><input type="checkbox" id="chkResumo" checked onchange="salvarPreferenciaVisao()"> Resumo e Indicadores</label>
+                        <label><input type="checkbox" id="chkClassificacao" checked onchange="salvarPreferenciaVisao()"> Classificação de Gastos</label>
+                        <label><input type="checkbox" id="chkContasPagas" checked onchange="salvarPreferenciaVisao()"> Contas Pagas</label>
+                        <label><input type="checkbox" id="chkContasAbertas" checked onchange="salvarPreferenciaVisao()"> Contas em Aberto / Pendentes</label>
+                        <label><input type="checkbox" id="chkFaturas" checked onchange="salvarPreferenciaVisao()"> Faturas de Cartão</label>
+                        <label><input type="checkbox" id="chkFinanciamentos" checked onchange="salvarPreferenciaVisao()"> Contratos de Financiamento</label>
+                        <label><input type="checkbox" id="chkBens" checked onchange="salvarPreferenciaVisao()"> Custos Atrelados a Bens</label>
+                        <label><input type="checkbox" id="chkExtrato" checked onchange="salvarPreferenciaVisao()"> Extrato Completo</label>
+                    </div>
+                </div>
 
-        <!-- Gráfico 3: Serviços Essenciais -->
-        <div class="stat-box" style="text-align: center;">
-            <h3 style="margin-bottom: 10px;">Serviços Essenciais</h3>
-            <div class="grafico-container" style="height: 220px;">
-                <canvas id="graficoServicosEssenciais"></canvas>
-            </div>
-        </div>
-
-    </div>
-</div>
-        
-        <!-- Indicador de Horas Extras e Resumo por Categoria -->
-        <div class="stats-grid">
-            <div class="stat-box">
-                <h3>Horas Extras no Período</h3>
-                <p id="totalHoraExtraPeriodo" class="positivo">R$ 0,00</p>
-            </div>
-            <div class="stat-box">
-                <h3>Gastos por Categoria (Texto)</h3>
-                <div id="relatorioCategorias" style="margin-top: 8px; font-size: 0.95rem;">
-                    <!-- Preenchido via JS -->
+                <div class="menu-opcoes-container">
+                    <button type="button" class="btn-toolbar-custom" onclick="alternarMenuOpcoes(event)" title="Opções de Exportação">⋮</button>
+                    <div id="dropdownMenuOpcoes" class="dropdown-menu-opcoes" style="display:none; position:absolute; right:0; top:calc(100% + 6px); background:var(--surface); border:1px solid var(--border); border-radius:10px; box-shadow:var(--shadow-lg); z-index:100; min-width:160px;">
+                        <button type="button" onclick="exportarCSV()" style="width:100%; background:transparent; border:none; padding:10px 14px; text-align:left; font-size:0.85rem; font-weight:600; color:var(--text-main); cursor:pointer;">📥 Exportar CSV</button>
+                        <button type="button" onclick="exportarPDF()" style="width:100%; background:transparent; border:none; padding:10px 14px; text-align:left; font-size:0.85rem; font-weight:600; color:var(--text-main); cursor:pointer;">📄 Exportar PDF</button>
+                    </div>
                 </div>
             </div>
         </div>
 
-        <!-- Contas, Boletos e Pendências (A Pagar) -->
-        <div class="form-card" style="margin-top: 20px;">
-            <h2>Contas, Boletos e Pendências (A Pagar)</h2>
-            <div class="tabela-container">
-                <table class="tabela">
-                    <thead>
-                        <tr>
-                            <th>Descrição / Fatura</th>
-                            <th>Vencimento</th>
-                            <th>Valor</th>
-                            <th>Ações</th>
-                        </tr>
-                    </thead>
-                    <tbody id="tabelaContasAPagar">
-                        <!-- Preenchido via JS -->
-                    </tbody>
-                </table>
+        <div id="blocoResumoGeral" class="stat-grid" style="margin-bottom: 18px; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));">
+            <div class="stat-box">
+                <span class="stat-label">Total Entradas</span>
+                <div class="stat-value positivo" id="relTotalEntradas">R$ 0,00</div>
+            </div>
+            <div class="stat-box">
+                <span class="stat-label">Total Saídas Reais</span>
+                <div class="stat-value negativo" id="relTotalSaidas">R$ 0,00</div>
+            </div>
+            <div class="stat-box">
+                <span class="stat-label">Taxa de Poupança</span>
+                <div class="stat-value" id="relTaxaPoupanca">0%</div>
+                <div class="stat-detail">Sobra sobre as entradas</div>
+            </div>
+            <div class="stat-box">
+                <span class="stat-label">Comprometimento Fixo</span>
+                <div class="stat-value warning" id="relComprometimento">0%</div>
+                <div class="stat-detail">Financiamentos / Essenciais</div>
             </div>
         </div>
 
-        <!-- Contas do Mês Pagas -->
-        <div class="form-card" style="margin-top: 20px;">
-            <h2>Contas do Mês Pagas</h2>
-            <div class="tabela-container">
-                <table class="tabela">
-                    <thead>
-                        <tr>
-                            <th>Descrição / Fatura</th>
-                            <th>Vencimento</th>
-                            <th>Valor</th>
-                            <th>Ações</th>
-                        </tr>
-                    </thead>
-                    <tbody id="tabelaContasPagas">
-                        <!-- Preenchido via JS -->
-                    </tbody>
-                </table>
+        <div class="form-card" id="blocoClassificacao" style="margin-bottom: 18px;">
+            <div class="section-title">
+                <div>
+                    <h2>Classificação Estratégica do Mês</h2>
+                    <p>Divisão contábil entre Casal, Individual, Essencial e Não Essencial.</p>
+                </div>
+            </div>
+            <div class="grid-4">
+                <div class="stat-box" style="background: var(--surface-2);">
+                    <span class="stat-label">Gastos de Casal</span>
+                    <div class="stat-value" id="totCasal">R$ 0,00</div>
+                </div>
+                <div class="stat-box" style="background: var(--surface-2);">
+                    <span class="stat-label">Gastos Individuais</span>
+                    <div class="stat-value" id="totIndividual">R$ 0,00</div>
+                </div>
+                <div class="stat-box" style="background: var(--surface-2);">
+                    <span class="stat-label">Gastos Essenciais</span>
+                    <div class="stat-value" id="totEssencial">R$ 0,00</div>
+                </div>
+                <div class="stat-box" style="background: var(--surface-2);">
+                    <span class="stat-label">Gastos Não Essenciais</span>
+                    <div class="stat-value" id="totNaoEssencial">R$ 0,00</div>
+                </div>
             </div>
         </div>
 
-        <!-- Seção de Parcelamentos Ativos -->
-        <div class="form-card" style="margin-top: 20px;">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; flex-wrap: wrap; gap: 10px;">
-                <h3 style="margin: 0;">Parcelamentos Ativos no Período</h3>
-                <select id="filtroCartaoParcelamento" onchange="carregarRelatorios()" style="width: auto; padding: 4px; font-size: 0.85rem;">
-                    <option value="todos">Todos os Cartões</option>
-                    <!-- Preenchido via JS -->
-                </select>
+        <div class="grid-2" style="margin-bottom: 18px;">
+            <section class="form-card" id="blocoSecaoContasPagas" style="margin-bottom: 0;">
+                <div class="section-title"><div><h2>Receitas e Contas Pagas</h2></div></div>
+                <div class="tabela-container tabela-fluida">
+                    <table class="tabela">
+                        <thead><tr><th>Descrição</th><th>Vencimento</th><th>Valor</th><th>Ações</th></tr></thead>
+                        <tbody id="tabelaContasPagas"></tbody>
+                    </table>
+                </div>
+            </section>
+
+            <section class="form-card" id="blocoSecaoContasAbertas" style="margin-bottom: 0;">
+                <div class="section-title"><div><h2>Receitas e Contas em Aberto</h2></div></div>
+                <div class="tabela-container tabela-fluida">
+                    <table class="tabela">
+                        <thead><tr><th>Descrição</th><th>Vencimento</th><th>Valor</th><th>Ações</th></tr></thead>
+                        <tbody id="tabelaContasAbertas"></tbody>
+                    </table>
+                </div>
+            </section>
+        </div>
+
+        <div class="grid-2" style="margin-bottom: 18px;">
+            <section class="form-card" id="blocoSecaoFaturas" style="margin-bottom: 0;">
+                <div class="section-title"><div><h2>Faturas de Cartão no Período</h2></div></div>
+                <div class="tabela-container tabela-fluida">
+                    <table class="tabela">
+                        <thead><tr><th>Cartão</th><th>Vencimento</th><th>Valor Total</th><th style="text-align: center;">Ações</th></tr></thead>
+                        <tbody id="tabelaFaturasRelatorio"></tbody>
+                    </table>
+                </div>
+            </section>
+
+            <section class="form-card" id="blocoSecaoFinanciamentos" style="margin-bottom: 0;">
+                <div class="section-title"><div><h2>Contratos e Parcelas Ativas</h2></div></div>
+                <div class="tabela-container tabela-fluida">
+                    <table class="tabela">
+                        <thead><tr><th>Contrato</th><th>Parcela</th><th>Valor</th></tr></thead>
+                        <tbody id="tabelaFinanciamentosRelatorio"></tbody>
+                    </table>
+                </div>
+            </section>
+        </div>
+
+        <section class="form-card" id="blocoSecaoBens" style="margin-bottom: 18px;">
+            <div class="section-title">
+                <div>
+                    <h2>Investimentos e Custos por Bem Patrimonial</h2>
+                    <p>Total aportado em automóveis, imóveis e bens vinculados no período.</p>
+                </div>
             </div>
-            
             <div class="tabela-container">
                 <table class="tabela">
                     <thead>
                         <tr>
+                            <th>Bem</th>
+                            <th>Tipo</th>
+                            <th>Valor de Aquisição</th>
+                            <th>Gasto / Aporte no Mês</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tabelaBensRelatorio"></tbody>
+                </table>
+            </div>
+        </section>
+
+        <section class="form-card" id="blocoSecaoExtrato">
+            <div class="section-title">
+                <div>
+                    <h2>Extrato Detalhado do Período</h2>
+                    <p>Movimentações completas validadas para auditoria contábil.</p>
+                </div>
+            </div>
+            <div class="tabela-container">
+                <table class="tabela">
+                    <thead>
+                        <tr>
+                            <th>Data</th>
                             <th>Descrição</th>
-                            <th>Parcela</th>
+                            <th>Categoria</th>
+                            <th>Tipo</th>
+                            <th>Status</th>
                             <th>Valor</th>
-                            <th>Vencimento</th>
+                            <th style="text-align: center;">Ações</th>
                         </tr>
                     </thead>
-                    <tbody id="tabelaParcelamentos">
-                        <!-- Preenchido via JS -->
-                    </tbody>
+                    <tbody id="tabelaExtratoRelatorio"></tbody>
                 </table>
             </div>
-        </div>
-        
-        <!-- Financiamentos e Contratos -->
-        <div class="form-card" style="margin-top: 20px;">
-            <h2>Contratos de Financiamento</h2>
-            <div id="listaFinanciamentos" style="margin-top: 12px;">
-                <!-- Preenchido via JS -->
-            </div>
-        </div>
+        </section>
     </main>
 
     <script src="script.js"></script>
     <script>
         verificarAutenticacao();
-        definirFiltroPeriodo('mesAtual');
+        
+        const hoje = new Date();
+        const anoAtual = hoje.getFullYear();
+        const mesAtual = String(hoje.getMonth() + 1).padStart(2, '0');
+        const filtroMesRelatorioEl = document.getElementById('filtroMesRelatorio');
+        if (filtroMesRelatorioEl) filtroMesRelatorioEl.value = `${anoAtual}-${mesAtual}`;
 
-        function definirFiltroPeriodo(tipo) {
-            const inputMes = document.getElementById('filtroMesAnoRelatorio');
-            const dataHoje = new Date();
+        carregarPreferenciasVisao();
+        carregarRelatorioMensal();
 
-            document.getElementById('btnMesAtual').style.backgroundColor = '#64748b';
-            document.getElementById('btnMesPassado').style.backgroundColor = '#64748b';
-            document.getElementById('btnTodos').style.backgroundColor = '#64748b';
+        async function marcarPagamento(id) {
+            const ok = await alternarStatusPagamento(id);
+            if (ok) carregarRelatorioMensal();
+        }
 
-            if (tipo === 'mesAtual') {
-                document.getElementById('btnMesAtual').style.backgroundColor = 'var(--primary)';
-                const ano = dataHoje.getFullYear();
-                const mes = String(dataHoje.getMonth() + 1).padStart(2, '0');
-                if (inputMes) inputMes.value = `${ano}-${mes}`;
-            } else if (tipo === 'mesPassado') {
-                document.getElementById('btnMesPassado').style.backgroundColor = 'var(--primary)';
-                dataHoje.setMonth(dataHoje.getMonth() - 1);
-                const ano = dataHoje.getFullYear();
-                const mes = String(dataHoje.getMonth() + 1).padStart(2, '0');
-                if (inputMes) inputMes.value = `${ano}-${mes}`;
-            } else if (tipo === 'todos') {
-                document.getElementById('btnTodos').style.backgroundColor = 'var(--primary)';
-                if (inputMes) inputMes.value = '';
+        function alternarMenuPersonalizar(event) {
+            event.stopPropagation();
+            const menu = document.getElementById('dropdownMenuPersonalizar');
+            if (menu) menu.style.display = menu.style.display === 'block' ? 'none' : 'block';
+            const dropOpcoes = document.getElementById('dropdownMenuOpcoes');
+            if (dropOpcoes) dropOpcoes.style.display = 'none';
+        }
+
+        function alternarMenuOpcoes(event) {
+            event.stopPropagation();
+            const menu = document.getElementById('dropdownMenuOpcoes');
+            if (menu) menu.style.display = menu.style.display === 'block' ? 'none' : 'block';
+            const dropPers = document.getElementById('dropdownMenuPersonalizar');
+            if (dropPers) dropPers.style.display = 'none';
+        }
+
+        window.addEventListener('click', () => {
+            const m1 = document.getElementById('dropdownMenuPersonalizar');
+            const m2 = document.getElementById('dropdownMenuOpcoes');
+            if (m1) m1.style.display = 'none';
+            if (m2) m2.style.display = 'none';
+        });
+
+        function salvarPreferenciaVisao() {
+            const prefs = {
+                resumo: document.getElementById('chkResumo')?.checked ?? true,
+                classificacao: document.getElementById('chkClassificacao')?.checked ?? true,
+                contasPagas: document.getElementById('chkContasPagas')?.checked ?? true,
+                contasAbertas: document.getElementById('chkContasAbertas')?.checked ?? true,
+                faturas: document.getElementById('chkFaturas')?.checked ?? true,
+                financiamentos: document.getElementById('chkFinanciamentos')?.checked ?? true,
+                bens: document.getElementById('chkBens')?.checked ?? true,
+                extrato: document.getElementById('chkExtrato')?.checked ?? true
+            };
+            localStorage.setItem('relatorioPrefs', JSON.stringify(prefs));
+            aplicarPreferenciasVisao(prefs);
+        }
+
+        function carregarPreferenciasVisao() {
+            const salvo = localStorage.getItem('relatorioPrefs');
+            if (salvo) {
+                try {
+                    const prefs = JSON.parse(salvo);
+                    if (document.getElementById('chkResumo')) document.getElementById('chkResumo').checked = prefs.resumo ?? true;
+                    if (document.getElementById('chkClassificacao')) document.getElementById('chkClassificacao').checked = prefs.classificacao ?? true;
+                    if (document.getElementById('chkContasPagas')) document.getElementById('chkContasPagas').checked = prefs.contasPagas ?? true;
+                    if (document.getElementById('chkContasAbertas')) document.getElementById('chkContasAbertas').checked = prefs.contasAbertas ?? true;
+                    if (document.getElementById('chkFaturas')) document.getElementById('chkFaturas').checked = prefs.faturas ?? true;
+                    if (document.getElementById('chkFinanciamentos')) document.getElementById('chkFinanciamentos').checked = prefs.financiamentos ?? true;
+                    if (document.getElementById('chkBens')) document.getElementById('chkBens').checked = prefs.bens ?? true;
+                    if (document.getElementById('chkExtrato')) document.getElementById('chkExtrato').checked = prefs.extrato ?? true;
+                    aplicarPreferenciasVisao(prefs);
+                } catch(e) {}
+            }
+        }
+
+        function aplicarPreferenciasVisao(prefs) {
+            const blocoResumo = document.getElementById('blocoResumoGeral');
+            if (blocoResumo) blocoResumo.style.display = prefs.resumo ? 'grid' : 'none';
+            const blocoClass = document.getElementById('blocoClassificacao');
+            if (blocoClass) blocoClass.style.display = prefs.classificacao ? 'block' : 'none';
+            
+            const secaoPagas = document.getElementById('blocoSecaoContasPagas');
+            if (secaoPagas && secaoPagas.closest('.grid-2')) {
+                secaoPagas.closest('.grid-2').style.display = (prefs.contasPagas || prefs.contasAbertas) ? 'grid' : 'none';
+            }
+            if (secaoPagas) secaoPagas.style.display = prefs.contasPagas ? 'block' : 'none';
+            const secaoAbertas = document.getElementById('blocoSecaoContasAbertas');
+            if (secaoAbertas) secaoAbertas.style.display = prefs.contasAbertas ? 'block' : 'none';
+            
+            const secaoFat = document.getElementById('blocoSecaoFaturas');
+            if (secaoFat && secaoFat.closest('.grid-2')) {
+                secaoFat.closest('.grid-2').style.display = (prefs.faturas || prefs.financiamentos) ? 'grid' : 'none';
+            }
+            if (secaoFat) secaoFat.style.display = prefs.faturas ? 'block' : 'none';
+            const secaoFin = document.getElementById('blocoSecaoFinanciamentos');
+            if (secaoFin) secaoFin.style.display = prefs.financiamentos ? 'block' : 'none';
+            
+            const secaoBens = document.getElementById('blocoSecaoBens');
+            if (secaoBens) secaoBens.style.display = prefs.bens ? 'block' : 'none';
+            const secaoExtrato = document.getElementById('blocoSecaoExtrato');
+            if (secaoExtrato) secaoExtrato.style.display = prefs.extrato ? 'block' : 'none';
+        }
+
+        function carregarRelatorioMensal() {
+            const filtroMesInput = document.getElementById('filtroMesRelatorio');
+            if (!filtroMesInput || !filtroMesInput.value) return;
+            const mesSelecionado = filtroMesInput.value;
+
+            const dados = obterDados();
+            
+            // APLICAÇÃO DOS FILTROS DE PERMISSÃO / COMPARTILHAMENTO
+            const lancamentosPermitidos = filtrarDadosPorPermissao(dados.lancamentos || [], dados, 'casal');
+            const bensPermitidos = filtrarDadosPorPermissao(dados.bens || [], dados, 'casal');
+            const cartoesPermitidos = filtrarDadosPorPermissao(dados.cartoes || [], dados, 'casal');
+
+            const categorias = dados.categorias || [];
+
+            const movimentosMes = lancamentosPermitidos.filter(l => (l.vencimento || l.data || '').startsWith(mesSelecionado));
+
+            let totalEntradas = 0;
+            let totalSaidas = 0;
+            let totCasal = 0;
+            let totIndividual = 0;
+            let totEssencial = 0;
+            let totNaoEssencial = 0;
+
+            const tbodyPagas = document.getElementById('tabelaContasPagas');
+            const tbodyAbertas = document.getElementById('tabelaContasAbertas');
+            const tbodyExtrato = document.getElementById('tabelaExtratoRelatorio');
+            const tbodyFin = document.getElementById('tabelaFinanciamentosRelatorio');
+            const tbodyFat = document.getElementById('tabelaFaturasRelatorio');
+            const tbodyBens = document.getElementById('tabelaBensRelatorio');
+
+            if (tbodyPagas) tbodyPagas.innerHTML = '';
+            if (tbodyAbertas) tbodyAbertas.innerHTML = '';
+            if (tbodyExtrato) tbodyExtrato.innerHTML = '';
+            if (tbodyFin) tbodyFin.innerHTML = '';
+            if (tbodyFat) tbodyFat.innerHTML = '';
+            if (tbodyBens) tbodyBens.innerHTML = '';
+
+            let countPagas = 0, countAbertas = 0, countExtrato = 0, countFin = 0;
+
+            movimentosMes.forEach(m => {
+                const valor = Number(m.valor || 0);
+                const tipo = m.tipo || 'saida';
+                const cat = categorias.find(c => Number(c.id) === Number(m.categoriaId)) || { nome: 'Geral', tipoGasto: 'individual' };
+
+                if (tipo === 'entrada') {
+                    totalEntradas += valor;
+                } else {
+                    totalSaidas += valor;
+                    
+                    const escopoMovimento = m.escopo || cat.tipoGasto || 'casal';
+                    if (escopoMovimento === 'casal') {
+                        totCasal += valor;
+                    } else {
+                        totIndividual += valor;
+                    }
+
+                    if (m.servicoEssencial === 'sim') {
+                        totEssencial += valor;
+                    } else {
+                        totNaoEssencial += valor;
+                    }
+
+                    if (m.financiamentoId || (m.descricao && normalizarTexto(m.descricao).includes('financiamento'))) {
+                        const trFin = document.createElement('tr');
+                        trFin.innerHTML = `<td>${m.descricao || ''}</td><td>${m.parcelaAtual && m.totalParcelas ? `${m.parcelaAtual}/${m.totalParcelas}` : 'Única'}</td><td class="negativo">R$ ${valor.toLocaleString('pt-BR', {minimumFractionDigits: 2})}</td>`;
+                        if (tbodyFin) tbodyFin.appendChild(trFin);
+                        countFin++;
+                    }
+                }
+
+                const btnAcoes = `
+                    <div style="display:flex; gap:6px; justify-content: flex-start;">
+                        <button type="button" onclick="window.location.href='editar-lancamento.html?id=${m.id}'" class="btn-acao-icone editar" title="Editar">
+                            <img src="imagens/editar.png" alt="Editar">
+                        </button>
+                        <button type="button" onclick="marcarPagamento(${m.id})" class="btn-acao-icone" title="${m.pago ? 'Marcar como Pendente' : 'Marcar como Pago'}">
+                            <img src="imagens/${m.pago ? 'desfazer' : 'pagar'}.png" alt="${m.pago ? 'Pendente' : 'Pagar'}">
+                        </button>
+                    </div>
+                `;
+
+                const classeValor = tipo === 'entrada' ? 'positivo' : 'negativo';
+                const seloReceita = tipo === 'entrada' ? '<span class="status-badge status-pago" style="margin-right:8px; font-size:0.6rem; padding: 2px 6px;">RECEITA</span>' : '';
+
+                const trConta = document.createElement('tr');
+                trConta.innerHTML = `<td>${seloReceita}${m.descricao || ''}</td><td>${m.vencimento ? m.vencimento.split('-').reverse().join('/') : '-'}</td><td class="${classeValor}">R$ ${valor.toLocaleString('pt-BR', {minimumFractionDigits: 2})}</td><td>${btnAcoes}</td>`;
+                
+                if (m.pago) {
+                    if (tbodyPagas) tbodyPagas.appendChild(trConta);
+                    countPagas++;
+                } else {
+                    if (tbodyAbertas) tbodyAbertas.appendChild(trConta);
+                    countAbertas++;
+                }
+
+                const btnAcoesExtrato = `
+                    <div style="display:flex; gap:6px; justify-content: center;">
+                        <button type="button" onclick="window.location.href='editar-lancamento.html?id=${m.id}'" class="btn-acao-icone editar" title="Editar">
+                            <img src="imagens/editar.png" alt="Editar">
+                        </button>
+                        <button type="button" onclick="marcarPagamento(${m.id})" class="btn-acao-icone" title="${m.pago ? 'Marcar como Pendente' : 'Marcar como Pago'}">
+                            <img src="imagens/${m.pago ? 'desfazer' : 'pagar'}.png" alt="${m.pago ? 'Pendente' : 'Pagar'}">
+                        </button>
+                    </div>
+                `;
+
+                const trExt = document.createElement('tr');
+                trExt.innerHTML = `
+                    <td>${m.vencimento ? m.vencimento.split('-').reverse().join('/') : '-'}</td>
+                    <td><strong>${m.descricao || ''}</strong></td>
+                    <td>${cat.nome || 'Geral'}</td>
+                    <td><span class="status-badge ${tipo === 'entrada' ? 'status-pago' : 'status-pendente'}">${tipo.toUpperCase()}</span></td>
+                    <td>${m.pago ? 'Pago' : 'Pendente'}</td>
+                    <td class="${tipo === 'entrada' ? 'positivo' : 'negativo'}">R$ ${valor.toLocaleString('pt-BR', {minimumFractionDigits: 2})}</td>
+                    <td>${btnAcoesExtrato}</td>
+                `;
+                if (tbodyExtrato) tbodyExtrato.appendChild(trExt);
+                countExtrato++;
+            });
+
+            const faturasMap = {};
+            movimentosMes.filter(l => l.formaPagamento === 'CARTAO' && l.cartaoId).forEach(l => {
+                faturasMap[l.cartaoId] = (faturasMap[l.cartaoId] || 0) + Number(l.valor || 0);
+            });
+            let countFat = 0;
+            for (let cartaoId in faturasMap) {
+                const cObj = cartoesPermitidos.find(c => Number(c.id) === Number(cartaoId));
+                if (!cObj) continue;
+                const nomeCartao = cObj.nome;
+                const diaVenc = cObj.vencimento;
+                
+                const btnVerFatura = `
+                    <button type="button" onclick="abrirDetalhamentoFatura(${cartaoId}, '${mesSelecionado}')" class="btn-acao-icone" title="Ver Fatura">
+                        <img src="imagens/ver.png" alt="Ver Fatura" style="width: 20px; height: 20px; object-fit: contain;">
+                    </button>
+                `;
+
+                const trFat = document.createElement('tr');
+                trFat.innerHTML = `
+                    <td>${nomeCartao}</td>
+                    <td>Dia ${diaVenc}</td>
+                    <td class="negativo">R$ ${faturasMap[cartaoId].toLocaleString('pt-BR', {minimumFractionDigits: 2})}</td>
+                    <td style="text-align: center;">${btnVerFatura}</td>
+                `;
+                if (tbodyFat) tbodyFat.appendChild(trFat);
+                countFat++;
             }
 
-            carregarRelatorios();
+            let countBens = 0;
+            bensPermitidos.filter(b => b.ativo !== false).forEach(b => {
+                const gastoBem = movimentosMes.filter(l => Number(l.bemId) === Number(b.id) && l.tipo === 'saida').reduce((acc, l) => acc + Number(l.valor || 0), 0);
+                const trBem = document.createElement('tr');
+                trBem.innerHTML = `
+                    <td><strong>${b.nome || ''}</strong></td>
+                    <td>${(b.tipo || '').toUpperCase()}</td>
+                    <td>R$ ${Number(b.valor || 0).toLocaleString('pt-BR', {minimumFractionDigits: 2})}</td>
+                    <td class="negativo">R$ ${gastoBem.toLocaleString('pt-BR', {minimumFractionDigits: 2})}</td>
+                `;
+                if (tbodyBens) tbodyBens.appendChild(trBem);
+                countBens++;
+            });
+
+            if (countPagas === 0 && tbodyPagas) tbodyPagas.innerHTML = `<tr><td colspan="4" style="text-align: center;">Nenhuma conta paga no período.</td></tr>`;
+            if (countAbertas === 0 && tbodyAbertas) tbodyAbertas.innerHTML = `<tr><td colspan="4" style="text-align: center;">Nenhuma conta em aberto.</td></tr>`;
+            if (countFin === 0 && tbodyFin) tbodyFin.innerHTML = `<tr><td colspan="3" style="text-align: center;">Nenhum financiamento no período.</td></tr>`;
+            if (countFat === 0 && tbodyFat) tbodyFat.innerHTML = `<tr><td colspan="4" style="text-align: center;">Nenhuma fatura de cartão no período.</td></tr>`;
+            if (countBens === 0 && tbodyBens) tbodyBens.innerHTML = `<tr><td colspan="4" style="text-align: center;">Nenhum bem cadastrado.</td></tr>`;
+            if (countExtrato === 0 && tbodyExtrato) tbodyExtrato.innerHTML = `<tr><td colspan="7" style="text-align: center;">Nenhum lançamento encontrado.</td></tr>`;
+
+            const elRelEntrada = document.getElementById('relTotalEntradas');
+            const elRelSaidas = document.getElementById('relTotalSaidas');
+            const elTaxaPoupanca = document.getElementById('relTaxaPoupanca');
+            const elComprometimento = document.getElementById('relComprometimento');
+            const elTotCasal = document.getElementById('totCasal');
+            const elTotIndividual = document.getElementById('totIndividual');
+            const elTotEssencial = document.getElementById('totEssencial');
+            const elTotNaoEssencial = document.getElementById('totNaoEssencial');
+
+            if (elRelEntrada) elRelEntrada.textContent = `R$ ${totalEntradas.toLocaleString('pt-BR', {minimumFractionDigits: 2})}`;
+            if (elRelSaidas) elRelSaidas.textContent = `R$ ${totalSaidas.toLocaleString('pt-BR', {minimumFractionDigits: 2})}`;
+
+            const taxaPoupanca = totalEntradas > 0 ? ((totalEntradas - totalSaidas) / totalEntradas) * 100 : 0;
+            const comprometimento = totalEntradas > 0 ? (totEssencial / totalEntradas) * 100 : 0;
+
+            if (elTaxaPoupanca) {
+                elTaxaPoupanca.textContent = `${taxaPoupanca.toFixed(1)}%`;
+                elTaxaPoupanca.className = `stat-value ${taxaPoupanca >= 0 ? 'positivo' : 'negativo'}`;
+            }
+            if (elComprometimento) elComprometimento.textContent = `${comprometimento.toFixed(1)}%`;
+
+4           if (elTotCasal) elTotCasal.textContent = `R$ ${totCasal.toLocaleString('pt-BR', {minimumFractionDigits: 2})}`;
+            if (elTotIndividual) elTotIndividual.textContent = `R$ ${totIndividual.toLocaleString('pt-BR', {minimumFractionDigits: 2})}`;
+            if (elTotEssencial) elTotEssencial.textContent = `R$ ${totEssencial.toLocaleString('pt-BR', {minimumFractionDigits: 2})}`;
+            if (elTotNaoEssencial) elTotNaoEssencial.textContent = `R$ ${totNaoEssencial.toLocaleString('pt-BR', {minimumFractionDigits: 2})}`;
         }
 
-        function mudarFiltroMesManual() {
-            document.getElementById('btnMesAtual').style.backgroundColor = '#64748b';
-            document.getElementById('btnMesPassado').style.backgroundColor = '#64748b';
-            document.getElementById('btnTodos').style.backgroundColor = '#64748b';
-            carregarRelatorios();
+        function exportarCSV() {
+            const filtroMesEl = document.getElementById('filtroMesRelatorio');
+            const mesSelecionado = filtroMesEl ? filtroMesEl.value : '';
+            const dados = obterDados();
+            const lancamentosPermitidos = filtrarDadosPorPermissao(dados.lancamentos || [], dados, 'casal');
+            const lancamentos = lancamentosPermitidos.filter(l => (l.vencimento || l.data || '').startsWith(mesSelecionado));
+            if (lancamentos.length === 0) { mostrarAlertaModal("Não há dados para exportar."); return; }
+
+            let csv = "data:text/csv;charset=utf-8,Vencimento;Descricao;Tipo;Valor\n";
+            lancamentos.forEach(l => { csv += `${l.vencimento || ''};"${l.descricao || ''}";${l.tipo || ''};${l.valor || 0}\n`; });
+
+            const link = document.createElement("a");
+            link.setAttribute("href", encodeURI(csv));
+            link.setAttribute("download", `relatorio_gerencial_${mesSelecionado}.csv`);
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
         }
+
+        function exportarPDF() { window.print(); }
     </script>
 </body>
 </html>

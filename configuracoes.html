@@ -5,101 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Configurações | Controle Financeiro</title>
     <link rel="stylesheet" href="style.css">
-    <style>
-        .grid-permissoes {
-            display: grid;
-            grid-template-columns: repeat(2, minmax(0, 1fr));
-            gap: 12px;
-        }
-
-        .checkbox-label {
-            display: flex !important;
-            align-items: center !important;
-            gap: 10px !important;
-            cursor: pointer;
-            margin: 0 !important;
-            font-size: 0.83rem !important;
-            font-weight: 500 !important;
-            color: var(--text-main) !important;
-            line-height: 1.2 !important;
-        }
-
-        .checkbox-label input[type="checkbox"] {
-            width: 18px !important;
-            height: 18px !important;
-            min-width: 18px !important;
-            min-height: 18px !important;
-            margin: 0 !important;
-            cursor: pointer;
-            accent-color: var(--primary);
-            flex-shrink: 0;
-        }
-
-        @media (max-width: 520px) {
-            .grid-permissoes {
-                grid-template-columns: 1fr;
-            }
-        }
-    </style>
 </head>
 <body>
-<header class="app-header">
-    <div class="header-inner">
-        <!-- Esquerdo: Controle Financeiro + Perfil/Sync -->
-        <div class="header-left">
-            <div class="brand">
-                <span class="brand-title">Controle Financeiro</span>
-                <span class="brand-subtitle">Gestão Inteligente</span>
-            </div>
-            <div class="header-perfil-sync">
-                <span id="usuarioLogadoNome" class="user-chip"></span>
-                <!-- Ícone de Sincronização ou Status -->
-                <span id="syncStatusIcon" title="Sincronizado" style="cursor: pointer; display: flex; align-items: center;">
-                    <img src="imagens/nuvem.png" alt="Sync" style="width: 22px; height: 22px;">
-                </span>
-            </div>
-        </div>
-
-     <!-- Centro: Navegação Principal -->
-        <nav class="app-nav-center" aria-label="Navegação principal">
-            <a href="dashboard.html">Início</a>
-            <div class="nav-dropdown" style="position: relative;">
-                <a href="#" onclick="event.preventDefault();" style="cursor: pointer;">Cadastros ▾</a>
-                <div class="nav-dropdown-content" style="position: absolute; top: 100%; left: 0;">
-                    <a href="cartoes.html">Cartões</a>
-                    <a href="categorias.html">Categorias</a>
-                    <a href="bens.html">Bens</a>
-                    <a href="financiamentos.html">Financiamentos</a>
-                </div>
-            </div>
-            <a href="lancamentos.html">Lançamentos</a>
-            <a href="central-pagamentos.html">Central de Pagamentos</a>
-            <a href="relatorios.html">Relatórios</a>
-        </nav>
-
-        <!-- Direito: Tema, Configurações, Notificações e Sair separados -->
-        <div class="header-right">
-            <div class="header-tools">
-                <button type="button" onclick="alternarTemaVisual()" title="Alternar tema">
-                    <img src="imagens/modo_escuro.jpg" alt="Tema">
-                </button>
-                <a href="configuracoes.html" title="Configurações">
-                    <img src="imagens/config.png" alt="Configurações">
-                </a>
-                <!-- Ícone de Notificações -->
-                <button type="button" title="Notificações" id="btnNotificacoesHeader">
-                    <img src="imagens/notificacao.png" alt="Notificações" onerror="this.style.display='none'">
-                </button>
-            </div>
-            
-            <div class="header-tools" style="border-left: 1px solid var(--border-color, #e5e7eb); padding-left: 18px;">
-                <a href="index.html" onclick="event.preventDefault(); deslogarSistema()" class="btn-sair-extremo" title="Sair do sistema">
-                    <img src="imagens/exit.png" alt="Sair">
-                </a>
-            </div>
-        </div>
-    </div>
-</header>
 
     <main class="container">
         <div class="page-heading">
@@ -224,11 +131,11 @@
                 </div>
 
                 <div style="display: flex; gap: 20px; margin-bottom: 18px; flex-wrap: wrap;">
-                    <label class="checkbox-label" style="font-weight: 600 !important;">
+                    <label class="checkbox-label" style="font-weight: 600;">
                         <input type="checkbox" id="resetPinModal"> 
                         Forçar reconfiguração de PIN
                     </label>
-                    <label class="checkbox-label" style="font-weight: 600 !important;">
+                    <label class="checkbox-label" style="font-weight: 600;">
                         <input type="checkbox" id="ativoUsuarioModal" checked> 
                         Usuário Ativo
                     </label>
@@ -266,8 +173,13 @@
 
     <script src="script.js"></script>
     <script>
-        verificarAutenticacao();
-        renderizarTabelaUsuariosConfig();
+        document.addEventListener('DOMContentLoaded', async () => {
+            injetarHeader();
+            const autenticado = await verificarAutenticacao();
+            if (autenticado) {
+                renderizarTabelaUsuariosConfig();
+            }
+        });
 
         function renderizarTabelaUsuariosConfig() {
             const dados = obterDados();
@@ -412,7 +324,7 @@
             event.preventDefault();
             const id = document.getElementById('editUsuarioId').value;
             const nome = document.getElementById('nomeUsuarioModal').value.trim();
-            const rendaFixa = parseFloat(document.getElementById('rendaFixaUsuarioModal').value) || 0;
+            const rendaFixa = numeroSeguro(document.getElementById('rendaFixaUsuarioModal').value);
             const parceiroId = document.getElementById('parceiroUsuarioModal').value ? Number(document.getElementById('parceiroUsuarioModal').value) : null;
             const resetPin = document.getElementById('resetPinModal').checked;
             const ativo = document.getElementById('ativoUsuarioModal').checked;
@@ -447,7 +359,10 @@
                     u.parceiroId = parceiroId;
                     u.ativo = ativo;
                     u.permissoes = permissoes;
-                    if (resetPin) u.pin = ""; 
+                    if (resetPin) {
+                        u.pin = ""; 
+                        u.senha = "";
+                    }
                 }
             } else {
                 const novoId = dados.usuarios.reduce((m, u) => Math.max(m, Number(u.id) || 0), 0) + 1;
@@ -457,6 +372,7 @@
                     rendaFixa,
                     parceiroId,
                     pin: "",
+                    senha: "",
                     ativo,
                     permissoes
                 });
@@ -526,11 +442,21 @@
             leitor.onload = async function(e) {
                 try {
                     const dadosImportados = JSON.parse(e.target.result);
+                    
+                    // Validação de Integridade do JSON (Evita corrupção do banco)
+                    if (!dadosImportados || typeof dadosImportados !== 'object') {
+                        throw new Error("Formato de arquivo inválido. O arquivo não é um objeto JSON válido.");
+                    }
+                    if (!Array.isArray(dadosImportados.usuarios) || !Array.isArray(dadosImportados.lancamentos)) {
+                        throw new Error("O arquivo não contém a estrutura esperada do sistema (ex: falta a aba de usuários ou lançamentos).");
+                    }
+
                     await salvarDados(dadosImportados);
                     await mostrarAlertaModal("Backup restaurado com sucesso! A página será recarregada.");
                     window.location.reload();
                 } catch (err) {
-                    await mostrarAlertaModal("Erro ao ler o arquivo de backup. Certifique-se de que é um JSON válido.");
+                    await mostrarAlertaModal("Erro ao restaurar backup: " + (err.message || "Certifique-se de que é um JSON válido gerado pelo sistema."));
+                    event.target.value = ''; // Limpa o input file
                 }
             };
             leitor.readAsText(arquivo);

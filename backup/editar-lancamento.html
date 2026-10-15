@@ -2,150 +2,301 @@
 <html lang="pt-BR">
 <head>
     <meta charset="UTF-8">
-    <title>Editar Lançamento - Controle Financeiro</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Editar lançamento | Controle Financeiro</title>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
-    <header>
-        <h1>Controle Financeiro</h1>
-        <span id="usuarioLogadoNome"></span>
-       <nav>
-            <a href="dashboard.html">Início</a>
-            <a href="categorias.html">Categorias</a>
-            <a href="cartoes.html">Cartões</a>
-            <a href="lancamentos.html">Lançamentos</a>
-            <a href="relatorios.html">Relatórios</a>
-            <a href="admin-logs.html" style="color: #ef4444; font-weight: bold;">Admin Logs</a>
-            
-            <button type="button" onclick="alternarTemaVisual()" class="btn-icone-tema" title="Alternar Modo Escuro / Claro">
-                <img src="imagens/modo_escuro.jpg" alt="Modo Escuro">
-            </button>
+ <header class="app-header">
+    <div class="header-inner">
+        <div class="header-left">
+            <div class="brand">
+                <span class="brand-title">Controle Financeiro</span>
+                <span class="brand-subtitle">Gestão Inteligente</span>
+            </div>
+            <div class="header-perfil-sync">
+                <span id="usuarioLogadoNome" class="user-chip"></span>
+                <span id="syncStatusIcon" title="Sincronizado" style="cursor: pointer; display: flex; align-items: center;">
+                    <img src="imagens/nuvem.png" alt="Sync" style="width: 22px; height: 22px;">
+                </span>
+            </div>
+        </div>
 
-            <a href="index.html" onclick="localStorage.removeItem('usuarioLogado')">Sair</a>
+        <!-- Centro: Navegação Principal -->
+        <nav class="app-nav-center" aria-label="Navegação principal">
+            <a href="dashboard.html">Início</a>
+            <div class="nav-dropdown" style="position: relative;">
+                <a href="#" onclick="event.preventDefault();" style="cursor: pointer;">Cadastros ▾</a>
+                <div class="nav-dropdown-content" style="position: absolute; top: 100%; left: 0;">
+                    <a href="cartoes.html">Cartões</a>
+                    <a href="categorias.html">Categorias</a>
+                    <a href="bens.html">Bens</a>
+                    <a href="financiamentos.html">Financiamentos</a>
+                </div>
+            </div>
+            <a href="lancamentos.html">Lançamentos</a>
+            <a href="central-pagamentos.html">Central de Pagamentos</a>
+            <a href="relatorios.html">Relatórios</a>
         </nav>
-    </header>
+
+        <div class="header-right">
+            <div class="header-tools">
+                <button type="button" onclick="alternarTemaVisual()" title="Alternar tema">
+                    <img src="imagens/modo_escuro.jpg" alt="Tema">
+                </button>
+                <a href="configuracoes.html" title="Configurações">
+                    <img src="imagens/config.png" alt="Configurações">
+                </a>
+                <button type="button" title="Notificações" id="btnNotificacoesHeader">
+                    <img src="imagens/notificacao.png" alt="Notificações" onerror="this.style.display='none'">
+                </button>
+            </div>
+            
+            <div class="header-tools" style="border-left: 1px solid var(--border-color, #e5e7eb); padding-left: 18px;">
+                <a href="index.html" onclick="event.preventDefault(); deslogarSistema()" class="btn-sair-extremo" title="Sair do sistema">
+                    <img src="imagens/exit.png" alt="Sair">
+                </a>
+            </div>
+        </div>
+    </div>
+</header>
 
     <main class="container">
-        <div class="form-card">
-            <h2>Editar Lançamento</h2>
-            <form onsubmit="salvarEdicaoLancamento(event)">
+        <div class="page-heading">
+            <div>
+                <h2>Editar lançamento</h2>
+                <p>Alterações ficam registradas na auditoria e exigem uma justificativa.</p>
+            </div>
+            <a href="#" onclick="voltarOrigem(event)" class="text-link">← Voltar</a>
+        </div>
+
+        <section class="form-card">
+            <form id="formEditarLancamento" onsubmit="salvarEdicaoLancamento(event)" novalidate>
                 <input type="hidden" id="editId">
+                <div class="form-grid-2">
+                    <div class="form-group">
+                        <label for="editDescricao">Descrição</label>
+                        <input type="text" id="editDescricao" maxlength="120" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="editTipo">Tipo</label>
+                        <select id="editTipo" onchange="tratarMudancaTipoEdicao()">
+                            <option value="saida">Saída</option>
+                            <option value="entrada">Entrada</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="form-grid-2">
+                    <div class="form-group">
+                        <label for="editCategoria">Categoria</label>
+                        <select id="editCategoria" required></select>
+                    </div>
+                    <div class="form-group">
+                        <label for="editFormaPagamento">Forma de pagamento</label>
+                        <select id="editFormaPagamento" onchange="tratarMudancaFormaEdicao()">
+                            <option value="DINHEIRO">Dinheiro / Pix / Débito</option>
+                            <option value="BOLETO">Boleto / Conta</option>
+                            <option value="FIXO">Conta fixa</option>
+                            <option value="CARTAO">Cartão de crédito</option>
+                        </select>
+                    </div>
+                </div>
 
-                <label>Descrição:</label>
-                <input type="text" id="editDescricao" required>
+                <!-- Bloco de Cartão na Edição -->
+                <div id="blocoEditCartao" class="form-group" style="display:none; margin-top:12px;">
+                    <label for="editCartao">Cartão de crédito</label>
+                    <select id="editCartao"></select>
+                </div>
 
-                <label>Tipo:</label>
-                <select id="editTipo" onchange="tratarMudancaTipoEdicao()">
-                    <option value="saida">Saída (Despesa / Boleto / Financiamento)</option>
-                    <option value="entrada">Entrada (Receita)</option>
-                </select>
-
-                <label>Categoria:</label>
-                <select id="editCategoria" required></select>
-
-                <label>Forma de Pagamento:</label>
-                <select id="editFormaPagamento">
-                    <option value="PIX">PIX</option>
-                    <option value="BOLETO">Boleto</option>
-                    <option value="DINHEIRO">Dinheiro / Outros</option>
-                    <option value="CARTAO">Cartão de Crédito</option>
-                </select>
-
-                <!-- Nova Opção: Serviço Essencial (Apenas visível em Saídas) -->
-                <div id="blocoServicoEssencial" style="margin-top: 12px;">
-                    <label for="editServicoEssencial">Serviço essencial?</label>
+                <div id="blocoServicoEssencial" class="form-group" style="margin-top:12px;">
+                    <label for="editServicoEssencial">Despesa essencial?</label>
                     <select id="editServicoEssencial">
                         <option value="nao">Não</option>
                         <option value="sim">Sim</option>
                     </select>
                 </div>
+                
+                <div id="blocoEditEscopo" class="form-group" style="margin-top:12px;">
+                    <label for="editEscopo">Escopo do gasto</label>
+                    <select id="editEscopo">
+                        <option value="casal">Casal / Casa</option>
+                        <option value="individual">Individual</option>
+                    </select>
+                </div>
 
-                <label>Valor (R$):</label>
-                <input type="number" step="0.01" id="editValor" required>
-
-                <label>Observação (Opcional):</label>
-                <input type="text" id="editObservacao">
-
-                <label>Data de Vencimento:</label>
-                <input type="date" id="editVencimento" required>
-
-                <button type="submit" style="margin-top: 20px;">Salvar Alterações</button>
-                <button type="button" onclick="history.back()" style="background-color: #7f8c8d; margin-top: 10px;">Voltar</button>
+                <div class="form-grid-2" style="margin-top:12px;">
+                    <div class="form-group">
+                        <label for="editValor">Valor (R$)</label>
+                        <input type="number" step="0.01" min="0.01" id="editValor" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="editVencimento">Data de vencimento / recebimento</label>
+                        <input type="date" id="editVencimento" required>
+                    </div>
+                </div>
+                <div class="form-group" style="margin-top:12px;">
+                    <label for="editObservacao">Observação</label>
+                    <input type="text" id="editObservacao" maxlength="250">
+                </div>
+                <div class="btn-row" style="margin-top:18px;">
+                    <button type="submit">Salvar alterações</button>
+                    <button type="button" class="btn-secondary" onclick="voltarOrigem(event)">Cancelar</button>
+                </div>
             </form>
-        </div>
+        </section>
     </main>
 
     <script src="script.js"></script>
     <script>
         verificarAutenticacao();
-        
         const urlParams = new URLSearchParams(window.location.search);
-        const lancamentoId = parseInt(urlParams.get('id'));
+        const lancamentoId = Number(urlParams.get('id'));
+        const returnUrl = urlParams.get('returnUrl');
 
-        const dados = obterDados();
-        const lancamento = dados.lancamentos.find(l => Number(l.id) === lancamentoId);
+        const dadosEdicao = obterDados();
+        const lancamento = (dadosEdicao.lancamentos || []).find(l => Number(l.id) === lancamentoId);
 
-        if (!lancamento) {
-            alert('Lançamento não encontrado!');
-            history.back();
-        } else {
-            const selectCat = document.getElementById('editCategoria');
-            dados.categorias.forEach(c => {
+        function voltarOrigem(event) {
+            if (event) event.preventDefault();
+            if (returnUrl) {
+                window.location.href = returnUrl;
+            } else {
+                history.back();
+            }
+        }
+
+        function popularSelectCartoesEdicao() {
+            const selectCartao = document.getElementById('editCartao');
+            if (!selectCartao) return;
+            const usuarioAtualId = Number(obterUsuarioAtualId(dadosEdicao));
+            const cartoesUsuario = (dadosEdicao.cartoes || []).filter(c => c.ativo !== false && Number(c.usuarioId) === usuarioAtualId);
+            
+            selectCartao.innerHTML = '';
+            if (cartoesUsuario.length === 0) {
+                selectCartao.innerHTML = '<option value="">Nenhum cartão ativo</option>';
+                return;
+            }
+            cartoesUsuario.forEach(c => {
                 const opt = document.createElement('option');
                 opt.value = c.id;
-                opt.innerText = c.nome;
-                selectCat.appendChild(opt);
+                opt.textContent = c.nome;
+                selectCartao.appendChild(opt);
             });
+        }
 
-            document.getElementById('editId').value = lancamento.id;
-            document.getElementById('editDescricao').value = lancamento.descricao;
-            document.getElementById('editTipo').value = lancamento.tipo;
-            document.getElementById('editCategoria').value = lancamento.categoriaId;
-            document.getElementById('editFormaPagamento').value = lancamento.formaPagamento || 'BOLETO';
-            document.getElementById('editValor').value = lancamento.valor;
-            document.getElementById('editObservacao').value = lancamento.observacao || '';
-            document.getElementById('editVencimento').value = lancamento.vencimento;
-            document.getElementById('editServicoEssencial').value = lancamento.servicoEssencial || 'nao';
+        function carregarFormulario() {
+            if (!lancamento) {
+                mostrarAlertaModal('Lançamento não encontrado.').then(() => voltarOrigem());
+                return;
+            }
+            const selectCat = document.getElementById('editCategoria');
+            if (selectCat) {
+                selectCat.innerHTML = '';
+                (dadosEdicao.categorias || []).forEach(c => {
+                    const option = document.createElement('option');
+                    option.value = c.id;
+                    option.textContent = c.nome;
+                    selectCat.appendChild(option);
+                });
+            }
 
+            popularSelectCartoesEdicao();
+
+            const elId = document.getElementById('editId');
+            if (elId) elId.value = lancamento.id;
+            const elDesc = document.getElementById('editDescricao');
+            if (elDesc) elDesc.value = lancamento.descricao || '';
+            const elTipo = document.getElementById('editTipo');
+            if (elTipo) elTipo.value = lancamento.tipo || 'saida';
+            if (selectCat) selectCat.value = lancamento.categoriaId || '';
+            const elForma = document.getElementById('editFormaPagamento');
+            if (elForma) elForma.value = lancamento.formaPagamento || 'BOLETO';
+            
+            if (lancamento.cartaoId) {
+                const elCartao = document.getElementById('editCartao');
+                if (elCartao) elCartao.value = lancamento.cartaoId;
+            }
+
+            const elValor = document.getElementById('editValor');
+            if (elValor) elValor.value = lancamento.valor || 0;
+            const elObs = document.getElementById('editObservacao');
+            if (elObs) elObs.value = lancamento.observacao || '';
+            const elVenc = document.getElementById('editVencimento');
+            if (elVenc) elVenc.value = lancamento.vencimento || dataLocalYYYYMMDD();
+            const elServEss = document.getElementById('editServicoEssencial');
+            if (elServEss) elServEss.value = lancamento.servicoEssencial || 'nao';
+            const elEscopo = document.getElementById('editEscopo');
+            if (elEscopo) elEscopo.value = lancamento.escopo || 'casal';
+            
             tratarMudancaTipoEdicao();
+            tratarMudancaFormaEdicao();
         }
 
         function tratarMudancaTipoEdicao() {
-            const tipo = document.getElementById('editTipo').value;
-            const blocoEssencial = document.getElementById('blocoServicoEssencial');
-            if (tipo === 'entrada') {
-                if (blocoEssencial) blocoEssencial.style.display = 'none';
+            const tipoEl = document.getElementById('editTipo');
+            const entrada = tipoEl ? tipoEl.value === 'entrada' : false;
+            const blocoServ = document.getElementById('blocoServicoEssencial');
+            if (blocoServ) blocoServ.style.display = entrada ? 'none' : 'block';
+            const blocoEsc = document.getElementById('blocoEditEscopo');
+            if (blocoEsc) blocoEsc.style.display = entrada ? 'none' : 'block';
+            if (entrada) {
+                const blocoCart = document.getElementById('blocoEditCartao');
+                if (blocoCart) blocoCart.style.display = 'none';
             } else {
-                if (blocoEssencial) blocoEssencial.style.display = 'block';
+                tratarMudancaFormaEdicao();
+            }
+        }
+
+        function tratarMudancaFormaEdicao() {
+            const formaEl = document.getElementById('editFormaPagamento');
+            const forma = formaEl ? formaEl.value : '';
+            const tipoEl = document.getElementById('editTipo');
+            const tipo = tipoEl ? tipoEl.value : 'saida';
+            const blocoCartao = document.getElementById('blocoEditCartao');
+            if (blocoCart) {
+                blocoCart.style.display = (tipo === 'saida' && forma === 'CARTAO') ? 'block' : 'none';
             }
         }
 
         async function salvarEdicaoLancamento(event) {
             event.preventDefault();
-            const id = parseInt(document.getElementById('editId').value);
-            const descricao = document.getElementById('editDescricao').value;
-            const tipo = document.getElementById('editTipo').value;
-            const categoriaId = parseInt(document.getElementById('editCategoria').value);
-            const formaPagamento = document.getElementById('editFormaPagamento').value;
-            const valor = parseFloat(document.getElementById('editValor').value);
-            const observacao = document.getElementById('editObservacao').value;
-            const vencimento = document.getElementById('editVencimento').value;
-            const servicoEssencial = tipo === 'saida' ? document.getElementById('editServicoEssencial').value : 'nao';
+            if (!lancamento) return;
+            const tipo = document.getElementById('editTipo')?.value || 'saida';
+            const formaPagamento = document.getElementById('editFormaPagamento')?.value || 'BOLETO';
+            const valor = parseFloat(document.getElementById('editValor')?.value) || 0;
+            const cartaoId = (tipo === 'saida' && formaPagamento === 'CARTAO') ? (document.getElementById('editCartao')?.value || null) : null;
 
-            await atualizarLancamentoNoBanco(id, {
-                descricao,
+            if (!Number.isFinite(valor) || valor <= 0) {
+                await mostrarAlertaModal('Informe um valor válido.');
+                return;
+            }
+
+            if (tipo === 'saida' && formaPagamento === 'CARTAO' && !cartaoId) {
+                await mostrarAlertaModal('Selecione um cartão de crédito válido.');
+                return;
+            }
+
+            const ok = await atualizarLancamentoNoBanco(lancamentoId, {
+                descricao: document.getElementById('editDescricao')?.value?.trim() || '',
                 tipo,
-                categoriaId,
+                categoriaId: Number(document.getElementById('editCategoria')?.value) || 0,
                 formaPagamento,
                 valor,
-                observacao,
-                vencimento,
-                servicoEssencial
+                observacao: document.getElementById('editObservacao')?.value?.trim() || '',
+                vencimento: document.getElementById('editVencimento')?.value || dataLocalYYYYMMDD(),
+                servicoEssencial: tipo === 'saida' ? (document.getElementById('editServicoEssencial')?.value || 'nao') : 'nao',
+                escopo: tipo === 'saida' ? (document.getElementById('editEscopo')?.value || 'casal') : 'casal',
+                cartaoId: cartaoId ? Number(cartaoId) : null,
+                dataCompra: lancamento.dataCompra || null,
+                bemId: tipo === 'saida' ? (lancamento.bemId || null) : null
             });
-
-            alert('Lançamento (ou parcela de financiamento) atualizado com sucesso!');
-            history.back();
+            
+            if (ok) {
+                voltarOrigem();
+            }
         }
+
+        carregarFormulario();
     </script>
 </body>
 </html>

@@ -13,31 +13,12 @@
 
 <body class="login-page">
 
-    <!-- =========================================================
-         BOTÃO DE TEMA (ATUALIZADO COM IMAGEM)
-         ========================================================= -->
 
-    <button
-        type="button"
-        class="login-theme-toggle"
-        id="loginThemeToggle"
-        onclick="alternarTemaVisual()"
-        aria-label="Alternar modo escuro"
-        title="Alternar tema"
-    >
-        <img src="imagens/modo_escuro.jpg" alt="Tema" id="themeImage" style="width: 22px; height: 22px; object-fit: contain;">
+    <button type="button" class="login-theme-toggle" onclick="alternarTemaVisual(event)" title="Alternar tema">
+        <img id="themeImage" class="theme-icon" src="imagens/modo_escuro.jpg" alt="Tema" style="width: 22px; height: 22px; border-radius: 50%; object-fit: contain;">
     </button>
 
-
-    <!-- =========================================================
-         TELA DE LOGIN
-         ========================================================= -->
-
     <main class="login-screen">
-
-        <!-- =====================================================
-             PAINEL ESQUERDO
-             ===================================================== -->
 
         <section class="login-brand-panel">
 

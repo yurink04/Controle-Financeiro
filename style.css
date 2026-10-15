@@ -46,9 +46,7 @@ body.dark-mode {
     --border-strong: #624a39;
     --shadow: 0 10px 28px rgba(0, 0, 0, .28);
     --shadow-lg: 0 24px 64px rgba(0, 0, 0, .44);
-}
-
-body.dark-mode {
+    
     background:
         radial-gradient(
             circle at top left,
@@ -62,11 +60,6 @@ body.dark-mode {
         ),
         var(--bg-primary);
 }
-
-
-/* =========================================================
-   RESET
-   ========================================================= */
 
 * {
     box-sizing: border-box;
@@ -113,11 +106,6 @@ a {
     background: var(--primary-soft);
 }
 
-
-/* =========================================================
-   VIEW TRANSITIONS
-   ========================================================= */
-
 @view-transition {
     navigation: auto;
 }
@@ -132,10 +120,6 @@ a {
         pageEnter .26s cubic-bezier(.22, 1, .36, 1) both;
 }
 
-
-/* =========================================================
-   BODY
-   ========================================================= */
 
 body {
     min-height: 100vh;
@@ -158,11 +142,6 @@ body {
         pageIn .35s ease both;
 }
 
-
-/* =========================================================
-   TRANSIÇÃO GLOBAL DO TEMA
-   ========================================================= */
-
 body,
 .app-header,
 .form-card,
@@ -182,10 +161,6 @@ textarea {
     transition: var(--theme-transition);
 }
 
-
-/* =========================================================
-   ANIMAÇÕES GERAIS
-   ========================================================= */
 
 @keyframes pageIn {
     from {
@@ -274,11 +249,6 @@ textarea {
     }
 }
 
-
-/* =========================================================
-   HEADER
-   ========================================================= */
-
 .app-header {
     position: sticky;
     top: 0;
@@ -341,11 +311,6 @@ textarea {
     font-weight: 700;
 }
 
-
-/* =========================================================
-   NAVEGAÇÃO
-   ========================================================= */
-
 .app-nav-center {
     display: flex;
     align-items: center;
@@ -365,10 +330,6 @@ textarea {
     color: var(--primary);
 }
 
-
-/* =========================================================
-   AÇÕES DO HEADER (TEMA, ETC)
-   ========================================================= */
 
 .header-right {
     display: flex;
@@ -421,20 +382,12 @@ textarea {
 }
 
 
-/* =========================================================
-   BOTÃO DE TEMA DO SISTEMA (ISOLADO)
-   ========================================================= */
-
 body.dark-mode .header-tools button[title="Alternar tema"] img {
     animation: themeIcon .38s cubic-bezier(.22, 1, .36, 1) both;
     filter: brightness(0) invert(1);
     opacity: .9;
 }
 
-
-/* =========================================================
-   CONTAINER
-   ========================================================= */
 
 .container {
     width:
@@ -470,11 +423,6 @@ body.dark-mode .header-tools button[title="Alternar tema"] img {
         cubic-bezier(.22, 1, .36, 1)
         .06s both;
 }
-
-
-/* =========================================================
-   TÍTULOS
-   ========================================================= */
 
 .page-heading {
     display: flex;
@@ -530,10 +478,6 @@ body.dark-mode .header-tools button[title="Alternar tema"] img {
 }
 
 
-/* =========================================================
-   CARDS
-   ========================================================= */
-
 .form-card,
 .stat-box {
     background: var(--surface);
@@ -565,10 +509,6 @@ body.dark-mode .header-tools button[title="Alternar tema"] img {
     min-width: 0;
 }
 
-
-/* =========================================================
-   ESTATÍSTICAS
-   ========================================================= */
 
 .stat-grid {
     display: grid;
@@ -622,10 +562,6 @@ body.dark-mode .header-tools button[title="Alternar tema"] img {
 }
 
 
-/* =========================================================
-   FILTROS
-   ========================================================= */
-
 .filter-bar {
     display: flex;
     align-items: center;
@@ -649,10 +585,6 @@ body.dark-mode .header-tools button[title="Alternar tema"] img {
     margin: 0;
 }
 
-
-/* =========================================================
-   FORMULÁRIOS
-   ========================================================= */
 
 .form-grid-2 {
     display: grid;
@@ -736,11 +668,6 @@ body.dark-mode input[type="date"],
 body.dark-mode input[type="month"] {
     accent-color: var(--primary);
 }
-
-
-/* =========================================================
-   BOTÕES GERAIS
-   ========================================================= */
 
 button {
     color: #fff;
@@ -3293,4 +3220,130 @@ body.privacidade-ativa .chart-container {
 body.dark-mode .header-tools button[title="Ocultar/Mostrar Valores"] img {
     filter: brightness(0) invert(1);
     opacity: .9;
+}
+
+/* Estilo unificado para Checkboxes */
+.app-checkbox-label {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    cursor: pointer;
+    margin: 0;
+    font-size: 0.83rem;
+    font-weight: 500;
+    color: var(--text-main);
+    line-height: 1.2;
+}
+
+.app-checkbox-label input[type="checkbox"] {
+    width: 18px;
+    height: 18px;
+    min-width: 18px;
+    min-height: 18px;
+    margin: 0;
+    cursor: pointer;
+    accent-color: var(--primary);
+    flex-shrink: 0;
+}
+
+/* =========================================================
+   ESTILOS ESPECÍFICOS DA PÁGINA DE RELATÓRIOS
+   ========================================================= */
+
+.tabela-fluida table.tabela {
+    min-width: 100% !important;
+}
+
+.relatorios-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 18px;
+    width: 100%;
+    flex-wrap: wrap;
+}
+
+.menu-opcoes-container, 
+.menu-personalizar-container {
+    position: relative;
+    display: inline-block;
+}
+
+.btn-toolbar-custom {
+    background: var(--surface-2);
+    color: var(--text-main);
+    border: 1px solid var(--border);
+    padding: 8px 14px;
+    border-radius: 10px;
+    cursor: pointer;
+    font-size: 0.9rem;
+    font-weight: 600;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    transition: var(--transition-fast);
+}
+
+.btn-toolbar-custom:hover {
+    background: var(--surface);
+    border-color: var(--border-strong);
+}
+
+.dropdown-menu-personalizar {
+    display: none;
+    position: absolute;
+    right: 0;
+    top: calc(100% + 6px);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    box-shadow: var(--shadow-lg);
+    z-index: 100;
+    min-width: 240px;
+    padding: 12px;
+    animation: pageIn 0.15s ease both;
+}
+
+.dropdown-menu-personalizar label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.85rem;
+    font-weight: 500;
+    cursor: pointer;
+    padding: 6px 0;
+    color: var(--text-main);
+}
+
+.dropdown-menu-personalizar input[type="checkbox"] {
+    width: 16px;
+    height: 16px;
+    accent-color: var(--primary);
+    cursor: pointer;
+}
+
+@media print {
+    body { 
+        background: #fff !important; 
+        color: #000 !important; 
+    }
+    header, 
+    .app-header, 
+    .relatorios-toolbar, 
+    .menu-opcoes-container, 
+    .menu-personalizar-container { 
+        display: none !important; 
+    }
+    .container { 
+        width: 100% !important; 
+        margin: 0 !important; 
+        padding: 0 !important; 
+    }
+    .form-card { 
+        box-shadow: none !important; 
+        border: 1px solid #ccc !important; 
+        break-inside: avoid; 
+        margin-bottom: 12px !important; 
+    }
 }

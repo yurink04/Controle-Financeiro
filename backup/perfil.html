@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Meu Perfil | Controle Financeiro</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <header class="app-header">
+    <div class="header-inner">
+        <!-- Esquerdo: Controle Financeiro + Perfil/Sync -->
+        <div class="header-left">
+            <div class="brand">
+                <span class="brand-title">Controle Financeiro</span>
+                <span class="brand-subtitle">Gestão Inteligente</span>
+            </div>
+            <div class="header-perfil-sync">
+                <span id="usuarioLogadoNome" class="user-chip"></span>
+                <!-- Ícone de Sincronização ou Status -->
+                <span id="syncStatusIcon" title="Sincronizado" style="cursor: pointer; display: flex; align-items: center;">
+                    <img src="imagens/nuvem.png" alt="Sync" style="width: 22px; height: 22px;">
+                </span>
+            </div>
+        </div>
+
+        <!-- Centro: Navegação Principal -->
+        <nav class="app-nav-center" aria-label="Navegação principal">
+            <a href="dashboard.html">Início</a>
+            <div class="nav-dropdown" style="position: relative;">
+                <a href="#" onclick="event.preventDefault();" style="cursor: pointer;">Cadastros ▾</a>
+                <div class="nav-dropdown-content" style="position: absolute; top: 100%; left: 0;">
+                    <a href="cartoes.html">Cartões</a>
+                    <a href="categorias.html">Categorias</a>
+                    <a href="bens.html">Bens</a>
+                    <a href="financiamentos.html">Financiamentos</a>
+                </div>
+            </div>
+            <a href="lancamentos.html">Lançamentos</a>
+            <a href="central-pagamentos.html">Central de Pagamentos</a>
+            <a href="relatorios.html">Relatórios</a>
+        </nav>
+
+        <!-- Direito: Tema, Configurações, Notificações e Sair separados -->
+        <div class="header-right">
+            <div class="header-tools">
+                <button type="button" onclick="alternarTemaVisual()" title="Alternar tema">
+                    <img src="imagens/modo_escuro.jpg" alt="Tema">
+                </button>
+                <a href="configuracoes.html" title="Configurações">
+                    <img src="imagens/config.png" alt="Configurações">
+                </a>
+                <!-- Ícone de Notificações -->
+                <button type="button" title="Notificações" id="btnNotificacoesHeader">
+                    <img src="imagens/notificacao.png" alt="Notificações" onerror="this.style.display='none'">
+                </button>
+            </div>
+            
+            <div class="header-tools" style="border-left: 1px solid var(--border-color, #e5e7eb); padding-left: 18px;">
+                <a href="index.html" onclick="event.preventDefault(); deslogarSistema()" class="btn-sair-extremo" title="Sair do sistema">
+                    <img src="imagens/exit.png" alt="Sair">
+                </a>
+            </div>
+        </div>
+    </div>
+</header>
+
+    <main class="container">
+        <div class="page-heading">
+            <div>
+                <h2>Meu Perfil e Rendimentos</h2>
+                <p>Gerencie suas informações pessoais, preferências de alertas e acompanhe seu patrimônio.</p>
+            </div>
+        </div>
+
+        <!-- Cards de Resumo de Renda -->
+        <div class="stat-grid" style="margin-bottom: 18px; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));">
+            <div class="stat-box">
+                <span class="stat-label">Renda Fixa Base</span>
+                <div class="stat-value positivo" id="cardRendaFixa">R$ 0,00</div>
+            </div>
+            <div class="stat-box">
+                <span class="stat-label">Média de Ganhos Variáveis</span>
+                <div class="stat-value" id="cardMediaVariavel" style="color: var(--accent);">R$ 0,00</div>
+                <div class="stat-detail">Baseado no histórico de entradas</div>
+            </div>
+            <div class="stat-box">
+                <span class="stat-label">Renda Total Estimada</span>
+                <div class="stat-value positivo" id="cardRendaTotal">R$ 0,00</div>
+            </div>
+        </div>
+
+        <!-- Cards de Indicadores e Atalhos de Vínculos -->
+        <div class="stat-grid" style="margin-bottom: 18px; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));">
+            <div class="stat-box" style="cursor: pointer;" onclick="window.location.href='financiamentos.html'" title="Ver Financiamentos">
+                <span class="stat-label">Financiamentos Ativos</span>
+                <div class="stat-value" id="qtdFinanciamentos" style="color: var(--primary);">0</div>
+                <div class="stat-detail">Clique para gerenciar contratos ↗</div>
+            </div>
+            <div class="stat-box" style="cursor: pointer;" onclick="window.location.href='bens.html'" title="Ver Bens">
+                <span class="stat-label">Bens Patrimoniais</span>
+                <div class="stat-value" id="qtdeBens" style="color: var(--primary);">0</div>
+                <div class="stat-detail">Clique para gerenciar bens ↗</div>
+            </div>
+            <div class="stat-box" style="cursor: pointer;" onclick="window.location.href='cartoes.html'" title="Ver Cartões">
+                <span class="stat-label">Cartões de Crédito</span>
+                <div class="stat-value" id="qtdeCartoes" style="color: var(--primary);">0</div>
+                <div class="stat-detail">Clique para gerenciar cartões ↗</div>
+            </div>
+        </div>
+
+        <!-- Formulário de Edição do Perfil -->
+        <section class="form-card" style="margin-bottom: 18px;">
+            <div class="section-title">
+                <div>
+                    <h2>Atualizar Dados Pessoais</h2>
+                    <p>Modifique seu usuário de acesso, nome próprio, renda fixa, PIN ou solicite atrelamento de parceiro.</p>
+                </div>
+            </div>
+
+            <form id="formMeuPerfil" onsubmit="salvarMeuPerfil(event)">
+                <div class="form-grid-2" style="margin-bottom: 16px;">
+                    <div class="form-group">
+                        <label for="meuUsuarioLogin">Usuário de Acesso (Único)</label>
+                        <input type="text" id="meuUsuarioLogin" required style="width:100%;">
+                    </div>
+                    <div class="form-group">
+                        <label for="meuNome">Nome Próprio (Exibição)</label>
+                        <input type="text" id="meuNome" required style="width:100%;">
+                    </div>
+                </div>
+
+                <div class="form-grid-2" style="margin-bottom: 16px;">
+                    <div class="form-group">
+                        <label for="minhaRendaFixa">Renda Fixa Base (R$)</label>
+                        <input type="number" step="0.01" min="0" id="minhaRendaFixa" placeholder="0.00" required style="width:100%;">
+                    </div>
+                    <div class="form-group">
+                        <label for="meuPinAtual">Alterar PIN Numérico (Opcional)</label>
+                        <input type="password" id="meuPinAtual" maxlength="6" inputmode="numeric" placeholder="Deixe em branco para manter" style="width:100%;">
+                    </div>
+                </div>
+
+                <div class="form-grid-2" style="margin-bottom: 20px;">
+                    <div class="form-group">
+                        <label for="meuParceiro">Solicitar Atrelamento de Parceiro</label>
+                        <select id="meuParceiro" style="width:100%;">
+                            <option value="">Nenhum (Apenas Individual)</option>
+                        </select>
+                        <small class="muted" style="font-size: 0.75rem; display: block; margin-top: 4px;">Requer aprovação na Central de Notificações do parceiro.</small>
+                    </div>
+                </div>
+
+                <!-- Preferências de Notificação de Vencimento -->
+                <div style="border-top: 1px solid var(--border); padding-top: 16px; margin-bottom: 16px;">
+                    <p style="font-weight: 700; margin-bottom: 10px; font-size: 0.88rem; color: var(--text-main);">Preferências de Alertas de Vencimento:</p>
+                    <div class="form-grid-2">
+                        <div class="form-group" style="display: flex; align-items: center; gap: 10px;">
+                            <input type="checkbox" id="notifAtivaVencimento" style="width: 18px; height: 18px; accent-color: var(--primary); cursor: pointer;">
+                            <label for="notifAtivaVencimento" style="cursor: pointer; margin: 0; font-weight: 500;">Receber avisos de contas a vencer</label>
+                        </div>
+                        <div class="form-group">
+                            <label for="notifDiasAntecedencia">Dias de antecedência para o alerta</label>
+                            <input type="number" min="1" max="15" id="notifDiasAntecedencia" value="3" style="width: 100%;">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="btn-row">
+                    <button type="submit" style="background-color: var(--primary);">Salvar Alterações</button>
+                </div>
+            </form>
+        </section>
+
+        <!-- Resumo de Bens Vinculados e Compartilhados -->
+        <section class="form-card">
+            <div class="section-title">
+                <div>
+                    <h2>Meus Bens Patrimoniais e Compartilhados</h2>
+                    <p>Patrimônio próprio e bens em regime de divisão com o parceiro.</p>
+                </div>
+            </div>
+            <div class="tabela-container">
+                <table class="tabela">
+                    <thead>
+                        <tr>
+                            <th>Bem</th>
+                            <th>Tipo</th>
+                            <th>Valor Inicial</th>
+                            <th>Total Investido/Movimentado</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tabelaBensPerfil"></tbody>
+                </table>
+            </div>
+        </section>
+    </main>
+
+    <script src="script.js"></script>
+    <script>
+        verificarAutenticacao();
+        carregarDadosPerfil();
+
+        function carregarDadosPerfil() {
+            const dados = obterDados();
+            const usuarioId = localStorage.getItem('usuarioLogado');
+            const usuario = dados.usuarios.find(u => Number(u.id) === Number(usuarioId));
+            if (!usuario) return;
+
+            document.getElementById('meuUsuarioLogin').value = usuario.usuario || usuario.nome || '';
+            document.getElementById('meuNome').value = usuario.nome || '';
+            document.getElementById('minhaRendaFixa').value = usuario.rendaFixa || 0;
+
+            const prefsNotif = usuario.preferenciasNotificacao || { ativo: true, diasAntecedencia: 3 };
+            document.getElementById('notifAtivaVencimento').checked = prefsNotif.ativo;
+            document.getElementById('notifDiasAntecedencia').value = prefsNotif.diasAntecedencia;
+
+            const selectParceiro = document.getElementById('meuParceiro');
+            selectParceiro.innerHTML = '<option value="">Nenhum (Apenas Individual)</option>';
+            dados.usuarios.forEach(u => {
+                if (Number(u.id) === Number(usuario.id)) return;
+                const opt = document.createElement('option');
+                opt.value = u.id;
+                opt.textContent = u.nome;
+                if (Number(u.id) === Number(usuario.parceiroId)) opt.selected = true;
+                selectParceiro.appendChild(opt);
+            });
+
+            const usuarioIdNum = Number(usuarioId);
+            const financiamentosAtivos = (dados.financiamentos || []).filter(f => Number(f.usuarioId) === usuarioIdNum && f.ativo !== false).length;
+            const cartoesAtivos = (dados.cartoes || []).filter(c => Number(c.usuarioId) === usuarioIdNum && c.ativo !== false).length;
+
+            const bens = dados.bens || [];
+            const bensDoUsuario = bens.filter(b => {
+                const éSeu = Number(b.usuarioId) === usuarioIdNum || !b.usuarioId;
+                const éCompartilhadoComParceiro = b.compartilhado && usuario.parceiroId;
+                return éSeu || éCompartilhadoComParceiro;
+            });
+
+            document.getElementById('qtdFinanciamentos').textContent = financiamentosAtivos;
+            document.getElementById('qtdeBens').textContent = bensDoUsuario.length;
+            document.getElementById('qtdeCartoes').textContent = cartoesAtivos;
+
+            const entradasUsuario = (dados.lancamentos || []).filter(l => Number(l.usuarioId) === usuarioIdNum && l.tipo === 'entrada');
+            const mesesMap = {};
+            entradasUsuario.forEach(e => {
+                const mesAno = (e.vencimento || e.data || '').substring(0, 7);
+                if (mesAno) mesesMap[mesAno] = (mesMap[mesAno] || 0) + Number(e.valor || 0);
+            });
+
+            const valoresMensais = Object.values(mesesMap);
+            const totalGanhosHistorico = valoresMensais.reduce((a, b) => a + b, 0);
+            const qtdMesesComEntrada = valoresMensais.length || 1;
+            const mediaVariavel = totalGanhosHistorico / qtdMesesComEntrada;
+
+            const rendaFixa = Number(usuario.rendaFixa || 0);
+            const rendaTotalEstimada = rendaFixa + mediaVariavel;
+
+            document.getElementById('cardRendaFixa').textContent = `R$ ${rendaFixa.toLocaleString('pt-BR', {minimumFractionDigits: 2})}`;
+            document.getElementById('cardMediaVariavel').textContent = `R$ ${mediaVariavel.toLocaleString('pt-BR', {minimumFractionDigits: 2})}`;
+            document.getElementById('cardRendaTotal').textContent = `R$ ${rendaTotalEstimada.toLocaleString('pt-BR', {minimumFractionDigits: 2})}`;
+
+            const tbodyBens = document.getElementById('tabelaBensPerfil');
+            tbodyBens.innerHTML = '';
+            
+            if (bensDoUsuario.length === 0) {
+                tbodyBens.innerHTML = `<tr><td colspan="4" style="text-align: center;">Nenhum bem vinculado ou compartilhado.</td></tr>`;
+            } else {
+                bensDoUsuario.forEach(b => {
+                    const gastoBem = (dados.lancamentos || [])
+                        .filter(l => Number(l.bemId) === Number(b.id) && l.tipo === 'saida')
+                        .reduce((acc, l) => acc + Number(l.valor), 0);
+
+                    const tr = document.createElement('tr');
+                    tr.innerHTML = `
+                        <td><strong>${b.nome}</strong> ${b.compartilhado ? '<span style="font-size:0.7rem; background:var(--primary-soft); color:var(--primary); padding:2px 6px; border-radius:4px; font-weight:600; margin-left:6px;">Compartilhado</span>' : ''}</td>
+                        <td>${b.tipo.toUpperCase()}</td>
+                        <td>R$ ${Number(b.valor || 0).toLocaleString('pt-BR', {minimumFractionDigits: 2})}</td>
+                        <td class="negativo">R$ ${gastoBem.toLocaleString('pt-BR', {minimumFractionDigits: 2})}</td>
+                    `;
+                    tbodyBens.appendChild(tr);
+                });
+            }
+        }
+
+        async function salvarMeuPerfil(event) {
+            event.preventDefault();
+            const dados = obterDados();
+            const usuarioId = localStorage.getItem('usuarioLogado');
+            const usuario = dados.usuarios.find(u => Number(u.id) === Number(usuarioId));
+            if (!usuario) return;
+
+            const novoUsuarioLogin = document.getElementById('meuUsuarioLogin').value.trim();
+
+            // Valida unicidade estrita do usuário de login
+            const usuarioExistente = dados.usuarios.find(u => 
+                normalizarTexto(u.usuario || u.nome) === normalizarTexto(novoUsuarioLogin) && Number(u.id) !== Number(usuarioId)
+            );
+            if (usuarioExistente) {
+                await mostrarAlertaModal("Este nome de usuário já está em uso por outra conta. Escolha um usuário único.");
+                return;
+            }
+
+            usuario.usuario = novoUsuarioLogin;
+            usuario.nome = document.getElementById('meuNome').value.trim();
+            usuario.rendaFixa = parseFloat(document.getElementById('minhaRendaFixa').value) || 0;
+            
+            usuario.preferenciasNotificacao = {
+                ativo: document.getElementById('notifAtivaVencimento').checked,
+                diasAntecedencia: parseInt(document.getElementById('notifDiasAntecedencia').value) || 3
+            };
+
+            const novoParceiroId = document.getElementById('meuParceiro').value ? Number(document.getElementById('meuParceiro').value) : null;
+
+            if (novoParceiroId !== usuario.parceiroId) {
+                if (novoParceiroId) {
+                    dados.notificacoes = dados.notificacoes || [];
+                    dados.notificacoes.push({
+                        id: gerarId('notif'),
+                        usuarioDestinoId: novoParceiroId,
+                        remetenteId: usuario.id,
+                        tipo: 'solicitacao_parceiro',
+                        titulo: 'Solicitação de Atrelamento 🤝',
+                        mensagem: `${usuario.nome} solicitou atrelar você como parceiro no sistema financeiro.`,
+                        lida: false,
+                        statusAprovacao: 'pendente',
+                        createdAt: new Date().toISOString()
+                    });
+
+                    await mostrarAlertaModal("Solicitação de parceiro enviada! O atrelamento será efetivado após a aprovação na Central de Notificações do parceiro.");
+                } else {
+                    usuario.parceiroId = null;
+                    await mostrarAlertaModal("Vínculo de parceiro removido.");
+                }
+            }
+
+            const novoPin = document.getElementById('meuPinAtual').value.trim();
+            if (novoPin) {
+                if (novoPin.length < 4) {
+                    await mostrarAlertaModal("O PIN precisa ter pelo menos 4 dígitos.");
+                    return;
+                }
+                usuario.pin = novoPin;
+            }
+
+            registrarLogInterno(dados, "ATUALIZAÇÃO PERFIL", `Usuário ${usuario.usuario} (${usuario.nome}) atualizou suas informações pessoais.`);
+            await salvarDados(dados);
+            carregarDadosPerfil();
+            await mostrarAlertaModal("Perfil e usuário atualizados com sucesso!");
+        }
+    </script>
+</body>
+</html>

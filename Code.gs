@@ -1,7 +1,13 @@
 var ss = SpreadsheetApp.getActiveSpreadsheet();
 
-// Use Script Properties em produção. O fallback mantém compatibilidade imediata.
-var SENHA_MESTRA_API = PropertiesService.getScriptProperties().getProperty('SENHA_MESTRA_API') || 'PLANOF1NALPRAS4AIRD@MERDA';
+// Use EXCLUSIVAMENTE Script Properties. Vá em Configurações do Projeto > Propriedades do script e adicione.
+var SENHA_MESTRA_API = PropertiesService.getScriptProperties().getProperty('SENHA_MESTRA_API');
+var SENHA_ADMIN = PropertiesService.getScriptProperties().getProperty('SENHA_ADMIN');
+
+// Trava de segurança: se as propriedades não estiverem configuradas, o script para.
+if (!SENHA_MESTRA_API || !SENHA_ADMIN) {
+  throw new Error("ATENÇÃO: Propriedades do script (SENHA_MESTRA_API e/ou SENHA_ADMIN) não configuradas no Apps Script.");
+}
 
 // IMPORTANTE: estas listas precisam refletir EXATAMENTE os campos que o
 // front-end (script.js / *.html) realmente grava em cada objeto. Um campo
@@ -26,7 +32,7 @@ var SCHEMA = {
     'formaPagamento', 'cartaoId', 'vencimento', 'recorrencia',
     'parcelaAtual', 'totalParcelas', 'observacao', 'horaExtra',
     'servicoEssencial', 'pago', 'status', 'dataCompra', 'dataPagamento',
-    'usuarioPagamentoId', 'financiamentoId', 'parcelamentoId', 'bemId',
+    'usuarioPagamentoId', 'financiamentoId', 'parcelamentoId', 'bemId', 'escopo',
     'createdAt', 'updatedAt'
   ],
 
@@ -81,6 +87,18 @@ function respostaJson(obj) {
 
 function tokenValido(token) {
   return token && String(token) === String(SENHA_MESTRA_API);
+}
+
+var CHAVE_REVISAO_DADOS = 'DADOS_REVISAO';
+
+function obterRevisaoDados() {
+  var valor = PropertiesService.getScriptProperties().getProperty(CHAVE_REVISAO_DADOS);
+  var revisao = Number(valor);
+  return Number.isFinite(revisao) && revisao >= 0 ? revisao : 0;
+}
+
+function definirRevisaoDados(revisao) {
+  PropertiesService.getScriptProperties().setProperty(CHAVE_REVISAO_DADOS, String(revisao));
 }
 
 function doGet(e) {
@@ -143,6 +161,15 @@ function doPost(e) {
       });
     }
 
+    if (action === 'verificarAdmin') {
+      var senhaInformada = data.senha == null ? '' : String(data.senha);
+      var autorizado = senhaInformada !== '' && senhaInformada === String(SENHA_ADMIN);
+      return respostaJson({
+        status: 'sucesso',
+        autorizado: autorizado
+      });
+    }
+
     if (action !== 'salvarDados') {
       return respostaJson({
         status: 'erro',
@@ -160,17 +187,33 @@ function doPost(e) {
     lock.waitLock(15000);
 
     try {
+      var revisaoServidor = obterRevisaoDados();
+      var revisaoCliente = Number(data.dados._revision);
+      if (!Number.isFinite(revisaoCliente)) revisaoCliente = 0;
+
+      if (revisaoCliente !== revisaoServidor) {
+        return respostaJson({
+          status: 'conflito',
+          mensagem: 'Os dados do servidor foram alterados por outro utilizador. Atualize os dados antes de salvar novamente.',
+          _revision: revisaoServidor
+        });
+      }
+
+      var novaRevisao = revisaoServidor + 1;
+      data.dados._revision = novaRevisao;
       atualizarTabelas(data.dados);
+      definirRevisaoDados(novaRevisao);
       SpreadsheetApp.flush();
+
+      return respostaJson({
+        status: 'sucesso',
+        mensagem: 'Dados salvos com sucesso',
+        _revision: novaRevisao,
+        dataHora: new Date().toISOString()
+      });
     } finally {
       lock.releaseLock();
     }
-
-    return respostaJson({
-      status: 'sucesso',
-      mensagem: 'Dados salvos com sucesso',
-      dataHora: new Date().toISOString()
-    });
   } catch (err) {
     try {
       lock.releaseLock();
@@ -185,6 +228,7 @@ function doPost(e) {
 
 function retornarDadosCompletos() {
   var dados = {
+    _revision: obterRevisaoDados(),
     usuarios: lerAba('usuarios'),
     categorias: lerAba('categorias'),
     cartoes: lerAba('cartoes'),
@@ -217,7 +261,6 @@ function lerAba(nomeAba) {
 
   for (var i = 1; i < rows.length; i++) {
     var row = rows[i];
-
     var possuiConteudo = row.some(function(val) {
       return val !== '' && val !== null;
     });
@@ -225,7 +268,6 @@ function lerAba(nomeAba) {
     if (!possuiConteudo) continue;
 
     var obj = {};
-
     for (var j = 0; j < headers.length; j++) {
       var header = headers[j];
       if (!header) continue;
@@ -296,12 +338,10 @@ function escreverAba(nomeAba, dadosArray, headers) {
         var campo = headers[j];
         var val = registro[campo];
 
-        // Mantém células vazias como string vazia.
         if (val === undefined || val === null) {
           val = '';
         }
 
-        // Objetos/arrays extras não devem quebrar a escrita da planilha.
         if (typeof val === 'object' && !(val instanceof Date)) {
           val = JSON.stringify(val);
         }
@@ -317,6 +357,5 @@ function escreverAba(nomeAba, dadosArray, headers) {
     .getRange(1, 1, matrizParaGravar.length, headers.length)
     .setValues(matrizParaGravar);
 
-  // Mantém os cabeçalhos sempre disponíveis para navegação na planilha.
   sheet.setFrozenRows(1);
 }

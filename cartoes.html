@@ -5,78 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Cartões | Controle Financeiro</title>
     <link rel="stylesheet" href="style.css">
-    <style>
-        .checkbox-label {
-            display: flex !important;
-            align-items: center !important;
-            gap: 10px !important;
-            cursor: pointer;
-            margin: 0 !important;
-            font-size: 0.85rem !important;
-            font-weight: 600 !important;
-            color: var(--text-main) !important;
-        }
-        .checkbox-label input[type="checkbox"] {
-            width: 18px !important;
-            height: 18px !important;
-            accent-color: var(--primary);
-            cursor: pointer;
-        }
-    </style>
 </head>
 <body>
-<header class="app-header">
-    <div class="header-inner">
-        <div class="header-left">
-            <div class="brand">
-                <span class="brand-title">Controle Financeiro</span>
-                <span class="brand-subtitle">Gestão Inteligente</span>
-            </div>
-            <div class="header-perfil-sync">
-                <span id="usuarioLogadoNome" class="user-chip"></span>
-                <span id="syncStatusIcon" title="Sincronizado" style="cursor: pointer; display: flex; align-items: center;">
-                    <img src="imagens/nuvem.png" alt="Sync" style="width: 22px; height: 22px;">
-                </span>
-            </div>
-        </div>
-
-        <nav class="app-nav-center" aria-label="Navegação principal">
-            <a href="dashboard.html">Início</a>
-            <div class="nav-dropdown" style="position: relative;">
-                <a href="#" onclick="event.preventDefault();" style="cursor: pointer;">Cadastros ▾</a>
-                <div class="nav-dropdown-content" style="position: absolute; top: 100%; left: 0;">
-                    <a href="cartoes.html">Cartões</a>
-                    <a href="categorias.html">Categorias</a>
-                    <a href="bens.html">Bens</a>
-                    <a href="financiamentos.html">Financiamentos</a>
-                </div>
-            </div>
-            <a href="lancamentos.html">Lançamentos</a>
-            <a href="central-pagamentos.html">Central de Pagamentos</a>
-            <a href="relatorios.html">Relatórios</a>
-        </nav>
-
-        <div class="header-right">
-            <div class="header-tools">
-                <button type="button" onclick="alternarTemaVisual()" title="Alternar tema">
-                    <img src="imagens/modo_escuro.jpg" alt="Tema">
-                </button>
-                <a href="configuracoes.html" title="Configurações">
-                    <img src="imagens/config.png" alt="Configurações">
-                </a>
-                <button type="button" title="Notificações" id="btnNotificacoesHeader">
-                    <img src="imagens/notificacao.png" alt="Notificações" onerror="this.style.display='none'">
-                </button>
-            </div>
-            
-            <div class="header-tools" style="border-left: 1px solid var(--border-color, #e5e7eb); padding-left: 18px;">
-                <a href="index.html" onclick="event.preventDefault(); deslogarSistema()" class="btn-sair-extremo" title="Sair do sistema">
-                    <img src="imagens/exit.png" alt="Sair">
-                </a>
-            </div>
-        </div>
-    </div>
-</header>
 
     <main class="container">
         <div class="page-heading"><div><h2>Cartões</h2><p>Acompanhe limites de crédito e saldos de benefícios (VR/VA)[cite: 41].</p></div></div>
@@ -122,8 +52,13 @@
 
     <script src="script.js"></script>
     <script>
-        verificarAutenticacao();
-        renderizarCartoes();
+        document.addEventListener('DOMContentLoaded', async () => {
+            injetarHeader();
+            const autenticado = await verificarAutenticacao();
+            if (autenticado) {
+                renderizarCartoes();
+            }
+        });
 
         function alternarCamposBeneficio() {
             const isBeneficio = document.getElementById('isBeneficioCartao').checked;
@@ -149,11 +84,12 @@
             event.preventDefault();
             const idEdit = document.getElementById('cartaoIdEdit').value;
             const nome = document.getElementById('nomeCartao').value.trim();
-            const limite = parseFloat(document.getElementById('limiteCartao').value);
+            // Correção: Protegido contra 'NaN'
+            const limite = numeroSeguro(document.getElementById('limiteCartao').value);
             const isBeneficio = document.getElementById('isBeneficioCartao').checked;
             
-            const fechamento = isBeneficio ? null : parseInt(document.getElementById('fechamentoCartao').value, 10);
-            const vencimento = isBeneficio ? null : parseInt(document.getElementById('vencimentoCartao').value, 10);
+            const fechamento = isBeneficio ? null : inteiroSeguro(document.getElementById('fechamentoCartao').value);
+            const vencimento = isBeneficio ? null : inteiroSeguro(document.getElementById('vencimentoCartao').value);
 
             const dados = obterDados();
             dados.cartoes = dados.cartoes || [];
@@ -197,9 +133,7 @@
             gridCredito.innerHTML = '';
             gridBeneficio.innerHTML = '';
 
-            // Utiliza a função de permissão para restringir ou exibir cartões permitidos ao usuário/parceiro
             const cartoesPermitidos = filtrarDadosPorPermissao(dados.cartoes || [], dados, 'casal').filter(c => c.ativo !== false);
-            
             const creditos = cartoesPermitidos.filter(c => !c.isBeneficio);
             const beneficios = cartoesPermitidos.filter(c => c.isBeneficio);
 

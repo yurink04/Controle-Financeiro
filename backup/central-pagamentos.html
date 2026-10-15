@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Central de Pagamentos | Controle Financeiro</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <header class="app-header">
+        <div class="header-inner">
+            <div class="header-left">
+                <div class="brand">
+                    <span class="brand-title">Controle Financeiro</span>
+                    <span class="brand-subtitle">Gestão Inteligente</span>
+                </div>
+                <div class="header-perfil-sync">
+                    <span id="usuarioLogadoNome" class="user-chip"></span>
+                    <span id="syncStatusIcon" title="Sincronizado" style="cursor: pointer; display: flex; align-items: center;">
+                        <img src="imagens/nuvem.png" alt="Sync" style="width: 22px; height: 22px;">
+                    </span>
+                </div>
+            </div>
+
+            <nav class="app-nav-center" aria-label="Navegação principal">
+                <a href="dashboard.html">Início</a>
+                <div class="nav-dropdown" style="position: relative;">
+                    <a href="#" onclick="event.preventDefault();" style="cursor: pointer;">Cadastros ▾</a>
+                    <div class="nav-dropdown-content" style="position: absolute; top: 100%; left: 0;">
+                        <a href="cartoes.html">Cartões</a>
+                        <a href="categorias.html">Categorias</a>
+                        <a href="bens.html">Bens</a>
+                        <a href="financiamentos.html">Financiamentos</a>
+                    </div>
+                </div>
+                <a href="lancamentos.html">Lançamentos</a>
+                <a href="central-pagamentos.html">Central de Pagamentos</a>
+                <a href="relatorios.html">Relatórios</a>
+            </nav>
+
+            <div class="header-right">
+                <div class="header-tools">
+                    <button type="button" onclick="alternarPrivacidade()" title="Ocultar/Mostrar Valores" id="btnPrivacidade">
+                        <img src="imagens/esconder.png" alt="Privacidade" id="imgPrivacidade">
+                    </button>
+                    <button type="button" onclick="alternarTemaVisual()" title="Alternar tema">
+                        <img src="imagens/modo_escuro.jpg" alt="Tema">
+                    </button>
+                    <a href="configuracoes.html" title="Configurações">
+                        <img src="imagens/config.png" alt="Configurações">
+                    </a>
+                    <button type="button" title="Notificações" id="btnNotificacoesHeader">
+                        <img src="imagens/notificacao.png" alt="Notificações" onerror="this.style.display='none'">
+                    </button>
+                </div>
+                
+                <div class="header-tools" style="border-left: 1px solid var(--border-color, #e5e7eb); padding-left: 18px;">
+                    <a href="index.html" onclick="event.preventDefault(); deslogarSistema()" class="btn-sair-extremo" title="Sair do sistema">
+                        <img src="imagens/exit.png" alt="Sair">
+                    </a>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <main class="container">
+        <div class="page-heading">
+            <div>
+                <h2>Central de Pagamentos</h2>
+                <p>Gerencie suas contas por mês/competência ou acompanhe o agrupamento de compras parceladas.</p>
+            </div>
+            <div class="toolbar-actions" style="display: flex; gap: 8px;">
+                <button type="button" id="btnVisaoParcelada" class="btn-secundario active" onclick="mudarVisaoPagamentos('parcelada')">Compra Parcelada</button>
+                <button type="button" id="btnVisaoCompetencia" class="btn-secundario" onclick="mudarVisaoPagamentos('competencia')">Mês / Competência</button>
+            </div>
+        </div>
+
+        <section class="stat-grid">
+            <div class="stat-box"><div class="stat-label">Total do Período</div><div class="stat-value" id="total-mes">R$ 0,00</div></div>
+            <div class="stat-box"><div class="stat-label">Pago</div><div class="stat-value positivo" id="total-pago">R$ 0,00</div></div>
+            <div class="stat-box"><div class="stat-label">Pendente</div><div class="stat-value negativo" id="total-pendente">R$ 0,00</div></div>
+        </section>
+
+        <section class="form-card" style="margin-top: 16px;">
+            <div class="section-title">
+                <div>
+                    <h2 id="tituloSecaoPagamentos">Compras Parceladas</h2>
+                    <p id="subtituloSecaoPagamentos">Acompanhe o andamento e os valores consolidados de cada compra parcelada.</p>
+                </div>
+                <div class="filter-group" id="blocoFiltroMesCompetencia" style="display: none;">
+                    <label for="filtroMesCompetencia">Mês Ref.</label>
+                    <input type="month" id="filtroMesCompetencia" onchange="carregarCentralPagamentos()" style="width: auto;">
+                </div>
+            </div>
+            <div class="tabela-container">
+                <table class="tabela">
+                    <thead>
+                        <tr id="cabecalhoTabelaPagamentos">
+                            <th>Descrição / Compra</th>
+                            <th>Parcelas</th>
+                            <th>Valor Total / Parcela</th>
+                            <th>Status</th>
+                            <th>Ações</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tabela-pagamentos-body">
+                    </tbody>
+                </table>
+            </div>
+        </section>
+    </main>
+
+    <script src="script.js"></script>
+    <script>
+        verificarAutenticacao();
+        let visaoAtualPagamentos = 'parcelada';
+
+        function mudarVisaoPagamentos(visao) {
+            visaoAtualPagamentos = visao;
+            const btnP = document.getElementById('btnVisaoParcelada');
+            if (btnP) btnP.classList.toggle('active', visao === 'parcelada');
+            const btnC = document.getElementById('btnVisaoCompetencia');
+            if (btnC) btnC.classList.toggle('active', visao === 'competencia');
+            
+            const blocoMes = document.getElementById('blocoFiltroMesCompetencia');
+            const filtroMesComp = document.getElementById('filtroMesCompetencia');
+            const titSecao = document.getElementById('tituloSecaoPagamentos');
+            const subSecao = document.getElementById('subtituloSecaoPagamentos');
+
+            if (visao === 'competencia') {
+                if (blocoMes) blocoMes.style.display = 'block';
+                if (filtroMesComp && !filtroMesComp.value) {
+                    filtroMesComp.value = dataLocalYYYYMMDD().slice(0, 7);
+                }
+                if (titSecao) titSecao.textContent = 'Contas por Mês / Competência';
+                if (subSecao) subSecao.textContent = 'Listagem de lançamentos e faturas do mês selecionado.';
+            } else {
+                if (blocoMes) blocoMes.style.display = 'none';
+                if (titSecao) titSecao.textContent = 'Compras Parceladas';
+                if (subSecao) subSecao.textContent = 'Acompanhe o andamento e os valores consolidados de cada compra parcelada.';
+            }
+            carregarCentralPagamentos();
+        }
+
+        function carregarCentralPagamentos() {
+            const dados = obterDados();
+            const tbody = document.getElementById('tabela-pagamentos-body');
+            const cabecalho = document.getElementById('cabecalhoTabelaPagamentos');
+            if (!tbody) return;
+            tbody.innerHTML = '';
+
+            let totalGeral = 0, totalPago = 0, totalPendente = 0;
+            
+            // APLICAÇÃO DO FILTRO DE PERMISSÃO / COMPARTILHAMENTO
+            const lancamentosSaida = filtrarDadosPorPermissao(dados.lancamentos || [], dados, 'casal').filter(l => l.tipo === 'saida');
+
+            if (visaoAtualPagamentos === 'parcelada') {
+                if (cabecalho) {
+                    cabecalho.innerHTML = `
+                        <th>Descrição da Compra</th>
+                        <th>Forma / Detalhe</th>
+                        <th>Progresso</th>
+                        <th>Valor Parcela</th>
+                        <th>Valor Total</th>
+                        <th>Ações</th>
+                    `;
+                }
+
+                const grupos = {};
+                lancamentosSaida.forEach(l => {
+                    if (Number(l.totalParcelas || 1) > 1 || l.parcelamentoId) {
+                        const chave = l.parcelamentoId || descricaoBaseParcelamento(l.descricao || '');
+                        if (!grupos[chave]) {
+                            grupos[chave] = { descricao: descricaoBaseParcelamento(l.descricao || ''), parcelas: [] };
+                        }
+                        grupos[chave].parcelas.push(l);
+                    }
+                });
+
+                const chaves = Object.keys(grupos);
+                if (chaves.length === 0) {
+                    tbody.innerHTML = `<tr><td colspan="6" style="text-align: center;">Nenhuma compra parcelada encontrada.</td></tr>`;
+                } else {
+                    chaves.forEach(chave => {
+                        const grupo = grupos[chave];
+                        const totalP = grupo.parcelas.length;
+                        const pagas = grupo.parcelas.filter(p => p.pago).length;
+                        const primeiroLanc = grupo.parcelas[0];
+                        const valorParcela = Number(primeiroLanc?.valor || 0);
+                        const valorTotalCompra = grupo.parcelas.reduce((acc, p) => acc + Number(p.valor || 0), 0);
+                        const valorPendenteGrupo = grupo.parcelas.filter(p => !p.pago).reduce((acc, p) => acc + Number(p.valor || 0), 0);
+
+                        totalGeral += valorTotalCompra;
+                        totalPago += grupo.parcelas.filter(p => p.pago).reduce((acc, p) => acc + Number(p.valor || 0), 0);
+                        totalPendente += valorPendenteGrupo;
+
+                        let formaTexto = 'Boleto / Conta';
+                        const fPag = primeiroLanc?.formaPagamento;
+                        if (fPag === 'CARTAO') {
+                            const cartaoObj = (dados.cartoes || []).find(c => String(c.id) === String(primeiroLanc.cartaoId));
+                            formaTexto = `Cartão: ${cartaoObj ? cartaoObj.nome : 'Crédito'}`;
+                        } else if (fPag === 'DINHEIRO') {
+                            formaTexto = 'Dinheiro / Pix';
+                        } else if (fPag === 'FIXO') {
+                            formaTexto = 'Conta fixa';
+                        } else if (fPag === 'BOLETO') {
+                            formaTexto = 'Boleto / Conta';
+                        }
+
+                        const tr = document.createElement('tr');
+                        tr.innerHTML = `
+                            <td><strong>${escaparHTML(grupo.descricao)}</strong></td>
+                            <td><span class="badge-forma">${escaparHTML(formaTexto)}</span></td>
+                            <td>${pagas} / ${totalP} (${totalP > 0 ? Math.round((pagas/totalP)*100) : 0}%)</td>
+                            <td>R$ ${valorParcela.toLocaleString('pt-BR', {minimumFractionDigits: 2})}</td>
+                            <td>R$ ${valorTotalCompra.toLocaleString('pt-BR', {minimumFractionDigits: 2})}</td>
+                            <td>
+                                <button type="button" onclick="window.location.href='detalhes-central-parcelada.html?id=${Number(primeiroLanc.id)}'" class="btn-acao-icone visualizar" title="Detalhes"><img src="imagens/visualizar.png" alt="Detalhes"></button>
+                                <button type="button" onclick="window.location.href='editar-lancamento.html?id=${Number(primeiroLanc.id)}&returnUrl=central-pagamentos.html'" class="btn-acao-icone editar" title="Editar"><img src="imagens/editar.png" alt="Editar"></button>
+                            </td>
+                        `;
+                        tbody.appendChild(tr);
+                    });
+                }
+            } else {
+                if (cabecalho) {
+                    cabecalho.innerHTML = `
+                        <th>Descrição</th>
+                        <th>Vencimento</th>
+                        <th>Categoria</th>
+                        <th>Forma / Pagamento</th>
+                        <th>Valor</th>
+                        <th>Status</th>
+                        <th>Ações</th>
+                    `;
+                }
+
+                const filtroMesCompEl = document.getElementById('filtroMesCompetencia');
+                const mesAno = filtroMesCompEl ? filtroMesCompEl.value : '';
+                const filtradosMes = lancamentosSaida.filter(l => l.vencimento && l.vencimento.startsWith(mesAno));
+
+                if (filtradosMes.length === 0) {
+                    tbody.innerHTML = `<tr><td colspan="7" style="text-align: center;">Nenhum lançamento encontrado para este mês.</td></tr>`;
+                } else {
+                    filtradosMes.forEach(l => {
+                        const valor = Number(l.valor || 0);
+                        totalGeral += valor;
+                        if (l.pago) totalPago += valor; else totalPendente += valor;
+
+                        const cat = (dados.categorias || []).find(c => String(c.id) === String(l.categoriaId));
+                        const statusTexto = l.pago ? 'Pago' : 'Pendente';
+                        const statusClasse = l.pago ? 'status-pago' : 'status-pendente';
+
+                        let formaTexto = 'Boleto / Conta';
+                        if (l.formaPagamento === 'CARTAO') {
+                            const cartaoObj = (dados.cartoes || []).find(c => String(c.id) === String(l.cartaoId));
+                            formaTexto = `Cartão: ${cartaoObj ? cartaoObj.nome : 'Crédito'}`;
+                        } else if (l.formaPagamento === 'DINHEIRO') {
+                            formaTexto = 'Dinheiro / Pix';
+                        } else if (l.formaPagamento === 'FIXO') {
+                            formaTexto = 'Conta fixa';
+                        } else if (l.formaPagamento === 'BOLETO') {
+                            formaTexto = 'Boleto / Conta';
+                        }
+
+                        const tr = document.createElement('tr');
+                        tr.innerHTML = `
+                            <td><strong>${escaparHTML(l.descricao || '')}</strong></td>
+                            <td>${escaparHTML(formatarDataBR(l.vencimento || ''))}</td>
+                            <td>${escaparHTML(cat?.nome || 'Geral')}</td>
+                            <td>${escaparHTML(formaTexto)}</td>
+                            <td>R$ ${valor.toLocaleString('pt-BR', {minimumFractionDigits: 2})}</td>
+                            <td><span class="status-badge ${statusClasse}">${statusTexto}</span></td>
+                            <td>
+                                <button type="button" onclick="alternarStatusPagamentoCentral(${l.id})" class="btn-acao-icone ${l.pago ? 'desfazer' : 'pagar'}" title="Alterar status">${l.pago ? '↩' : '✓'}</button>
+                                <button type="button" onclick="window.location.href='editar-lancamento.html?id=${Number(l.id)}&returnUrl=central-pagamentos.html'" class="btn-acao-icone editar" title="Editar"><img src="imagens/editar.png" alt="Editar"></button>
+                            </td>
+                        `;
+                        tbody.appendChild(tr);
+                    });
+                }
+            }
+
+            const elTotalMes = document.getElementById('total-mes');
+            if (elTotalMes) elTotalMes.textContent = `R$ ${totalGeral.toLocaleString('pt-BR', {minimumFractionDigits: 2})}`;
+            const elTotalPago = document.getElementById('total-pago');
+            if (elTotalPago) elTotalPago.textContent = `R$ ${totalPago.toLocaleString('pt-BR', {minimumFractionDigits: 2})}`;
+            const elTotalPendente = document.getElementById('total-pendente');
+            if (elTotalPendente) elTotalPendente.textContent = `R$ ${totalPendente.toLocaleString('pt-BR', {minimumFractionDigits: 2})}`;
+        }
+
+        async function alternarStatusPagamentoCentral(id) {
+            const ok = await alternarStatusPagamento(id);
+            if (ok) carregarCentralPagamentos();
+        }
+
+        carregarCentralPagamentos();
+    </script>
+</body>
+</html>

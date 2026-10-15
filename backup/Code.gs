@@ -3,14 +3,22 @@ var ss = SpreadsheetApp.getActiveSpreadsheet();
 // Use Script Properties em produção. O fallback mantém compatibilidade imediata.
 var SENHA_MESTRA_API = PropertiesService.getScriptProperties().getProperty('SENHA_MESTRA_API') || 'PLANOF1NALPRAS4AIRD@MERDA';
 
+// IMPORTANTE: estas listas precisam refletir EXATAMENTE os campos que o
+// front-end (script.js / *.html) realmente grava em cada objeto. Um campo
+// usado no app mas ausente aqui é descartado silenciosamente ao sincronizar.
 var SCHEMA = {
-  usuarios: ['id', 'nome', 'senha', 'pin', 'ativo', 'rendaFixa', 'parceiroId', 'permissoes'],
+  usuarios: [
+    'id', 'usuario', 'nome', 'pin', 'rendaFixa', 'parceiroId', 'ativo',
+    'permissoes', 'preferenciasNotificacao'
+  ],
 
-  categorias: ['id', 'nome', 'tipo'],
+  categorias: ['id', 'nome', 'tipo', 'classificacao', 'criadopor'],
 
+  // Campos alinhados com cartoes.html (fonte real dos dados de cartão):
+  // "limite" (não limiteTotal) e "isBeneficio" (booleano, não tipoCartao).
   cartoes: [
-    'id', 'usuarioId', 'nome', 'limiteTotal', 'fechamento', 'vencimento',
-    'tipoCartao', 'ativo', 'createdAt', 'updatedAt'
+    'id', 'usuarioId', 'nome', 'limite', 'fechamento', 'vencimento',
+    'isBeneficio', 'ativo', 'createdAt', 'updatedAt'
   ],
 
   lancamentos: [
@@ -18,23 +26,27 @@ var SCHEMA = {
     'formaPagamento', 'cartaoId', 'vencimento', 'recorrencia',
     'parcelaAtual', 'totalParcelas', 'observacao', 'horaExtra',
     'servicoEssencial', 'pago', 'status', 'dataCompra', 'dataPagamento',
-    'usuarioPagamentoId', 'financiamentoId', 'parcelamentoId',
+    'usuarioPagamentoId', 'financiamentoId', 'parcelamentoId', 'bemId',
     'createdAt', 'updatedAt'
   ],
 
   financiamentos: [
-    'id', 'usuarioId', 'nome', 'totalMeses', 'mesesPagos',
+    'id', 'usuarioId', 'nome', 'bemId', 'totalMeses', 'mesesPagos',
     'valorParcela', 'categoriaId', 'primeiroVencimento', 'ativo',
     'createdAt', 'updatedAt'
   ],
 
+  // Antes ausente do schema: patrimônio nunca era gravado na planilha.
   bens: [
-    'id', 'nome', 'tipo', 'valor', 'observacao', 'ativo'
+    'id', 'usuarioId', 'nome', 'tipo', 'valor', 'identificadorEspecifico',
+    'statusBem', 'compartilhado', 'ativo', 'createdAt'
   ],
 
+  // Antes ausente do schema: notificações/atrelamento de parceiro nunca
+  // eram gravadas na planilha (perdidas ao restaurar de um backup).
   notificacoes: [
-    'id', 'usuarioDestinoId', 'remetenteId', 'tipo', 'titulo', 
-    'mensagem', 'lida', 'statusAprovacao', 'createdAt'
+    'id', 'usuarioDestinoId', 'remetenteId', 'tipo', 'titulo', 'mensagem',
+    'lida', 'statusAprovacao', 'createdAt'
   ],
 
   logs: [
@@ -284,10 +296,12 @@ function escreverAba(nomeAba, dadosArray, headers) {
         var campo = headers[j];
         var val = registro[campo];
 
+        // Mantém células vazias como string vazia.
         if (val === undefined || val === null) {
           val = '';
         }
 
+        // Objetos/arrays extras não devem quebrar a escrita da planilha.
         if (typeof val === 'object' && !(val instanceof Date)) {
           val = JSON.stringify(val);
         }
@@ -303,5 +317,6 @@ function escreverAba(nomeAba, dadosArray, headers) {
     .getRange(1, 1, matrizParaGravar.length, headers.length)
     .setValues(matrizParaGravar);
 
+  // Mantém os cabeçalhos sempre disponíveis para navegação na planilha.
   sheet.setFrozenRows(1);
 }
