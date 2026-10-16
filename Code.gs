@@ -1,17 +1,12 @@
 var ss = SpreadsheetApp.getActiveSpreadsheet();
 
-// Use EXCLUSIVAMENTE Script Properties. Vá em Configurações do Projeto > Propriedades do script e adicione.
 var SENHA_MESTRA_API = PropertiesService.getScriptProperties().getProperty('SENHA_MESTRA_API');
 var SENHA_ADMIN = PropertiesService.getScriptProperties().getProperty('SENHA_ADMIN');
 
-// Trava de segurança: se as propriedades não estiverem configuradas, o script para.
 if (!SENHA_MESTRA_API || !SENHA_ADMIN) {
   throw new Error("ATENÇÃO: Propriedades do script (SENHA_MESTRA_API e/ou SENHA_ADMIN) não configuradas no Apps Script.");
 }
 
-// IMPORTANTE: estas listas precisam refletir EXATAMENTE os campos que o
-// front-end (script.js / *.html) realmente grava em cada objeto. Um campo
-// usado no app mas ausente aqui é descartado silenciosamente ao sincronizar.
 var SCHEMA = {
   usuarios: [
     'id', 'usuario', 'nome', 'pin', 'rendaFixa', 'parceiroId', 'ativo',
@@ -20,8 +15,6 @@ var SCHEMA = {
 
   categorias: ['id', 'nome', 'tipo', 'classificacao', 'criadopor'],
 
-  // Campos alinhados com cartoes.html (fonte real dos dados de cartão):
-  // "limite" (não limiteTotal) e "isBeneficio" (booleano, não tipoCartao).
   cartoes: [
     'id', 'usuarioId', 'nome', 'limite', 'fechamento', 'vencimento',
     'isBeneficio', 'ativo', 'createdAt', 'updatedAt'
@@ -42,14 +35,11 @@ var SCHEMA = {
     'createdAt', 'updatedAt'
   ],
 
-  // Antes ausente do schema: patrimônio nunca era gravado na planilha.
   bens: [
     'id', 'usuarioId', 'nome', 'tipo', 'valor', 'identificadorEspecifico',
     'statusBem', 'compartilhado', 'ativo', 'createdAt'
   ],
 
-  // Antes ausente do schema: notificações/atrelamento de parceiro nunca
-  // eram gravadas na planilha (perdidas ao restaurar de um backup).
   notificacoes: [
     'id', 'usuarioDestinoId', 'remetenteId', 'tipo', 'titulo', 'mensagem',
     'lida', 'statusAprovacao', 'createdAt'
@@ -99,6 +89,15 @@ function obterRevisaoDados() {
 
 function definirRevisaoDados(revisao) {
   PropertiesService.getScriptProperties().setProperty(CHAVE_REVISAO_DADOS, String(revisao));
+}
+
+function formatarDataParaPlanilha(val) {
+  if (!val) return '';
+  let str = String(val).trim();
+  if (str.includes('T')) {
+    str = str.split('T')[0];
+  }
+  return str;
 }
 
 function doGet(e) {
@@ -340,6 +339,10 @@ function escreverAba(nomeAba, dadosArray, headers) {
 
         if (val === undefined || val === null) {
           val = '';
+        }
+
+        if (CAMPOS_DATA[campo] && val) {
+          val = formatarDataParaPlanilha(val);
         }
 
         if (typeof val === 'object' && !(val instanceof Date)) {

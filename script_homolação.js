@@ -1,7 +1,16 @@
+async function gerarHash(texto) {
+    const encoder = new TextEncoder();
+    const data = encoder.encode(texto);
+    const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
 const DB_KEY = 'sistemaFinanceiroCompartilhado';
 const BACKUP_TESTE_KEY = 'sistemaFinanceiroBackupTeste';
-const API_URL = "https://script.google.com/macros/s/AKfycbzRyMczLpCP6ad9nplv6wFXy7NfGFU9NKUlQT3CbT_C4RAMVLHgGeuhjCL_K2yPmkRn/exec";
+const API_URL = "https://script.google.com/macros/s/AKfycbyTOJtjTto1BR0NXu2Aynul9UVuOOeZlCwvcYvMLgDqHKe4RDpZdefozcQOxOQOA9og/exec";
 const TOKEN_API = "PLANOF1NALPRAS4AIRD@MERDA";
+const SENHA_ADMIN = "praia2222";
 const SCHEMA_VERSION = 2;
 const SYNC_DEBOUNCE_MS = 250;
 let syncTimer = null;
@@ -18,6 +27,81 @@ let chartServicosEssenciaisInstance = null;
 
 let processandoAcaoModal = false;
 
+let memoriaSistema = null;
+
+function injetarHeader() {
+    const headerHTML = `
+    <style>
+        @keyframes pulsoSuave {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.4; }
+        }
+    </style>
+    <header class="app-header">
+        <div class="header-inner">
+            <!-- Esquerdo -->
+            <div class="header-left">
+                <div class="brand">
+                    <span class="brand-title">Controle Financeiro</span>
+                    <span class="brand-subtitle">Gestão Inteligente</span>
+                </div>
+                <div class="header-perfil-sync">
+                    <span id="usuarioLogadoNome" class="user-chip"></span>
+                    <span id="syncStatusIcon" title="Sincronizado" style="cursor: pointer; display: flex; align-items: center;">
+                        <img src="imagens/sincronizar.png" alt="Sync" style="width: 22px; height: 22px; object-fit: contain;">
+                    </span>
+                    <!-- Novo texto dinâmico no cabeçalho -->
+                    <span id="headerLoadingText" style="display: none; font-size: 0.85rem; font-weight: 700; color: var(--primary); margin-left: 12px; animation: pulsoSuave 1.5s infinite ease-in-out;"></span>
+                </div>
+            </div>
+
+            <!-- Centro: Navegação -->
+            <nav class="app-nav-center" aria-label="Navegação principal">
+                <a href="dashboard.html">Início</a>
+                <div class="nav-dropdown" style="position: relative;">
+                    <a href="#" onclick="event.preventDefault();" style="cursor: pointer;">Cadastros ▾</a>
+                    <div class="nav-dropdown-content" style="position: absolute; top: 100%; left: 0;">
+                        <a href="cartoes.html">Cartões</a>
+                        <a href="categorias.html">Categorias</a>
+                        <a href="bens.html">Bens</a>
+                        <a href="financiamentos.html">Financiamentos</a>
+                    </div>
+                </div>
+                <a href="lancamentos.html">Lançamentos</a>
+                <a href="central-pagamentos.html">Central de Pagamentos</a>
+                <a href="relatorios.html">Relatórios</a>
+            </nav>
+
+            <!-- Direito: Ferramentas -->
+            <div class="header-right">
+                <div class="header-tools">
+                    <button type="button" onclick="alternarPrivacidade()" title="Ocultar/Mostrar Valores" id="btnPrivacidade">
+                        <img src="imagens/esconder.png" alt="Privacidade" id="imgPrivacidade">
+                    </button>
+                    <!-- Correção do item 6 já aplicada aqui -->
+                    <button type="button" onclick="alternarTemaVisual(event)" title="Alternar tema">
+                        <img src="imagens/modo_escuro.jpg" alt="Tema">
+                    </button>
+                    <a href="configuracoes.html" title="Configurações">
+                        <img src="imagens/config.png" alt="Configurações">
+                    </a>
+                    <button type="button" title="Notificações" id="btnNotificacoesHeader">
+                        <img src="imagens/notificacao.png" alt="Notificações" onerror="this.style.display='none'">
+                    </button>
+                </div>
+                <div class="header-tools" style="border-left: 1px solid var(--border-color, #e5e7eb); padding-left: 18px;">
+                    <a href="index.html" onclick="event.preventDefault(); deslogarSistema()" class="btn-sair-extremo" title="Sair do sistema">
+                        <img src="imagens/exit.png" alt="Sair">
+                    </a>
+                </div>
+            </div>
+        </div>
+    </header>
+    `;
+
+    // Insere o header logo no início da tag <body>
+    document.body.insertAdjacentHTML('afterbegin', headerHTML);
+}
 
 function filtrarDadosPorPermissao(lista, dadosGlobais, escopoFiltro = 'casal') {
     const usuarioAtualId = Number(localStorage.getItem('usuarioLogado'));
@@ -91,8 +175,11 @@ async function selecionarUsuario(id) {
             }
         }
 
-        usuario.pin = novaSenha;
-        usuario.senha = novaSenha;
+        // Gera o hash antes de salvar
+        const hashSenha = await gerarHash(novaSenha);
+        usuario.pin = hashSenha;
+        usuario.senha = hashSenha;
+        
         registrarLogInterno(dados, "CADASTRO SENHA INICIAL", `Utilizador ${usuario.nome} cadastrou a palavra-passe inicial.`);
         await salvarDados(dados);
         await mostrarAlertaModal("Palavra-passe cadastrada com sucesso!");
@@ -103,9 +190,23 @@ async function selecionarUsuario(id) {
             `Digite a palavra-passe de acesso para ${usuario.nome}:`,
             false
         );
-        if (senhaDigitada === null || senhaDigitada !== senhaAtual) {
+        
+        if (senhaDigitada === null) return false;
+
+        // Gera o hash da senha digitada para comparar com o salvo
+        const hashDigitado = await gerarHash(senhaDigitada);
+        
+        // Verifica se a senha bate com o HASH novo ou se bate com o TEXTO PURO (legado)
+        if (hashDigitado !== senhaAtual && senhaDigitada !== senhaAtual) {
             await mostrarAlertaModal("Palavra-passe incorreta.");
             return false;
+        }
+
+        // Migração silenciosa: Se a senha no banco for a antiga (texto puro), atualiza para o hash seguro
+        if (senhaDigitada === senhaAtual && hashDigitado !== senhaAtual) {
+            usuario.pin = hashDigitado;
+            usuario.senha = hashDigitado;
+            salvarDados(dados); // Salva a criptografia nova no banco
         }
     }
 
@@ -152,7 +253,12 @@ function formatarMoeda(valor) {
 
 function formatarDataBR(dataStr) {
     if (!dataStr) return '-';
-    const partes = String(dataStr).split('-');
+    // Se a string contiver formato ISO completo (ex: 2026-09-13T... ou similar), extrai apenas a parte da data
+    let limpa = String(dataStr).trim();
+    if (limpa.includes('T')) {
+        limpa = limpa.split('T')[0];
+    }
+    const partes = limpa.split('-');
     if (partes.length !== 3) return String(dataStr);
     return `${partes[2]}/${partes[1]}/${partes[0]}`;
 }
@@ -352,10 +458,21 @@ function migrarDados(dados) {
     return { dados, alterou };
 }
 
-document.addEventListener("DOMContentLoaded", () => {
+document.addEventListener("DOMContentLoaded", async () => {
     inicializarTemaVisual();
-    inicializarPrivacidade(); // já aplica/remova a classe com base no que foi salvo em localStorage
+    inicializarPrivacidade();
     criarIndicadorSincronizacaoUi();
+    
+    // Evita loop infinito na página de login
+    const estahNaPaginaLogin = window.location.pathname.endsWith('index.html') || window.location.pathname === '/' || window.location.pathname === '';
+
+    if (!estahNaPaginaLogin && typeof verificarAutenticacao === 'function') {
+        const autorizado = await verificarAutenticacao();
+        if (autorizado) {
+            atualizarHeaderUsuario();
+            if (typeof carregarDashboard === 'function') carregarDashboard();
+        }
+    }
 });
 
 function inicializarPrivacidade() {
@@ -420,30 +537,25 @@ function alternarTemaVisual(event) {
 }
 
 function criarIndicadorSincronizacaoUi() {
-    // Reaproveita o ícone de sincronização que já existe no HTML de cada página
-    // (#syncStatusIcon), em vez de criar um segundo ícone ao lado dele.
     const chip = document.getElementById('syncStatusIcon');
     if (!chip || chip.dataset.syncWired === 'true') return;
     chip.dataset.syncWired = 'true';
 
-    chip.title = "Status: Sincronizado. Clique para verificar novamente.";
+    chip.title = "Status: Sincronizado. Clique para atualizar do banco de dados.";
     chip.style.cssText = `
         display: inline-flex;
         align-items: center;
         justify-content: center;
-        gap: 4px;
-        padding: 0 8px;
+        padding: 4px 8px;
         height: 34px;
         border-radius: 9px;
         background: var(--success-soft);
         border: 1px solid color-mix(in srgb, var(--success) 26%, var(--border));
-        color: var(--success);
-        font-size: 1.1rem;
         cursor: pointer;
         margin-left: 8px;
         transition: var(--transition-fast);
     `;
-    chip.innerHTML = '☁';
+    chip.innerHTML = `<img src="imagens/sincronizar.png" alt="Sync" style="width: 20px; height: 20px; object-fit: contain;">`;
 
     chip.onclick = async () => {
         chip.style.transform = 'scale(0.9)';
@@ -452,158 +564,114 @@ function criarIndicadorSincronizacaoUi() {
         atualizarIndicadorSyncUI('pending');
         
         try {
-            if (syncPendingData) {
-                await sincronizarComServidor();
-            } else {
-                const dados = obterDados();
-                await salvarDados(dados, { sincronizar: true });
-            }
+            // Força a busca completa direto do servidor ao clicar no botão de sync
+            const json = await buscarDadosServidor(false);
+            const resultado = migrarDados(json);
+            memoriaSistema = resultado.dados;
+            window.revisaoServidorAtual = Number(resultado.dados._revision) || 0;
+            localStorage.setItem(DB_KEY, JSON.stringify(memoriaSistema));
+            localStorage.removeItem('syncPendente');
+            
             atualizarIndicadorSyncUI('success');
+            await mostrarAlertaModal("Dados atualizados com sucesso do banco de dados!");
         } catch (e) {
             atualizarIndicadorSyncUI('error');
+            await mostrarAlertaModal("Erro ao atualizar do servidor: " + e.message);
         } finally {
-            // Recarrega a página após a tentativa de sincronização manual
             setTimeout(() => {
                 window.location.reload();
-            }, 800);
+            }, 500);
         }
     };
-
-    const userChip = document.getElementById('usuarioLogadoNome');
-    if (userChip && userChip.parentNode) {
-        userChip.parentNode.style.display = 'flex';
-        userChip.parentNode.style.alignItems = 'center';
-        userChip.parentNode.style.flexWrap = 'nowrap';
-    }
 }
-
 function atualizarIndicadorSyncUI(status) {
     const chip = document.getElementById('syncStatusIcon');
     if (!chip) return;
     
     if (status === 'pending') {
-        chip.style.color = 'var(--warning)';
+        // Fundo amarelo (alerta) + GIF animado
         chip.style.backgroundColor = 'var(--warning-soft)';
         chip.style.borderColor = 'color-mix(in srgb, var(--warning) 26%, var(--border))';
         chip.title = "Status: Sincronizando...";
-        chip.innerHTML = `<img src="imagens/loading.gif" alt="Carregando" style="width: 16px; height: 16px; object-fit: contain;">`;
+        chip.innerHTML = `<img src="imagens/sincronizar.gif" alt="Sincronizando" style="width: 20px; height: 20px; object-fit: contain;">`;
     } else if (status === 'success') {
-        chip.style.color = 'var(--success)';
+        // Fundo verde (sucesso) + Imagem PNG estática
         chip.style.backgroundColor = 'var(--success-soft)';
         chip.style.borderColor = 'color-mix(in srgb, var(--success) 26%, var(--border))';
         chip.title = "Status: Sincronizado com sucesso";
-        chip.innerHTML = `☁ <span style="font-size: 0.85rem; font-weight: bold; margin-left: 2px;">✓</span>`;
+        chip.innerHTML = `<img src="imagens/sincronizar.png" alt="Sincronizado" style="width: 20px; height: 20px; object-fit: contain;">`;
     } else if (status === 'error') {
-        chip.style.color = 'var(--danger)';
+        // Fundo vermelho (erro) + Imagem PNG estática
         chip.style.backgroundColor = 'var(--danger-soft)';
         chip.style.borderColor = 'color-mix(in srgb, var(--danger) 26%, var(--border))';
         chip.title = "Status: Erro ao sincronizar";
-        chip.innerHTML = `☁ <span style="font-size: 0.85rem; font-weight: bold; margin-left: 2px;">✕</span>`;
+        chip.innerHTML = `<img src="imagens/sincronizar.png" alt="Erro" style="width: 20px; height: 20px; object-fit: contain;">`;
     }
 }
 
-function mostrarLoading(mensagem = "Salvando alterações...") {
-    if (document.getElementById('loadingOverlay')) return;
-    const overlay = document.createElement('div');
-    overlay.id = 'loadingOverlay';
-    overlay.className = 'modal-overlay';
-    overlay.style.zIndex = '99999';
-    overlay.innerHTML = `
-        <div class="modal-box" style="text-align: center; padding: 30px;">
-            <div style="border: 4px solid var(--border); border-top: 4px solid var(--primary); border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; margin: 0 auto 15px auto;"></div>
-            <p style="font-weight: bold; font-size: 1rem; color: var(--text);">${mensagem}</p>
-        </div>
-        <style>
-            @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-        </style>
-    `;
-    document.body.appendChild(overlay);
+function mostrarLoading(mensagem = "Processando...") {
+    const spanText = document.getElementById('headerLoadingText');
+    if (spanText) {
+        spanText.textContent = mensagem;
+        spanText.style.display = 'inline-block';
+    }
 }
 
 function esconderLoading() {
-    const overlay = document.getElementById('loadingOverlay');
-    if (overlay) overlay.remove();
+    const spanText = document.getElementById('headerLoadingText');
+    if (spanText) {
+        spanText.style.display = 'none';
+        spanText.textContent = '';
+    }
+    
+    // Garantia para remover o antigo modal caso ele tenha ficado travado em cache
+    const overlayAntigo = document.getElementById('loadingOverlay');
+    if (overlayAntigo) overlayAntigo.remove();
 }
 
 async function inicializarBanco() {
-    const bruto = localStorage.getItem(DB_KEY);
-    let dados;
-
-    if (bruto) {
-        try {
-            dados = JSON.parse(bruto);
-        } catch (_) {
-            dados = null;
+    try {
+        if (localStorage.getItem('syncPendente') === 'true') {
+            const dadosPendentes = localStorage.getItem(DB_KEY);
+            if (dadosPendentes) {
+                syncPendingData = JSON.parse(dadosPendentes);
+                sincronizarComServidor();
+            }
         }
-    }
-
-    if (!dados) {
-        dados = {
-            _schemaVersion: SCHEMA_VERSION,
-            usuarios: [
-                { id: 1, nome: "Samuel", senha: "" },
-                { id: 2, nome: "Mariana", senha: "" },
-                { id: 3, nome: "TESTE", senha: "" }
-            ],
-            categorias: [
-                { id: 1, nome: "Alimentação", tipo: "saida" },
-                { id: 2, nome: "Moradia / Contas", tipo: "saida" },
-                { id: 3, nome: "Salário", tipo: "entrada" },
-                { id: 4, nome: "Financiamentos", tipo: "saida" }
-            ],
-            cartoes: [],
-            lancamentos: [],
-            financiamentos: [],
-            bens: [],
-            notificacoes: [],
-            logs: [],
-            exclusao_movimento: [],
-            edicao_movimento: []
-        };
-        localStorage.setItem(DB_KEY, JSON.stringify(dados));
-        memoriaSistema = dados;
-        return;
-    }
-
-    const resultado = migrarDados(dados);
-    memoriaSistema = resultado.dados;
-    if (resultado.alterou) {
-        localStorage.setItem(DB_KEY, JSON.stringify(resultado.dados));
+        const json = await buscarDadosServidor(false);
+        const resultado = migrarDados(json);
+        if (!Number.isFinite(Number(resultado.dados._revision))) resultado.dados._revision = json._revision || 0;
+        
+        memoriaSistema = resultado.dados;
+        window.revisaoServidorAtual = resultado.dados._revision;
+        localStorage.setItem(DB_KEY, JSON.stringify(memoriaSistema));
+        localStorage.removeItem('syncPendente');
+    } catch (e) {
+        console.warn("Sincronização em segundo plano adiada (modo offline ou instável).", e);
     }
 }
 
-let memoriaSistema = null;
-
-function obterDados() {
-    let dados = null;
-    const dadosLocal = localStorage.getItem(DB_KEY);
-    if (dadosLocal) {
-        try {
-            dados = JSON.parse(dadosLocal);
-        } catch (_) {
-            dados = null;
-        }
+async function salvarDados(dados, opcoes = {}) {
+    const normalizado = migrarDados(dados).dados;
+    if (!Number.isFinite(Number(normalizado._revision))) {
+        normalizado._revision = Number(window.revisaoServidorAtual) || 0;
     }
 
-    if (!dados) {
-        dados = memoriaSistema || {};
+    memoriaSistema = normalizado;
+    localStorage.setItem(DB_KEY, JSON.stringify(normalizado));
+
+    if (typeof carregarDashboard === 'function') carregarDashboard();
+    if (typeof carregarRelatorios === 'function') carregarRelatorios();
+    if (typeof renderizarCategorias === 'function') renderizarCategorias();
+    if (typeof carregarCentralPagamentos === 'function') carregarCentralPagamentos();
+
+    if (opcoes.sincronizar !== false) {
+        syncPendingData = normalizado;
+        localStorage.setItem('syncPendente', 'true');
+        atualizarIndicadorSyncUI('pending');
+        agendarSincronizacaoSilenciosa();
     }
-
-    const resultado = migrarDados(dados);
-    memoriaSistema = resultado.dados;
-    if (resultado.alterou) {
-        localStorage.setItem(DB_KEY, JSON.stringify(resultado.dados));
-    }
-    return resultado.dados;
-}
-
-function agendarSincronizacao(dados) {
-    syncPendingData = clonarDados(dados);
-    ultimaSincronizacaoStatus = 'pending';
-    atualizarIndicadorSyncUI('pending');
-
-    if (syncTimer) clearTimeout(syncTimer);
-    syncTimer = setTimeout(() => sincronizarComServidor(), SYNC_DEBOUNCE_MS);
+    return true;
 }
 
 async function sincronizarComServidor() {
@@ -619,72 +687,122 @@ async function sincronizarComServidor() {
             body: JSON.stringify({
                 action: "salvarDados",
                 token: TOKEN_API,
-                dados: payloadDados,
-                versaoServidor: payloadDados && payloadDados._serverRevision != null
-                    ? payloadDados._serverRevision
-                    : null
+                dados: payloadDados
             })
         });
 
-        if (!resposta.ok) throw new Error(`HTTP ${resposta.status}`);
-        const resultado = await resposta.json();
+        const textoResposta = await resposta.text();
+        let json = JSON.parse(textoResposta);
 
-        if (resultado.status === 'conflito') {
-            ultimaSincronizacaoStatus = 'conflict';
-            atualizarIndicadorSyncUI('error');
-            // Não tenta novamente automaticamente: isso evitaria um loop e
-            // impede que uma cópia antiga continue sobrescrevendo o servidor.
-            syncPendingData = null;
-            console.warn('Conflito de sincronização:', resultado.mensagem);
-            throw new Error(resultado.mensagem || 'Conflito de sincronização.');
+        if (json.status === 'conflito') {
+            console.warn("Conflito detectado. Sincronizando versão do servidor...");
+            const dadosServidor = await buscarDadosServidor(false);
+            const resultadoServidor = migrarDados(dadosServidor);
+            
+            // Atualiza a revisão local com a do servidor e reaplica os dados pendentes
+            window.revisaoServidorAtual = Number(resultadoServidor.dados._revision) || 0;
+            payloadDados._revision = window.revisaoServidorAtual;
+            
+            syncPendingData = payloadDados;
+            syncInFlight = false;
+            sincronizarComServidor(); // Tenta reenviar imediatamente
+            return;
         }
 
-        if (resultado.status !== 'sucesso') {
-            throw new Error(resultado.mensagem || 'Servidor rejeitou a sincronização.');
+        if (json.status !== 'sucesso') {
+            throw new Error(json.mensagem || "Erro desconhecido no servidor.");
         }
 
-        const dadosAtuais = obterDados();
-        dadosAtuais._serverRevision = Number(resultado.revisao || 0);
-        memoriaSistema = dadosAtuais;
-        localStorage.setItem(DB_KEY, JSON.stringify(dadosAtuais));
+        localStorage.removeItem('syncPendente');
+        
+        if (json._revision !== undefined && memoriaSistema) {
+            window.revisaoServidorAtual = json._revision;
+            memoriaSistema._revision = json._revision;
+            localStorage.setItem(DB_KEY, JSON.stringify(memoriaSistema));
+        }
 
-        ultimaSincronizacaoStatus = 'success';
         atualizarIndicadorSyncUI('success');
     } catch (e) {
-        ultimaSincronizacaoStatus = 'error';
-        atualizarIndicadorSyncUI('error');
-        console.error("Erro ao sincronizar com o Google Sheets:", e);
+        console.warn("Sincronização adiada por instabilidade de rede:", e);
         syncPendingData = payloadDados;
+        localStorage.setItem('syncPendente', 'true');
+        atualizarIndicadorSyncUI('error');
     } finally {
         syncInFlight = false;
-        if (syncPendingData) agendarSincronizacao(syncPendingData);
     }
 }
 
-async function buscarDadosServidor() {
-    const resposta = await fetch(`${API_URL}?action=obterDados&token=${encodeURIComponent(TOKEN_API)}`);
+function obterDados() {
+    let dados = null;
+    const dadosLocal = localStorage.getItem(DB_KEY);
+    if (dadosLocal) {
+        try {
+            dados = JSON.parse(dadosLocal);
+        } catch (_) {
+            dados = null;
+        }
+    }
+
+    if (!dados) {
+        dados = memoriaSistema || { usuarios: [], categorias: [], cartoes: [], lancamentos: [], financiamentos: [], bens: [], notificacoes: [], logs: [], exclusao_movimento: [], edicao_movimento: [] };
+    }
+
+    const resultado = migrarDados(dados);
+    memoriaSistema = resultado.dados;
+    return resultado.dados;
+}
+
+function agendarSincronizacaoSilenciosa() {
+    if (syncTimer) clearTimeout(syncTimer);
+    syncTimer = setTimeout(async () => {
+        if (syncInFlight) return;
+        syncInFlight = true;
+        const payloadDados = syncPendingData;
+        syncPendingData = null;
+
+        try {
+            const resposta = await fetch(API_URL, {
+                method: "POST",
+                headers: { "Content-Type": "text/plain;charset=utf-8" },
+                body: JSON.stringify({
+                    action: "salvarDados",
+                    token: TOKEN_API,
+                    dados: payloadDados
+                })
+            });
+
+            const textoResposta = await resposta.text();
+            let json = JSON.parse(textoResposta);
+
+            if (json.status === 'sucesso') {
+                localStorage.removeItem('syncPendente');
+                if (json._revision !== undefined && memoriaSistema) {
+                    window.revisaoServidorAtual = json._revision;
+                    memoriaSistema._revision = json._revision;
+                    localStorage.setItem(DB_KEY, JSON.stringify(memoriaSistema));
+                }
+                atualizarIndicadorSyncUI('success');
+            } else {
+                throw new Error(json.mensagem || "Erro na nuvem");
+            }
+        } catch (e) {
+            console.warn("Sincronização em segundo plano adiada (offline ou instável):", e);
+            syncPendingData = payloadDados;
+            localStorage.setItem('syncPendente', 'true');
+            atualizarIndicadorSyncUI('error');
+        } finally {
+            syncInFlight = false;
+        }
+    }, 1500); // Aguarda 1.5 segundos de ociosidade para enviar, evitando disparos excessivos
+}
+
+async function buscarDadosServidor(apenasMovimentos = false) {
+    const url = `${API_URL}?action=obterDados&token=${encodeURIComponent(TOKEN_API)}&apenasMovimentos=${apenasMovimentos}`;
+    const resposta = await fetch(url);
     if (!resposta.ok) throw new Error('Falha de rede ao contatar o servidor.');
     const json = await resposta.json();
     if (json.status === 'erro') throw new Error(json.mensagem || 'Erro desconhecido do servidor.');
     return json;
-}
-
-async function salvarDados(dados, opcoes = {}) {
-    const usuarioObj = obterUsuarioAtual(dados);
-    if (usuarioObj && normalizarTexto(usuarioObj.nome) === 'teste') {
-        memoriaSistema = dados;
-        localStorage.setItem(DB_KEY, JSON.stringify(dados));
-        return true;
-    }
-
-    const normalizado = migrarDados(dados).dados;
-    memoriaSistema = normalizado;
-    localStorage.setItem(DB_KEY, JSON.stringify(normalizado));
-
-    if (opcoes.sincronizar !== false) {
-        agendarSincronizacao(normalizado);
-    }
-    return true;
 }
 
 async function registrarLog(acao, detalhes, extras = {}) {
@@ -712,13 +830,25 @@ function deslogarSistema() {
     }
 
     localStorage.removeItem('usuarioLogado');
-    sessionStorage.removeItem('adminAutorizado');
-    sessionStorage.removeItem('adminLogado');
+    localStorage.removeItem('adminAutorizado');
+    localStorage.removeItem('adminLogado');
     window.location.href = 'index.html';
 }
 
 async function verificarAutenticacao() {
-    await inicializarBanco();
+    const bruto = localStorage.getItem(DB_KEY);
+    if (!bruto) {
+        // Se a sessão estiver vazia, busca os dados do servidor imediatamente antes de validar o usuário
+        try {
+            const json = await buscarDadosServidor(false);
+            const resultado = migrarDados(json);
+            memoriaSistema = resultado.dados;
+            localStorage.setItem(DB_KEY, JSON.stringify(memoriaSistema));
+        } catch (e) {
+            console.warn("Erro ao carregar dados da sessão:", e);
+        }
+    }
+
     const usuarioId = localStorage.getItem('usuarioLogado');
     if (!usuarioId) {
         window.location.href = 'index.html';
@@ -731,19 +861,6 @@ async function verificarAutenticacao() {
         deslogarSistema();
         return false;
     }
-
-    const spanNome = document.getElementById('usuarioLogadoNome');
-    if (spanNome) {
-        spanNome.style.cursor = 'pointer';
-        spanNome.title = "Clique para gerenciar seu perfil";
-        // Exibe o nome próprio da pessoa na barra de navegação
-        spanNome.innerHTML = `Perfil: <strong>${usuario.nome}</strong> ⚙️`;
-        spanNome.onclick = () => {
-            window.location.href = 'perfil.html';
-        };
-    }
-
-    renderizarSinoNotificacoes();
     return true;
 }
 
@@ -1006,7 +1123,7 @@ function mostrarAlertaModal(mensagem) {
 async function verificarSenhaAdmin(nomeSecao = "esta seção") {
     const usuario = obterUsuarioAtual();
     if (usuario && normalizarTexto(usuario.nome) === 'teste') return true;
-    if (sessionStorage.getItem('adminAutorizado') === 'true') return true;
+    if (localStorage.getItem('adminAutorizado') === 'true') return true;
 
     const senhaDigitada = await mostrarPromptSenha(
         "Acesso restrito",
@@ -1014,38 +1131,113 @@ async function verificarSenhaAdmin(nomeSecao = "esta seção") {
     );
     if (senhaDigitada === null) return false;
 
+    if (senhaDigitada === SENHA_ADMIN) {
+        const lembrar = await mostrarConfirmacaoModal("Deseja lembrar esta autorização durante a sessão?");
+        if (lembrar) localStorage.setItem('adminAutorizado', 'true');
+        return true;
+    }
+
+    await mostrarAlertaModal('Senha de administrador incorreta!');
+    return false;
+}
+
+async function adicionarCategoria(nome, tipo) {
+    if (processandoAcaoModal) return;
+    if (!await verificarSenhaAdmin("cadastrar categoria")) return;
+    
+    processandoAcaoModal = true;
+    mostrarLoading("Cadastrando categoria...");
+    const dados = obterDados();
+    const nomeNormalizado = normalizarTexto(nome);
+    const usuarioAtualId = Number(obterUsuarioAtualId(dados));
+    const ID_SISTEMA = 5;
+
+    if (!nomeNormalizado || !['entrada', 'saida'].includes(tipo)) {
+        esconderLoading();
+        processandoAcaoModal = false;
+        await mostrarAlertaModal('Dados da categoria inválidos.');
+        return false;
+    }
+
+    // Verifica duplicação considerando o escopo correto
+    const duplicada = dados.categorias.some(c => {
+        const criadorId = Number(c.criadopor);
+        const mesmoNomeTipo = c.tipo === tipo && normalizarTexto(c.nome) === nomeNormalizado;
+        const pertenceAoContexto = criadorId === ID_SISTEMA || criadorId === usuarioAtualId;
+        return mesmoNomeTipo && pertenceAoContexto;
+    });
+
+    if (duplicada) {
+        esconderLoading();
+        processandoAcaoModal = false;
+        await mostrarAlertaModal('Já existe uma categoria com este nome e tipo.');
+        return false;
+    }
+
+    const novaId = dados.categorias.reduce((m, c) => Math.max(m, Number(c.id) || 0), 0) + 1;
+    dados.categorias.push({ 
+        id: novaId, 
+        nome: String(nome).trim(), 
+        tipo, 
+        classificacao: 'personalizado', 
+        criadopor: usuarioAtualId 
+    });
+
+    registrarLogInterno(dados, "CADASTRO CATEGORIA", `Categoria personalizada criada: ${nome} (${tipo})`);
+    await salvarDados(dados);
+    
+    esconderLoading();
+    processandoAcaoModal = false;
+    await mostrarAlertaModal("Categoria cadastrada com sucesso!");
+    if (typeof renderizarCategorias === 'function') renderizarCategorias();
+    return true;
+}
+
+async function atualizarCategoria(id, nome, tipo) {
+    if (processandoAcaoModal) return false;
+    if (!await verificarSenhaAdmin("editar categoria")) return false;
+
+    processandoAcaoModal = true;
+    mostrarLoading("Atualizando categoria...");
     try {
-        const resposta = await fetch(API_URL, {
-            method: 'POST',
-            headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-            body: JSON.stringify({
-                action: 'verificarSenhaAdmin',
-                token: TOKEN_API,
-                senhaAdmin: senhaDigitada
-            })
-        });
+        const dados = obterDados();
+        const categoria = dados.categorias.find(c => String(c.id) === String(id));
+        const usuarioAtualId = Number(obterUsuarioAtualId(dados));
 
-        if (!resposta.ok) throw new Error(`HTTP ${resposta.status}`);
-        const resultado = await resposta.json();
+        if (!categoria) throw new Error('Categoria não encontrada.');
 
-        if (resultado.status === 'sucesso' && resultado.autorizado === true) {
-            const lembrar = await mostrarConfirmacaoModal("Deseja lembrar esta autorização durante a sessão?");
-            if (lembrar) sessionStorage.setItem('adminAutorizado', 'true');
-            return true;
+        // Impede que usuários comuns alterem categorias padrão do sistema
+        if (categoria.classificacao === 'padrao') {
+            throw new Error('Categorias padrão do sistema não podem ser alteradas.');
         }
 
-        await mostrarAlertaModal(resultado.mensagem || 'Senha de administrador incorreta!');
-        return false;
+        const nomeNormalizado = normalizarTexto(nome);
+        const duplicada = dados.categorias.some(c =>
+            String(c.id) !== String(id) &&
+            c.tipo === tipo &&
+            normalizarTexto(c.nome) === nomeNormalizado
+        );
+        if (duplicada) throw new Error('Já existe outra categoria com este nome e tipo.');
+
+        categoria.nome = String(nome).trim();
+        categoria.tipo = tipo;
+        categoria.updatedAt = new Date().toISOString();
+
+        registrarLogInterno(dados, "EDIÇÃO CATEGORIA", `Categoria ID ${id} alterada para: ${categoria.nome}`);
+        await salvarDados(dados);
+
+        esconderLoading();
+        processandoAcaoModal = false;
+        await mostrarAlertaModal("Categoria atualizada com sucesso!");
+        if (typeof renderizarCategorias === 'function') renderizarCategorias();
+        return true;
     } catch (erro) {
-        console.error('Falha ao validar administrador:', erro);
-        await mostrarAlertaModal('Não foi possível validar a autorização administrativa. Verifique a conexão com o servidor.');
+        esconderLoading();
+        processandoAcaoModal = false;
+        await mostrarAlertaModal(erro.message || 'Não foi possível atualizar a categoria.');
         return false;
     }
 }
-
-
-
-
 
 function popularSelectsLancamento() {
     const dados = obterDados();
@@ -1339,6 +1531,30 @@ async function adicionarLancamentoComParcelas(dadosForm) {
             });
         }
 
+        // --- NOVA DINÂMICA DE NOTIFICAÇÃO PARA O PARCEIRO ---
+        if (escopoFinal === 'casal') {
+            const usuarioAtual = dados.usuarios.find(u => Number(u.id) === Number(usuarioId));
+            if (usuarioAtual && usuarioAtual.parceiroId) {
+                if (!Array.isArray(dados.notificacoes)) dados.notificacoes = [];
+                
+                const primeiroNome = usuarioAtual.nome.split(' ')[0];
+                const tipoAcaoTxt = dadosForm.tipo === 'entrada' ? 'uma entrada' : 'um gasto';
+                const tituloNotif = dadosForm.tipo === 'entrada' ? 'Nova Entrada de Casal 💰' : 'Novo Gasto de Casal 🏠';
+
+                dados.notificacoes.push({
+                    id: gerarId('notif'),
+                    usuarioDestinoId: usuarioAtual.parceiroId,
+                    remetenteId: usuarioId,
+                    tipo: 'lancamento_casal',
+                    titulo: tituloNotif,
+                    mensagem: `${primeiroNome} registou ${tipoAcaoTxt} de casal: ${dadosForm.descricao} no valor de ${formatarMoeda(valorTotal)}.`,
+                    lida: false,
+                    createdAt: new Date().toISOString()
+                });
+            }
+        }
+        // ---------------------------------------------------
+
         if (typeof salvarMemoriaAdiantamentoSeNecessario === 'function') {
             salvarMemoriaAdiantamentoSeNecessario(dadosForm.descricao, valoresParcelas[0]);
         }
@@ -1363,7 +1579,70 @@ async function adicionarLancamentoComParcelas(dadosForm) {
     }
 }
 
+async function adicionarContaLotePorPeriodo(descricao, valorParcela, dataInicio, qtdMeses, categoriaId, bemId = null) {
+    mostrarLoading("Gerando contas em lote...");
+    const dados = obterDados();
+    const usuarioId = parseInt(localStorage.getItem('usuarioLogado'));
+    
+    // Se o bem vinculado for compartilhado, força o escopo como casal
+    let escopoLote = 'casal';
+    if (bemId) {
+        const bemObj = (dados.bens || []).find(b => String(b.id) === String(bemId));
+        if (bemObj && !bemObj.compartilhado) {
+            escopoLote = 'individual';
+        }
+    }
 
+    let proximaIdLanc = dados.lancamentos.reduce((m, l) => Math.max(m, Number(l.id) || 0), 0) + 1;
+    const parcelamentoId = qtdMeses > 1 ? gerarId('lote') : null;
+
+    for (let i = 0; i < qtdMeses; i++) {
+        let dataVenc = adicionarMesesClamped(dataInicio, i);
+        
+        const anoVenc = dataVenc.getFullYear();
+        const mesVenc = String(dataVenc.getMonth() + 1).padStart(2, '0');
+        const diaVenc = String(dataVenc.getDate()).padStart(2, '0');
+        const dataVencStr = `${anoVenc}-${mesVenc}-${diaVenc}`;
+
+        const mesAnoVenc = `${anoVenc}-${mesVenc}`;
+        const mesAnoAtual = `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`;
+        const jaPassou = mesAnoVenc < mesAnoAtual;
+
+        const novoLancamento = {
+            id: proximaIdLanc++,
+            usuarioId,
+            descricao: `${descricao} (${i + 1}/${qtdMeses})`,
+            valor: Number(valorParcela.toFixed(2)),
+            tipo: 'saida',
+            categoriaId: Number(categoriaId),
+            formaPagamento: 'BOLETO',
+            cartaoId: null,
+            bemId: bemId ? Number(bemId) : null,
+            vencimento: dataVencStr,
+            recorrencia: 'unica',
+            parcelaAtual: i + 1,
+            totalParcelas: qtdMeses,
+            parcelamentoId,
+            observacao: 'Gerado por lote retroativo/período',
+            horaExtra: 0,
+            servicoEssencial: 'nao',
+            escopo: escopoLote,
+            pago: false,
+            status: jaPassou ? 'atrasado' : 'pendente',
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString()
+        };
+
+        dados.lancamentos.push(novoLancamento);
+    }
+
+    registrarLogInterno(dados, "CONTA LOTE PERÍODO", `Lote por período criado: ${descricao} (${qtdMeses} meses)`);
+    await salvarDados(dados);
+    
+    esconderLoading();
+    await mostrarAlertaModal("Lotes criados com sucesso!");
+    if (typeof carregarRelatorios === 'function') carregarRelatorios();
+}
 
 async function adicionarFinanciamentoComRecorrencia(nome, recorrente, valorParcela, qtdMeses, primeiroVencimento, categoriaId = null, bemId = null) {
     if (processandoAcaoModal) return false;
@@ -1462,29 +1741,11 @@ async function adicionarFinanciamentoComRecorrencia(nome, recorrente, valorParce
     }
 }
 
-function usuarioPodeAlterarLancamento(lancamento, dados = obterDados()) {
-    if (!lancamento) return false;
-    const usuario = obterUsuarioAtual(dados);
-    if (!usuario) return false;
-
-    const usuarioId = Number(usuario.id);
-    const donoId = Number(lancamento.usuarioId);
-    if (!Number.isFinite(donoId)) return false;
-    if (donoId === usuarioId) return true;
-
-    const parceiroId = usuario.parceiroId != null ? Number(usuario.parceiroId) : null;
-    return parceiroId != null && donoId === parceiroId && lancamento.escopo !== 'individual';
-}
-
 async function atualizarLancamentoNoBanco(id, novosDados) {
     const dados = obterDados();
     const lancamento = dados.lancamentos.find(l => Number(l.id) === Number(id));
     if (!lancamento) {
         await mostrarAlertaModal("Lançamento não encontrado.");
-        return;
-    }
-    if (!usuarioPodeAlterarLancamento(lancamento, dados)) {
-        await mostrarAlertaModal("Você não tem permissão para alterar este lançamento.");
         return;
     }
 
@@ -1657,9 +1918,6 @@ async function alternarStatusPagamento(id) {
         const dados = obterDados();
         const lancamento = dados.lancamentos.find(l => String(l.id) === String(id));
         if (!lancamento) throw new Error('Lançamento não encontrado.');
-        if (!usuarioPodeAlterarLancamento(lancamento, dados)) {
-            throw new Error('Você não tem permissão para alterar este lançamento.');
-        }
 
         const novoPago = !Boolean(lancamento.pago);
         lancamento.pago = novoPago;
@@ -1711,20 +1969,27 @@ async function salvarFinanciamentoForm(event) {
 }
 
 function carregarDashboard() {
-    const mesAno = document.getElementById('filtroMesAno').value;
-    const escopo = document.getElementById('filtroEscopoDashboardGeral').value;
-    const tipoFiltroLanc = document.getElementById('filtroTipoUltimosLancamentos').value;
+    const filtroMesInput = document.getElementById('filtroMesAno');
+    
+    if (filtroMesInput && !filtroMesInput.value) {
+        const hoje = new Date();
+        const anoAtual = hoje.getFullYear();
+        const mesAtual = String(hoje.getMonth() + 1).padStart(2, '0');
+        filtroMesInput.value = `${anoAtual}-${mesAtual}`;
+    }
+
+    const mesAno = filtroMesInput ? filtroMesInput.value : '';
+    const escopo = document.getElementById('filtroEscopoDashboardGeral')?.value || 'casal';
+    const tipoFiltroLanc = document.getElementById('filtroTipoUltimosLancamentos')?.value || 'todos';
 
     const dados = obterDados();
     const usuarioId = localStorage.getItem('usuarioLogado');
     const usuario = dados.usuarios.find(u => Number(u.id) === Number(usuarioId)) || {};
     
-    // Passa o escopo selecionado para o filtro restritivo respeitar Individual vs Casal
     const lancamentos = filtrarDadosPorPermissao(dados.lancamentos || [], dados, escopo);
     const categorias = dados.categorias || [];
     const cartoes = filtrarDadosPorPermissao(dados.cartoes || [], dados, escopo).filter(c => c.ativo !== false);
 
-    // Cálculo do Patrimônio Total de Bens (próprios + compartilhados se houver parceiro)
     const bens = filtrarDadosPorPermissao(dados.bens || [], dados, escopo);
     const bensValidos = bens.filter(b => {
         if (b.ativo === false) return false;
@@ -1732,11 +1997,15 @@ function carregarDashboard() {
         const eCompartilhado = b.compartilhado && usuario.parceiroId;
         return eSeu || eCompartilhado;
     });
+    
     const valorTotalPatrimonio = bensValidos.reduce((acc, b) => acc + Number(b.valor || 0), 0);
-    document.getElementById('totalPatrimonioBens').textContent = `R$ ${valorTotalPatrimonio.toLocaleString('pt-BR', {minimumFractionDigits: 2})}`;
+    const elPatrimonio = document.getElementById('totalPatrimonioBens');
+    if (elPatrimonio) elPatrimonio.textContent = `R$ ${valorTotalPatrimonio.toLocaleString('pt-BR', {minimumFractionDigits: 2})}`;
 
+    // Filtro flexível para aceitar tanto vencimento quanto data de pagamento/referência
     const filtrados = lancamentos.filter(l => {
-        const dataOk = (l.vencimento || l.data || '').startsWith(mesAno);
+        const dataRef = String(l.vencimento || l.dataCompra || l.createdAt || '');
+        const dataOk = !mesAno || dataRef.startsWith(mesAno);
         const escopoOk = escopo === 'todos' || (l.tipo === 'entrada') || (l.escopo || 'casal') === escopo;
         return dataOk && escopoOk;
     });
@@ -1755,8 +2024,6 @@ function carregarDashboard() {
             totalEntradas += val;
         } else {
             totalSaidas += val;
-            
-            // Lógica Exclusiva para separar Financiamentos x Parcelas x Faturas
             if (l.financiamentoId || descLower.includes('financiamento')) {
                 totalFinanciamentos += val;
             } else if ((l.totalParcelas && Number(l.totalParcelas) > 1) || descLower.includes('parcela')) {
@@ -1769,67 +2036,44 @@ function carregarDashboard() {
 
     const saldoGeral = totalEntradas - totalSaidas;
 
-    document.getElementById('totalEntradas').textContent = `R$ ${totalEntradas.toLocaleString('pt-BR', {minimumFractionDigits: 2})}`;
-    document.getElementById('totalSaidas').textContent = `R$ ${totalSaidas.toLocaleString('pt-BR', {minimumFractionDigits: 2})}`;
+    const elTotalEntradas = document.getElementById('totalEntradas');
+    if (elTotalEntradas) elTotalEntradas.textContent = `R$ ${totalEntradas.toLocaleString('pt-BR', {minimumFractionDigits: 2})}`;
+    
+    const elTotalSaidas = document.getElementById('totalSaidas');
+    if (elTotalSaidas) elTotalSaidas.textContent = `R$ ${totalSaidas.toLocaleString('pt-BR', {minimumFractionDigits: 2})}`;
     
     const elSaldo = document.getElementById('saldoGeral');
-    elSaldo.textContent = `R$ ${saldoGeral.toLocaleString('pt-BR', {minimumFractionDigits: 2})}`;
-    elSaldo.className = `stat-value ${saldoGeral >= 0 ? 'positivo' : 'negativo'}`;
-
-    const kpiFaturas = document.getElementById('kpiCardFaturas');
-    if (totalFaturas > 0) {
-        document.getElementById('totalFaturasMes').textContent = `R$ ${totalFaturas.toLocaleString('pt-BR', {minimumFractionDigits: 2})}`;
-        kpiFaturas.style.display = 'block';
-    } else {
-        kpiFaturas.style.display = 'none';
-    }
-
-    const kpiParcelas = document.getElementById('kpiCardParcelas');
-    if (totalParcelas > 0) {
-        document.getElementById('totalParcelasMes').textContent = `R$ ${totalParcelas.toLocaleString('pt-BR', {minimumFractionDigits: 2})}`;
-        kpiParcelas.style.display = 'block';
-    } else {
-        kpiParcelas.style.display = 'none';
-    }
-
-    const kpiFinanciamentos = document.getElementById('kpiCardFinanciamentos');
-    if (totalFinanciamentos > 0) {
-        document.getElementById('totalFinanciamentosMes').textContent = `R$ ${totalFinanciamentos.toLocaleString('pt-BR', {minimumFractionDigits: 2})}`;
-        kpiFinanciamentos.style.display = 'block';
-    } else {
-        kpiFinanciamentos.style.display = 'none';
-    }
-
-    const cardCartoes = document.getElementById('cardGraficoCartoes');
-    if (cardCartoes) {
-        cardCartoes.style.display = cartoes.length === 0 ? 'none' : 'flex';
+    if (elSaldo) {
+        elSaldo.textContent = `R$ ${saldoGeral.toLocaleString('pt-BR', {minimumFractionDigits: 2})}`;
+        elSaldo.className = `stat-value ${saldoGeral >= 0 ? 'positivo' : 'negativo'}`;
     }
 
     const tbodyLanc = document.getElementById('tabelaUltimosLancamentos');
-    tbodyLanc.innerHTML = '';
+    if (tbodyLanc) {
+        tbodyLanc.innerHTML = '';
+        const lancamentosTabela = filtrados.filter(l => tipoFiltroLanc === 'todos' || l.tipo === tipoFiltroLanc);
 
-    const lancamentosTabela = filtrados.filter(l => tipoFiltroLanc === 'todos' || l.tipo === tipoFiltroLanc);
-
-    if (lancamentosTabela.length === 0) {
-        tbodyLanc.innerHTML = `<tr><td colspan="7" style="text-align: center;">Nenhum lançamento encontrado.</td></tr>`;
-    } else {
-        lancamentosTabela.forEach(l => {
-            const catObj = categorias.find(c => Number(c.id) === Number(l.categoriaId)) || { nome: 'Geral' };
-            const tr = document.createElement('tr');
-            tr.innerHTML = `
-                <td>${l.usuario || 'Sistema'}</td>
-                <td><strong>${l.descricao}</strong></td>
-                <td>${catObj.nome}</td>
-                <td>${l.dataPagamento ? l.dataPagamento.split('-').reverse().join('/') : '-'}</td>
-                <td>${l.vencimento ? l.vencimento.split('-').reverse().join('/') : '-'}</td>
-                <td class="${l.tipo === 'entrada' ? 'positivo' : 'negativo'}">R$ ${Number(l.valor || 0).toLocaleString('pt-BR', {minimumFractionDigits: 2})}</td>
-                <td>
-                    <button onclick="window.location.href='editar-lancamento.html?id=${l.id}'" class="btn-acao-icone editar" title="Editar"><img src="imagens/editar.png" alt="Editar"></button>
-                    <button onclick="removerLancamentoInteligente(${l.id})" class="btn-acao-icone excluir" title="Excluir"><img src="imagens/excluir.png" alt="Excluir"></button>
-                </td>
-            `;
-            tbodyLanc.appendChild(tr);
-        });
+        if (lancamentosTabela.length === 0) {
+            tbodyLanc.innerHTML = `<tr><td colspan="7" style="text-align: center;">Nenhum lançamento encontrado para o mês ${mesAno}. (Verifique se a data do lançamento corresponde ao mês selecionado no filtro acima).</td></tr>`;
+        } else {
+            lancamentosTabela.forEach(l => {
+                const catObj = categorias.find(c => Number(c.id) === Number(l.categoriaId)) || { nome: 'Geral' };
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td>${l.usuario || 'Sistema'}</td>
+                    <td><strong>${l.descricao}</strong></td>
+                    <td>${catObj.nome}</td>
+                    <td>${formatarDataBR(l.dataPagamento)}</td>
+                    <td>${formatarDataBR(l.vencimento)}</td>
+                    <td class="${l.tipo === 'entrada' ? 'positivo' : 'negativo'}">R$ ${Number(l.valor || 0).toLocaleString('pt-BR', {minimumFractionDigits: 2})}</td>
+                    <td>
+                        <button onclick="window.location.href='editar-lancamento.html?id=${l.id}'" class="btn-acao-icone editar" title="Editar"><img src="imagens/editar.png" alt="Editar"></button>
+                        <button onclick="removerLancamentoInteligente(${l.id})" class="btn-acao-icone excluir" title="Excluir"><img src="imagens/excluir.png" alt="Excluir"></button>
+                    </td>
+                `;
+                tbodyLanc.appendChild(tr);
+            });
+        }
     }
 
     atualizarGraficosDashboard(totalEntradas, totalSaidas, dados);
@@ -2479,7 +2723,6 @@ async function adicionarContaLotePorPeriodo(descricao, valorParcela, dataInicio,
             observacao: 'Gerado por lote retroativo/período',
             horaExtra: 0,
             servicoEssencial: 'nao',
-            escopo: 'casal',
             pago: false,
             status: jaPassou ? 'atrasado' : 'pendente',
             createdAt: new Date().toISOString(),
@@ -2857,7 +3100,7 @@ async function abrirModalPrimeiroAcesso() {
                 </div>
                 <div>
                     <label style="font-size: 0.85rem; font-weight: bold; color: var(--text-main);">Senha Inicial:</label>
-                    <input type="password" class="modal-input" id="regSenha" placeholder="Digite sua senha" autocomplete="off" style="min-height: 44px;">
+                    <input type="password" class="modal-input" id="regSenha" placeholder="Mín 8 caracteres, letras, números e especial" autocomplete="off" style="min-height: 44px;">
                 </div>
             </div>
             <div class="modal-buttons" style="margin-top: 20px;">
@@ -2885,6 +3128,11 @@ async function abrirModalPrimeiroAcesso() {
             return;
         }
 
+        if (!validarComplexidadeSenha(senha)) {
+            await mostrarAlertaModal('A senha informada não cumpre os requisitos mínimos (mínimo de 8 caracteres, maiúsculas, minúsculas, números e caractere especial). Tente novamente.');
+            return;
+        }
+
         const dados = obterDados();
         if (!Array.isArray(dados.usuarios)) dados.usuarios = [];
 
@@ -2896,12 +3144,14 @@ async function abrirModalPrimeiroAcesso() {
 
         const novoId = dados.usuarios.reduce((max, u) => Math.max(max, Number(u.id) || 0), 0) + 1;
 
+        const hashSenha = await gerarHash(senha);
+
         dados.usuarios.push({
             id: novoId,
             usuario: usuario,
             nome: nome,
-            pin: senha,
-            senha: senha,
+            pin: hashSenha,
+            senha: hashSenha,
             ativo: true
         });
 
@@ -3029,10 +3279,24 @@ async function atualizarLancamentoInteligente(id, novosDados) {
 }
 
 function calcularStatusParcelaCartao(dataVencimentoStr, cartaoObj, dataCompraStr) {
-    // Fechamento da fatura NÃO significa pagamento. Esta função é mantida
-    // por compatibilidade com chamadas antigas e nunca marca uma parcela
-    // como paga apenas pela passagem da data de fechamento.
-    return 'pendente';
+    if (!cartaoObj || !cartaoObj.fechamento) return 'pendente';
+    
+    const hoje = new Date();
+    const [anoVenc, mesVenc, diaVenc] = String(dataVencimentoStr).split('-').map(Number);
+    
+    // Data de fechamento da fatura correspondente ao mês/ano do vencimento
+    // Geralmente o fechamento ocorre alguns dias antes do vencimento no mesmo ciclo ou mês anterior
+    const dataFechamento = new Date(anoVenc, mesVenc - 1, Number(cartaoObj.fechamento));
+    // Se o dia de fechamento for menor que o vencimento, o fechamento costuma ser no mês anterior
+    dataFechamento.setMonth(dataFechamento.getMonth() - 1);
+
+    // Se a data atual já passou da data de fechamento desta fatura, considera-se que a fatura já fechou (portanto, pendente de pagamento se não paga)
+    // Se a data atual é ANTERIOR ao fechamento, as parcelas anteriores a este ciclo assumem-se pagas.
+    if (hoje > dataFechamento) {
+        return 'pendente';
+    } else {
+        return 'pago';
+    }
 }
 
 function redirecionarNovoLancamento(tipoAcao) {
@@ -3265,4 +3529,15 @@ function renderizarCategorias() {
         `;
         lista.appendChild(li);
     });
+}
+
+function atualizarHeaderUsuario() {
+    const usuario = obterUsuarioAtual();
+    const spanNome = document.getElementById('usuarioLogadoNome');
+    if (spanNome && usuario) {
+        spanNome.textContent = `Olá, ${usuario.nome}`;
+    }
+    if (typeof renderizarSinoNotificacoes === 'function') {
+        renderizarSinoNotificacoes();
+    }
 }
