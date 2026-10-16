@@ -3398,7 +3398,9 @@ body.dark-mode .header-tools button[title="Ocultar/Mostrar Valores"] img {
 .dropdown-acao {
     position: relative;
     display: inline-block;
-    z-index: 999; /* <-- ADICIONE ESTA LINHA */
+    z-index: 999;
+    padding-bottom: 10px; 
+    margin-bottom: -10px; 
 }
 
 .btn-acao-principal {
@@ -3423,17 +3425,16 @@ body.dark-mode .header-tools button[title="Ocultar/Mostrar Valores"] img {
     display: none;
     position: absolute;
     right: 0;
-    top: 110%;
+    top: 100%; 
     background-color: var(--surface);
     min-width: 220px;
     box-shadow: 0 8px 24px rgba(0,0,0,0.15);
     border-radius: 8px;
     border: 1px solid var(--border);
-    z-index: 9999; /* <-- AUMENTE ESTE VALOR PARA 9999 */
+    z-index: 9999;
     overflow: hidden;
     animation: fadeIn 0.2s ease-in-out;
 }
-
 /* Opcional: Animação suave para exibir o menu */
 @keyframes fadeIn {
     from { opacity: 0; transform: translateY(-10px); }
