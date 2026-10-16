@@ -17,7 +17,7 @@ var SCHEMA = {
 
   cartoes: [
     'id', 'usuarioId', 'nome', 'limite', 'fechamento', 'vencimento',
-    'isBeneficio', 'ativo', 'createdAt', 'updatedAt'
+    'isBeneficio', 'tipoCartao', 'ativo', 'createdAt', 'updatedAt'
   ],
 
   lancamentos: [
@@ -51,12 +51,12 @@ var SCHEMA = {
   ],
 
   exclusao_movimento: [
-    'dataHora', 'usuario', 'usuarioId', 'lancamentoId',
+    'id', 'dataHora', 'usuario', 'usuarioId', 'lancamentoId',
     'descricao', 'valor', 'motivo'
   ],
 
   edicao_movimento: [
-    'dataHora', 'usuario', 'usuarioId', 'lancamentoId',
+    'id', 'dataHora', 'usuario', 'usuarioId', 'lancamentoId',
     'descricaoAntiga', 'descricaoNova', 'valorAntigo', 'valorNovo',
     'motivo'
   ]
@@ -67,6 +67,20 @@ var CAMPOS_DATA = {
   dataCompra: true,
   dataPagamento: true,
   primeiroVencimento: true
+};
+
+// Estes campos são armazenados como JSON em células do Sheets e precisam voltar como objetos.
+var CAMPOS_JSON = {
+  permissoes: true,
+  preferenciasNotificacao: true
+};
+
+var CAMPOS_BOOLEAN = {
+  ativo: true,
+  isBeneficio: true,
+  compartilhado: true,
+  pago: true,
+  lida: true
 };
 
 function respostaJson(obj) {
@@ -115,7 +129,14 @@ function doGet(e) {
     }
 
     if (action === 'obterDados') {
-      return retornarDadosCompletos();
+      // Impede que a leitura capture algumas abas antes e outras depois de uma gravação concorrente.
+      var leituraLock = LockService.getScriptLock();
+      leituraLock.waitLock(15000);
+      try {
+        return retornarDadosCompletos();
+      } finally {
+        leituraLock.releaseLock();
+      }
     }
 
     if (action === 'ping') {
@@ -176,10 +197,32 @@ function doPost(e) {
       });
     }
 
-    if (!data.dados || typeof data.dados !== 'object') {
+    if (!data.dados || typeof data.dados !== 'object' || Array.isArray(data.dados)) {
       return respostaJson({
         status: 'erro',
         mensagem: 'Objeto de dados inválido'
+      });
+    }
+
+    var estruturaValida = Object.keys(SCHEMA).every(function(nomeAba) {
+      return Array.isArray(data.dados[nomeAba]);
+    });
+    if (!estruturaValida) {
+      return respostaJson({
+        status: 'erro',
+        mensagem: 'Estrutura incompleta: todas as coleções devem ser arrays antes de salvar.'
+      });
+    }
+
+    var registrosValidos = Object.keys(SCHEMA).every(function(nomeAba) {
+      return data.dados[nomeAba].every(function(registro) {
+        return registro !== null && typeof registro === 'object' && !Array.isArray(registro);
+      });
+    });
+    if (!registrosValidos) {
+      return respostaJson({
+        status: 'erro',
+        mensagem: 'Estrutura inválida: cada registro deve ser um objeto.'
       });
     }
 
@@ -200,9 +243,34 @@ function doPost(e) {
 
       var novaRevisao = revisaoServidor + 1;
       data.dados._revision = novaRevisao;
-      atualizarTabelas(data.dados);
-      definirRevisaoDados(novaRevisao);
-      SpreadsheetApp.flush();
+
+      // O Sheets não oferece transação entre abas. Mantemos uma cópia para tentar
+      // restaurar o estado anterior caso alguma escrita falhe no meio do processo.
+      var dadosAnteriores = {};
+      Object.keys(SCHEMA).forEach(function(nomeAba) {
+        dadosAnteriores[nomeAba] = lerAba(nomeAba);
+      });
+
+      try {
+        atualizarTabelas(data.dados);
+        SpreadsheetApp.flush();
+        // Só avança a revisão depois que as gravações e o flush terminarem.
+        definirRevisaoDados(novaRevisao);
+      } catch (erroGravacao) {
+        var erroRollback = null;
+        try {
+          atualizarTabelas(dadosAnteriores);
+          SpreadsheetApp.flush();
+          definirRevisaoDados(revisaoServidor);
+        } catch (erroRestauracao) {
+          erroRollback = String(erroRestauracao);
+        }
+        throw new Error(
+          'Falha ao gravar os dados.' +
+          (erroRollback ? ' A restauração automática também falhou: ' + erroRollback : ' O estado anterior foi restaurado quando possível.') +
+          ' Detalhe: ' + String(erroGravacao)
+        );
+      }
 
       return respostaJson({
         status: 'sucesso',
@@ -282,7 +350,7 @@ function lerAba(nomeAba) {
 }
 
 function normalizarValorLido(header, val) {
-  if (val === null || val === '') return '';
+  if (val === null || val === '') return CAMPOS_JSON[header] ? {} : '';
 
   if (val instanceof Date) {
     if (CAMPOS_DATA[header]) {
@@ -300,8 +368,20 @@ function normalizarValorLido(header, val) {
 
   if (typeof val === 'string') {
     var texto = val.trim();
-    if (texto === 'TRUE') return true;
-    if (texto === 'FALSE') return false;
+
+    if (CAMPOS_JSON[header]) {
+      try {
+        return JSON.parse(texto);
+      } catch (_) {
+        // Uma célula JSON antiga/corrompida não deve quebrar a leitura de todas as abas.
+        return header === 'preferenciasNotificacao' ? {} : {};
+      }
+    }
+
+    if (CAMPOS_BOOLEAN[header]) {
+      if (texto.toUpperCase() === 'TRUE') return true;
+      if (texto.toUpperCase() === 'FALSE') return false;
+    }
     return val;
   }
 

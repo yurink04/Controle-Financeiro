@@ -1,0 +1,403 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#8b5e3c">
+
+    <title>Controle Financeiro | Acesso</title>
+
+    <link rel="stylesheet" href="style.css">
+</head>
+
+<body class="login-page">
+
+
+    <button type="button" class="login-theme-toggle" onclick="alternarTemaVisual(event)" title="Alternar tema">
+        <img id="themeImage" class="theme-icon" src="imagens/modo_escuro.jpg" alt="Tema" style="width: 22px; height: 22px; border-radius: 50%; object-fit: contain;">
+    </button>
+
+    <main class="login-screen">
+
+        <section class="login-brand-panel">
+
+            <div class="login-brand-content">
+
+                <div class="login-brand-logo">
+                    R$
+                </div>
+
+                <div class="login-brand-label">
+                    CONTROLE FINANCEIRO
+                </div>
+
+                <h1>
+                    Seu dinheiro.
+                    <br>
+                    <span>Sob controle.</span>
+                </h1>
+
+                <p class="login-brand-description">
+                    Organize suas receitas, despesas, cartões
+                    e financiamentos em um só lugar.
+                </p>
+
+
+                <!-- =================================================
+                     CARDS DECORATIVOS
+                     ================================================= -->
+
+                <div class="login-finance-preview">
+
+                    <div class="finance-preview-card">
+
+                        <span>
+                            Receitas
+                        </span>
+
+                        <strong class="finance-positive">
+                            R$ 4.850,00
+                        </strong>
+
+                        <small>
+                            Este mês
+                        </small>
+
+                    </div>
+
+
+                    <div class="finance-preview-card">
+
+                        <span>
+                            Despesas
+                        </span>
+
+                        <strong class="finance-negative">
+                            R$ 2.730,00
+                        </strong>
+
+                        <small>
+                            Este mês
+                        </small>
+
+                    </div>
+
+
+                    <div class="finance-preview-card finance-preview-highlight">
+
+                        <span>
+                            Saldo disponível
+                        </span>
+
+                        <strong>
+                            R$ 2.120,00
+                        </strong>
+
+                        <small>
+                            Controle em dia
+                        </small>
+
+                    </div>
+
+                </div>
+
+
+                <!-- =================================================
+                     RODAPÉ DO PAINEL
+                     ================================================= -->
+
+                <div class="login-brand-footer">
+
+                    <span class="login-footer-dot"></span>
+
+                    Sistema de controle pessoal
+
+                </div>
+
+            </div>
+
+        </section>
+
+
+        <!-- =====================================================
+             PAINEL DIREITO
+             ===================================================== -->
+
+        <section class="login-form-panel">
+
+            <div class="login-form-wrapper">
+
+                <!-- Logo para telas menores -->
+
+                <div class="login-mobile-logo">
+                    R$
+                </div>
+
+
+                <!-- =================================================
+                     CABEÇALHO
+                     ================================================= -->
+
+                <div class="login-heading">
+
+                    <span class="login-eyebrow">
+                        BEM-VINDO DE VOLTA
+                    </span>
+
+                    <h2>
+                        Acesse sua conta
+                    </h2>
+
+                    <p>
+                        Digite o seu nome de usuário para continuar.
+                    </p>
+
+                </div>
+
+
+                <!-- =================================================
+                     FORMULÁRIO
+                     ================================================= -->
+
+                <form
+                    id="formLogin"
+                    onsubmit="realizarLogin(event)"
+                >
+
+                    <!-- Campo usuário (Input de texto) -->
+
+                    <div class="login-field">
+
+                        <label for="inputUsuario">
+                            Usuário
+                        </label>
+
+                        <div class="login-select-wrapper" style="padding: 0 12px;">
+
+                            <span class="login-field-icon">
+                                👤
+                            </span>
+
+                            <input
+                                type="text"
+                                id="inputUsuario"
+                                placeholder="Digite seu nome de usuário"
+                                autocomplete="off"
+                                required
+                                style="border: none; background: transparent; width: 100%; outline: none; font-size: 0.96rem; color: var(--text-main);"
+                            >
+
+                        </div>
+
+                    </div>
+
+
+                    <!-- =================================================
+                         BOTÃO ENTRAR
+                         ================================================= -->
+
+                    <button
+                        type="submit"
+                        class="login-submit"
+                        id="loginSubmit"
+                    >
+
+                        <span class="login-submit-content">
+
+                            <span class="login-submit-text">
+                                Entrar no Sistema
+                            </span>
+
+                            <span class="login-submit-arrow">
+                                →
+                            </span>
+
+                        </span>
+
+                    </button>
+
+                </form>
+
+
+               <!-- =================================================
+     BOTÃO / CARD DE PRIMEIRO ACESSO
+     ================================================= -->
+
+<div class="login-security" style="cursor: pointer;" onclick="abrirModalPrimeiroAcesso()" title="Clique para cadastrar sua conta">
+
+    <div class="login-security-icon">
+        👤+
+    </div>
+
+    <div>
+
+        <strong>
+            Primeiro acesso
+        </strong>
+
+        <p>
+            Clique aqui para cadastrar seu usuário, nome e senha.
+        </p>
+
+    </div>
+
+</div>
+
+
+                <!-- =================================================
+                     RODAPÉ
+                     ================================================= -->
+
+                <div class="login-form-footer">
+
+                    <span>
+                        Controle Financeiro
+                    </span>
+
+                    <span>
+                        •
+                    </span>
+
+                    <span>
+                        Acesso seguro
+                    </span>
+
+                </div>
+
+            </div>
+
+        </section>
+
+    </main>
+
+
+    <!-- =========================================================
+         SCRIPT PRINCIPAL
+         ========================================================= -->
+
+    <script src="script.js"></script>
+
+
+    <!-- =========================================================
+         SCRIPT DA PÁGINA DE LOGIN
+         ========================================================= -->
+
+    <script>
+
+        let bancoInicializado = false;
+
+        document.addEventListener("DOMContentLoaded", async () => {
+            const botao = document.getElementById("loginSubmit");
+            if (botao) botao.disabled = true;
+            try {
+                await inicializarBanco();
+                bancoInicializado = Array.isArray(obterDados()?.usuarios);
+                if (!bancoInicializado) throw new Error("A base de dados não foi carregada.");
+            } catch (erro) {
+                console.error("Erro ao inicializar banco:", erro);
+                bancoInicializado = Boolean(localStorage.getItem("sistemaFinanceiroCompartilhado"));
+                if (!bancoInicializado) {
+                    await mostrarAlertaModal("Não foi possível carregar os dados do sistema. Verifique a conexão com a API e tente novamente.");
+                }
+            } finally {
+                if (botao) botao.disabled = !bancoInicializado;
+            }
+        });
+
+        /* =========================================================
+           LOGIN POR DIGITAÇÃO E VERIFICAÇÃO DE UNICIDADE
+           ========================================================= */
+
+        async function realizarLogin(event) {
+            event.preventDefault();
+            if (!bancoInicializado) {
+                await mostrarAlertaModal("A base de dados ainda não foi carregada. Atualize a página e tente novamente.");
+                return;
+            }
+
+            const inputUsuario = document.getElementById("inputUsuario");
+            const botao = document.getElementById("loginSubmit");
+
+            if (!inputUsuario || !inputUsuario.value.trim()) {
+                return;
+            }
+
+            const usuarioDigitado = inputUsuario.value.trim();
+            const dados = obterDados();
+
+            if (botao) {
+                botao.classList.add("loading");
+            }
+
+            try {
+                const usuariosEncontrados = (dados.usuarios || []).filter(
+                    u => normalizarTexto(u.usuario || u.nome) === normalizarTexto(usuarioDigitado)
+                );
+
+                if (usuariosEncontrados.length === 0) {
+                    await mostrarAlertaModal("Usuário não encontrado no sistema.");
+                    if (botao) botao.classList.remove("loading");
+                    return;
+                }
+
+                if (usuariosEncontrados.length > 1) {
+                    await mostrarAlertaModal("Erro de segurança: Existe mais de um registro com este usuário exato. Contate o administrador.");
+                    if (botao) botao.classList.remove("loading");
+                    return;
+                }
+
+                const usuarioUnico = usuariosEncontrados[0];
+                if (usuarioUnico.ativo === false) {
+                    await mostrarAlertaModal("Este usuário está desativado. Solicite ao administrador a reativação do acesso.");
+                    if (botao) botao.classList.remove("loading");
+                    return;
+                }
+                const sucesso = await selecionarUsuario(usuarioUnico.id);
+
+                if (!sucesso && botao) {
+                    botao.classList.remove("loading");
+                }
+
+            } catch (erro) {
+                console.error("Erro ao realizar login:", erro);
+                if (botao) {
+                    botao.classList.remove("loading");
+                }
+            }
+        }
+
+
+        /* =========================================================
+           ATUALIZAÇÃO DA IMAGEM DO TEMA
+           ========================================================= */
+
+        function atualizarIconeTemaLogin() {
+            const img = document.getElementById("themeImage");
+            if (!img) return;
+
+            // Mantém a mesma imagem padronizada do cabeçalho das outras telas
+            img.src = "imagens/modo_escuro.jpg";
+        }
+
+        document.addEventListener("DOMContentLoaded", () => {
+            atualizarIconeTemaLogin();
+        });
+
+        const alternarTemaOriginal = window.alternarTemaVisual;
+
+        window.alternarTemaVisual = function () {
+            if (typeof alternarTemaOriginal === "function") {
+                alternarTemaOriginal();
+            }
+
+            requestAnimationFrame(() => {
+                atualizarIconeTemaLogin();
+            });
+        };
+
+    </script>
+
+</body>
+
+</html>

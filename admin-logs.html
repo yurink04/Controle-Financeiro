@@ -35,12 +35,8 @@
             injetarHeader();
             const autenticado = await verificarAutenticacao();
             if (autenticado) {
-                // Mantém a usabilidade da sessão caso ele já tenha validado no servidor recentemente
-                if (sessionStorage.getItem('adminAutorizado') === 'true') {
-                    liberarPainelAdmin();
-                } else {
-                    document.getElementById('divLoginAdmin').style.display = 'block';
-                }
+                // A autorização não é persistida em localStorage; o painel exige validação do servidor nesta página.
+                document.getElementById('divLoginAdmin').style.display = 'block';
             }
         });
 
@@ -62,7 +58,7 @@
                 esconderLoading();
 
                 if (resultado.status === 'sucesso' && resultado.autorizado === true) {
-                    sessionStorage.setItem('adminAutorizado', 'true');
+                    localStorage.removeItem('adminAutorizado');
                     const dados = obterDados();
                     registrarLogInterno(dados, 'LOGIN ADMIN', 'Administrador acessou o painel de auditoria');
                     await salvarDados(dados);

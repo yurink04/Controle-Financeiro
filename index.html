@@ -285,16 +285,25 @@
 
     <script>
 
-        document.addEventListener(
-            "DOMContentLoaded",
-            async () => {
-                try {
-                    await inicializarBanco();
-                } catch (erro) {
-                    console.error("Erro ao inicializar banco:", erro);
+        let bancoInicializado = false;
+
+        document.addEventListener("DOMContentLoaded", async () => {
+            const botao = document.getElementById("loginSubmit");
+            if (botao) botao.disabled = true;
+            try {
+                await inicializarBanco();
+                bancoInicializado = Array.isArray(obterDados()?.usuarios);
+                if (!bancoInicializado) throw new Error("A base de dados não foi carregada.");
+            } catch (erro) {
+                console.error("Erro ao inicializar banco:", erro);
+                bancoInicializado = Boolean(localStorage.getItem("sistemaFinanceiroCompartilhado"));
+                if (!bancoInicializado) {
+                    await mostrarAlertaModal("Não foi possível carregar os dados do sistema. Verifique a conexão com a API e tente novamente.");
                 }
+            } finally {
+                if (botao) botao.disabled = !bancoInicializado;
             }
-        );
+        });
 
         /* =========================================================
            LOGIN POR DIGITAÇÃO E VERIFICAÇÃO DE UNICIDADE
@@ -302,6 +311,10 @@
 
         async function realizarLogin(event) {
             event.preventDefault();
+            if (!bancoInicializado) {
+                await mostrarAlertaModal("A base de dados ainda não foi carregada. Atualize a página e tente novamente.");
+                return;
+            }
 
             const inputUsuario = document.getElementById("inputUsuario");
             const botao = document.getElementById("loginSubmit");
@@ -335,6 +348,11 @@
                 }
 
                 const usuarioUnico = usuariosEncontrados[0];
+                if (usuarioUnico.ativo === false) {
+                    await mostrarAlertaModal("Este usuário está desativado. Solicite ao administrador a reativação do acesso.");
+                    if (botao) botao.classList.remove("loading");
+                    return;
+                }
                 const sucesso = await selecionarUsuario(usuarioUnico.id);
 
                 if (!sucesso && botao) {

@@ -88,21 +88,23 @@
         });
 
         function obterParcelasDoGrupo(dados) {
-            const lancamentos = dados.lancamentos || [];
+            const lancamentos = filtrarDadosPorPermissao(dados.lancamentos || [], dados, 'casal').filter(l => usuarioPodeAlterarLancamento(l, dados) || l.usuarioId == null);
+            let grupo = [];
             if (parcelamentoIdUrl) {
-                return lancamentos.filter(l => String(l.parcelamentoId) === String(parcelamentoIdUrl))
-                    .sort((a, b) => Number(a.parcelaAtual || 0) - Number(b.parcelaAtual || 0));
-            }
-            if (lancamentoIdUrl) {
+                grupo = lancamentos.filter(l => String(l.parcelamentoId || '') === String(parcelamentoIdUrl));
+            } else if (lancamentoIdUrl) {
                 const referencia = lancamentos.find(l => String(l.id) === String(lancamentoIdUrl));
                 if (!referencia) return [];
-                const chaveGrupo = referencia.parcelamentoId || descricaoBaseParcelamento(referencia.descricao || '');
-                return lancamentos.filter(l => 
-                    (referencia.parcelamentoId && l.parcelamentoId === referencia.parcelamentoId) ||
-                    (!referencia.parcelamentoId && descricaoBaseParcelamento(l.descricao || '') === chaveGrupo)
-                ).sort((a, b) => Number(a.parcelaAtual || 0) - Number(b.parcelaAtual || 0));
+                // Sem ID de grupo não há forma segura de distinguir compras com a mesma descrição.
+                grupo = referencia.parcelamentoId
+                    ? lancamentos.filter(l => String(l.parcelamentoId) === String(referencia.parcelamentoId))
+                    : [referencia];
             }
-            return [];
+            return grupo.sort((a, b) => {
+                const parcelaA = Number(a.parcelaAtual || 0), parcelaB = Number(b.parcelaAtual || 0);
+                if (parcelaA !== parcelaB) return parcelaA - parcelaB;
+                return String(a.vencimento || '').localeCompare(String(b.vencimento || ''));
+            });
         }
 
          function statusBadge(lancamento) {
@@ -144,7 +146,7 @@
             if (elForma) elForma.value = infoForma;
 
             const totalCompra = parcelas.reduce((acc, p) => acc + Number(p.valor || 0), 0);
-            const pagas = parcelas.filter(p => p.pago).length;
+            const pagas = parcelas.filter(p => p.pago === true || p.status === 'pago').length;
             const totalQtd = parcelas.length;
 
             const elTotal = document.getElementById('infoValorTotalCompra');
@@ -214,7 +216,9 @@
                     <td>${statusBadge(l)}</td>
                     <td class="action-cell">
                         <button type="button" onclick="editarValorParcelaGrupo(${Number(l.id)})" class="btn-acao-icone editar" title="Editar valor">✎</button>
-                        <button type="button" onclick="alternarStatusPagamentoParcela(${Number(l.id)})" class="btn-acao-icone ${l.pago ? 'desfazer' : 'pagar'}" title="Alterar status">${l.pago ? '↩' : '✓'}</button>
+                        ${l.formaPagamento === 'CARTAO'
+                            ? '<button type="button" class="btn-acao-icone" disabled title="A quitação é controlada pela fatura do cartão">💳</button>'
+                            : `<button type="button" onclick="alternarStatusPagamentoParcela(${Number(l.id)})" class="btn-acao-icone ${(l.pago === true || l.status === 'pago') ? 'desfazer' : 'pagar'}" title="Alterar status">${(l.pago === true || l.status === 'pago') ? '↩' : '✓'}</button>`}
                     </td>`;
                 tbody.appendChild(tr);
             });
@@ -229,9 +233,13 @@
                 await mostrarAlertaModal('Valor inválido.'); 
                 return;
             }
+            if (!await exigirPermissao('criarMovimento', 'editar valores de parcelas')) return;
             const dados = obterDados();
             const lanc = (dados.lancamentos || []).find(l => String(l.id) === String(lancamentoId));
-            if (!lanc) return;
+            if (!lanc || !usuarioPodeAlterarLancamento(lanc, dados)) {
+                await mostrarAlertaModal('Você não tem permissão para editar esta parcela.');
+                return;
+            }
             lanc.valor = Number(novoValor.toFixed(2));
             lanc.updatedAt = new Date().toISOString();
             registrarLogInterno(dados, 'EDIÇÃO VALOR PARCELA', `Parcela ID ${lancamentoId} alterada para ${formatarMoeda(novoValor)}`);
@@ -245,11 +253,6 @@
             if (ok) carregarDetalhesParceladaPagina();
         }
 
-        if (!lancamentoIdUrl && !parcelamentoIdUrl) {
-            mostrarAlertaModal('Identificador do parcelamento não especificado.').then(() => window.location.href = 'central-pagamentos.html');
-        } else {
-            carregarDetalhesParceladaPagina();
-        }
     </script>
 </body>
 </html>

@@ -9,11 +9,13 @@ async function gerarHash(texto) {
 
 const DB_KEY = 'sistemaFinanceiroCompartilhado';
 const BACKUP_TESTE_KEY = 'sistemaFinanceiroBackupTeste';
-const API_URL = "https://script.google.com/macros/s/AKfycbyTOJtjTto1BR0NXu2Aynul9UVuOOeZlCwvcYvMLgDqHKe4RDpZdefozcQOxOQOA9og/exec";
+const API_URL = "https://script.google.com/macros/s/AKfycbyjtYfRtc7nSQmromU5mQaOupBVRrigugKgRt6qbCBRdbblodPNJa7aAkOeiOcuAMR_/exec";
 const TOKEN_API = "PLANOF1NALPRAS4AIRD@MERDA";
-const SENHA_ADMIN = "praia2222";
-const SCHEMA_VERSION = 2;
-const SYNC_DEBOUNCE_MS = 250;
+const SCHEMA_VERSION = 3;
+const SYNC_DEBOUNCE_MS = 1500;
+const SYNC_BASELINE_KEY = 'sistemaFinanceiroSnapshotSincronizado';
+const SYNC_CONFLICT_KEY = 'sistemaFinanceiroConflitoSync';
+const COLECOES_DADOS = ['usuarios', 'categorias', 'cartoes', 'lancamentos', 'financiamentos', 'bens', 'notificacoes', 'logs', 'exclusao_movimento', 'edicao_movimento'];
 
 let syncTimer = null;
 let syncPendingData = null;
@@ -21,6 +23,7 @@ let syncInFlight = false;
 let ultimaSincronizacaoStatus = 'idle';
 let processandoAcaoModal = false;
 let memoriaSistema = null;
+let verificacaoAutenticacaoPromise = null;
 
 // Instâncias de gráficos separadas para não dar conflito entre telas
 let chartEntradasSaidasInstance = null;
@@ -93,7 +96,12 @@ function injetarHeader() {
         </div>
     </header>
     `;
-    document.body.insertAdjacentHTML('afterbegin', headerHTML);
+    if (!document.querySelector('.app-header')) {
+        document.body.insertAdjacentHTML('afterbegin', headerHTML);
+    }
+    criarIndicadorSincronizacaoUi();
+    atualizarIconePrivacidade();
+    atualizarHeaderUsuario();
 }
 
 function filtrarDadosPorPermissao(lista, dadosGlobais, escopoFiltro = 'casal') {
@@ -111,6 +119,21 @@ function filtrarDadosPorPermissao(lista, dadosGlobais, escopoFiltro = 'casal') {
         if (donoId === usuarioAtualId || (parceiroId && donoId === parceiroId)) return true;
         return false;
     });
+}
+
+function usuarioPodeAlterarLancamento(lancamento, dados = obterDados()) {
+    if (!lancamento) return false;
+    const usuario = obterUsuarioAtual(dados);
+    if (!usuario) return false;
+    const donoId = lancamento.usuarioId == null ? null : String(lancamento.usuarioId);
+    const atualId = String(usuario.id);
+    if (donoId === atualId) return true;
+
+    // Um parceiro só pode alterar registros compartilhados explicitamente como casal/casa.
+    const parceiroId = usuario.parceiroId == null ? null : String(usuario.parceiroId);
+    return Boolean(
+        parceiroId && donoId === parceiroId && (lancamento.escopo || 'casal') === 'casal'
+    );
 }
 
 function gerarId(prefixo = 'id') {
@@ -133,8 +156,18 @@ function validarComplexidadeSenha(senha) {
 
 async function selecionarUsuario(id) {
     const dados = obterDados();
-    const usuario = dados.usuarios.find(u => Number(u.id) === Number(id));
+    const usuario = dados.usuarios.find(u => String(u.id) === String(id));
     if (!usuario) return false;
+    if (usuario.ativo === false) {
+        await mostrarAlertaModal('Este usuário está desativado. Solicite ao administrador a reativação do acesso.');
+        return false;
+    }
+
+    const ehUsuarioTeste = normalizarTexto(usuario.nome) === 'teste';
+    if (ehUsuarioTeste && (localStorage.getItem('syncPendente') === 'true' || localStorage.getItem(SYNC_CONFLICT_KEY))) {
+        await mostrarAlertaModal('Antes de abrir o perfil de teste, sincronize ou resolva as alterações pendentes. Isso evita misturar dados de teste com dados reais.');
+        return false;
+    }
 
     const senhaAtual = String(usuario.pin || usuario.senha || "").trim();
     
@@ -164,6 +197,15 @@ async function selecionarUsuario(id) {
         
         registrarLogInterno(dados, "CADASTRO SENHA INICIAL", `Utilizador ${usuario.nome} cadastrou a palavra-passe inicial.`);
         await salvarDados(dados);
+        if (ehUsuarioTeste) {
+            if (syncTimer) clearTimeout(syncTimer);
+            syncTimer = null;
+            await sincronizarComServidor();
+            if (localStorage.getItem('syncPendente') === 'true' || localStorage.getItem(SYNC_CONFLICT_KEY)) {
+                await mostrarAlertaModal('A senha foi preparada localmente, mas o servidor ainda não confirmou a sincronização. Resolva a pendência antes de entrar no perfil de teste.');
+                return false;
+            }
+        }
         await mostrarAlertaModal("Palavra-passe cadastrada com sucesso!");
     } else {
         const senhaDigitada = await mostrarPromptSenha(
@@ -184,7 +226,16 @@ async function selecionarUsuario(id) {
         if (senhaDigitada === senhaAtual && hashDigitado !== senhaAtual) {
             usuario.pin = hashDigitado;
             usuario.senha = hashDigitado;
-            salvarDados(dados); 
+            await salvarDados(dados);
+            if (ehUsuarioTeste) {
+                if (syncTimer) clearTimeout(syncTimer);
+                syncTimer = null;
+                await sincronizarComServidor();
+                if (localStorage.getItem('syncPendente') === 'true' || localStorage.getItem(SYNC_CONFLICT_KEY)) {
+                    await mostrarAlertaModal('Não foi possível confirmar a atualização da senha no servidor. Resolva a pendência antes de entrar no perfil de teste.');
+                    return false;
+                }
+            }
         }
     }
 
@@ -246,9 +297,13 @@ function dataLocalYYYYMMDD(data = new Date()) {
 
 function criarDataLocal(dataStr) {
     if (!dataStr) return null;
-    const [ano, mes, dia] = String(dataStr).split('-').map(Number);
-    if (!ano || !mes || !dia) return null;
-    return new Date(ano, mes - 1, dia);
+    const partes = String(dataStr).trim().split('-');
+    if (partes.length !== 3 || partes.some(parte => !/^\d+$/.test(parte))) return null;
+    const [ano, mes, dia] = partes.map(Number);
+    if (!Number.isInteger(ano) || !Number.isInteger(mes) || !Number.isInteger(dia) || ano < 1000 || mes < 1 || mes > 12 || dia < 1 || dia > 31) return null;
+    const data = new Date(ano, mes - 1, dia);
+    if (data.getFullYear() !== ano || data.getMonth() !== mes - 1 || data.getDate() !== dia) return null;
+    return data;
 }
 
 function dataParaString(data) {
@@ -263,6 +318,33 @@ function adicionarMesesClamped(dataInicial, meses) {
     const ultimoDia = new Date(base.getFullYear(), base.getMonth() + 1, 0).getDate();
     base.setDate(Math.min(diaOriginal, ultimoDia));
     return base;
+}
+
+function calcularPrimeiroVencimentoCartao(cartao, dataCompra) {
+    const compra = criarDataLocal(dataCompra);
+    if (!cartao || !compra) return dataCompra || '';
+
+    const fechamentoOriginal = inteiroSeguro(cartao.fechamento, 1);
+    const fechamento = Math.min(Math.max(1, fechamentoOriginal), new Date(compra.getFullYear(), compra.getMonth() + 1, 0).getDate());
+    const diasCompra = compra.getDate();
+    const diaVencimento = Math.max(1, inteiroSeguro(cartao.vencimento, 1));
+
+    // Verifica se o vencimento ocorre dentro do mesmo mês base do fechamento (ex: Fecha 15, Vence 25)
+    const venceNoMesmoMes = diaVencimento > fechamento;
+
+    let mesesAteVencimento;
+    if (venceNoMesmoMes) {
+        // Se a compra for antes do fechamento, paga no mesmo mês (0). Senão, no mês seguinte (1).
+        mesesAteVencimento = diasCompra < fechamento ? 0 : 1;
+    } else {
+        // Se o vencimento for menor que o fechamento (ex: Fecha 25, Vence 05), a fatura vira o mês naturalmente.
+        mesesAteVencimento = diasCompra < fechamento ? 1 : 2;
+    }
+
+    const mesVencimento = new Date(compra.getFullYear(), compra.getMonth() + mesesAteVencimento, 1);
+    const ultimoDiaMes = new Date(mesVencimento.getFullYear(), mesVencimento.getMonth() + 1, 0).getDate();
+    mesVencimento.setDate(Math.min(diaVencimento, ultimoDiaMes));
+    return dataParaString(mesVencimento);
 }
 
 function dividirValorExato(valor, quantidade) {
@@ -293,6 +375,108 @@ function obterUsuarioAtualId(dados = obterDados()) {
     return usuario ? usuario.id : null;
 }
 
+
+function permissaoPaginaAtual() {
+    const arquivo = String(window.location.pathname || '').split('/').pop().toLowerCase();
+    const mapa = {
+        'dashboard.html': 'dashboard',
+        'relatorios.html': 'relatorios',
+        'lancamentos.html': 'lancamentos',
+        'editar-lancamento.html': 'lancamentos',
+        'central-pagamentos.html': 'lancamentos',
+        'detalhes-central-parcelada.html': 'lancamentos',
+        'cartoes.html': 'cartoes',
+        'categorias.html': 'categorias',
+        'configuracoes.html': 'configuracoes',
+        'admin-logs.html': 'configuracoes',
+        'financiamentos.html': 'configuracoes',
+        'detalhes-financiamento.html': 'configuracoes',
+        'bens.html': 'configuracoes'
+    };
+    return mapa[arquivo] || null;
+}
+
+function usuarioPode(acao, dados = obterDados()) {
+    const usuario = obterUsuarioAtual(dados);
+    if (!usuario || usuario.ativo === false) return false;
+
+    const permissoes = usuario.permissoes;
+    // Contas legadas recebem matriz explícita durante migrarDados(). Mantemos
+    // compatibilidade apenas quando o campo realmente não existe.
+    if (!permissoes || typeof permissoes !== 'object') return true;
+    if (permissoes.perfil === 'admin') return true;
+
+    const campo = {
+        criarMovimento: 'criarMovimento',
+        excluirMovimento: 'excluirMovimento',
+        financiamentos: 'financiamentos',
+        lotes: 'lotes',
+        usuarios: 'usuarios',
+        logs: 'logs'
+    }[acao];
+    if (!campo) return false;
+    return permissoes.acoes?.[campo] === true;
+}
+
+async function exigirPermissao(acao, descricao = 'realizar esta operação', dados = obterDados()) {
+    if (usuarioPode(acao, dados)) return true;
+    await mostrarAlertaModal(`Seu perfil não tem permissão para ${descricao}. Solicite acesso ao administrador.`);
+    return false;
+}
+
+function usuarioPodeAcessarPagina(usuario, chavePagina) {
+    if (!chavePagina) return true;
+    const permissoes = usuario?.permissoes;
+    // A migração converte contas sem matriz. Esta exceção é só para compatibilidade
+    // transitória com dados ainda não migrados; objetos parciais não ganham acesso.
+    if (!permissoes || typeof permissoes !== 'object') return true;
+    const paginas = permissoes.paginas;
+    const arquivo = String(window.location.pathname || '').split('/').pop().toLowerCase();
+
+    if (arquivo === 'admin-logs.html') return permissoes.acoes?.logs === true;
+    if (arquivo === 'financiamentos.html' || arquivo === 'detalhes-financiamento.html') {
+        return permissoes.acoes?.financiamentos === true;
+    }
+    if (arquivo === 'bens.html') {
+        return paginas?.configuracoes === true || permissoes.acoes?.financiamentos === true;
+    }
+    if (!paginas || typeof paginas !== 'object') return permissoes.perfil === 'admin';
+    return paginas[chavePagina] === true;
+}
+
+function aplicarPermissoesNavegacao(usuario = obterUsuarioAtual()) {
+    if (!usuario) return;
+    const paginas = usuario.permissoes?.paginas;
+    if (!paginas || typeof paginas !== 'object') return;
+    const acessoPorArquivo = {
+        'dashboard.html': 'dashboard',
+        'relatorios.html': 'relatorios',
+        'lancamentos.html': 'lancamentos',
+        'cartoes.html': 'cartoes',
+        'categorias.html': 'categorias',
+        'configuracoes.html': 'configuracoes'
+    };
+    document.querySelectorAll('.app-nav-center a[href]').forEach(link => {
+        const arquivo = String(link.getAttribute('href') || '').split('/').pop().toLowerCase();
+        const chave = acessoPorArquivo[arquivo];
+        if (chave) link.hidden = paginas[chave] !== true;
+    });
+    const menuCadastros = document.querySelector('.nav-dropdown');
+    if (menuCadastros) {
+        const podeVerAlgumCadastro = paginas.cartoes === true || paginas.categorias === true || paginas.configuracoes === true || usuario.permissoes?.acoes?.financiamentos === true;
+        menuCadastros.hidden = !podeVerAlgumCadastro;
+        menuCadastros.querySelectorAll('.nav-dropdown-content a').forEach(link => {
+            const destino = String(link.getAttribute('href') || '').split('/').pop().toLowerCase();
+            const allowed = destino === 'cartoes.html' ? paginas.cartoes === true
+                : destino === 'categorias.html' ? paginas.categorias === true
+                : destino === 'financiamentos.html' ? usuario.permissoes?.acoes?.financiamentos === true
+                : destino === 'bens.html' ? (paginas.configuracoes === true || usuario.permissoes?.acoes?.financiamentos === true)
+                : paginas.configuracoes === true;
+            link.hidden = !allowed;
+        });
+    }
+}
+
 function descricaoBaseParcelamento(descricao = '') {
     return String(descricao).replace(/\s\(\d+\/\d+\)$/, '').trim();
 }
@@ -301,11 +485,36 @@ function resolverParcelamentoId(lancamento) {
     return lancamento && lancamento.parcelamentoId ? lancamento.parcelamentoId : null;
 }
 
-function resolverFinanciamentoIdPorLancamento(lancamento, dados) {
-    if (lancamento && lancamento.financiamentoId != null) return lancamento.financiamentoId;
-    const descricao = normalizarTexto(lancamento?.descricao || '');
-    const candidato = (dados.financiamentos || []).find(f => descricao.includes(normalizarTexto(`Financiamento: ${f.nome}`)));
-    return candidato ? candidato.id : null;
+function resolverFinanciamentoIdPorLancamento(lancamento, dados = obterDados()) {
+    if (lancamento && lancamento.financiamentoId != null && String(lancamento.financiamentoId).trim() !== '') {
+        return lancamento.financiamentoId;
+    }
+    const descricao = normalizarTexto(descricaoBaseParcelamento(lancamento?.descricao || ''));
+    const prefixo = 'financiamento:';
+    if (!descricao.startsWith(prefixo)) return null;
+    const nome = descricao.slice(prefixo.length).trim();
+    const todosCandidatos = (dados.financiamentos || []).filter(f => normalizarTexto(f.nome) === nome);
+    const candidatosDoDono = lancamento?.usuarioId == null
+        ? []
+        : todosCandidatos.filter(f => String(f.usuarioId) === String(lancamento.usuarioId));
+    const candidatos = candidatosDoDono.length ? candidatosDoDono : todosCandidatos;
+    // Um nome duplicado não identifica de forma segura qual contrato originou a parcela.
+    return candidatos.length === 1 ? candidatos[0].id : null;
+}
+
+function pertenceAoFinanciamento(lancamento, financiamento, dados = obterDados()) {
+    if (!lancamento || !financiamento) return false;
+    if (lancamento.financiamentoId != null && String(lancamento.financiamentoId).trim() !== '') {
+        return String(lancamento.financiamentoId) === String(financiamento.id);
+    }
+    const descricaoBase = normalizarTexto(descricaoBaseParcelamento(lancamento.descricao || ''));
+    if (lancamento.tipo !== 'saida' || descricaoBase !== normalizarTexto(`Financiamento: ${financiamento.nome}`)) return false;
+    const todosCandidatos = (dados.financiamentos || []).filter(f => normalizarTexto(f.nome) === normalizarTexto(financiamento.nome));
+    const candidatosDoDono = lancamento.usuarioId == null
+        ? []
+        : todosCandidatos.filter(f => String(f.usuarioId) === String(lancamento.usuarioId));
+    const candidatos = candidatosDoDono.length ? candidatosDoDono : todosCandidatos;
+    return candidatos.length === 1 && String(candidatos[0].id) === String(financiamento.id);
 }
 
 function adicionarAuditoriaAoObjeto(dados, acao, detalhes, extras = {}) {
@@ -340,7 +549,7 @@ function migrarDados(dados) {
 
     dados.cartoes.forEach(cartao => {
         if (cartao.ativo === undefined) { cartao.ativo = true; alterou = true; }
-        if (!cartao.tipoCartao) { cartao.tipoCartao = 'credito'; alterou = true; }
+        if (!cartao.tipoCartao) { cartao.tipoCartao = cartao.isBeneficio ? 'beneficio' : 'credito'; alterou = true; }
         if (cartao.usuarioId == null) {
             const primeiroUsuario = dados.usuarios[0];
             if (primeiroUsuario) { cartao.usuarioId = primeiroUsuario.id; alterou = true; }
@@ -353,28 +562,84 @@ function migrarDados(dados) {
         if (!fin.valorParcela && fin.valorParcela !== 0) { fin.valorParcela = 0; alterou = true; }
     });
 
-    const porFinanciamento = new Map();
-    dados.financiamentos.forEach(fin => porFinanciamento.set(normalizarTexto(fin.nome), fin.id));
+    const temMatrizDePermissoes = dados.usuarios.some(u =>
+        u && u.permissoes && typeof u.permissoes === 'object' &&
+        u.permissoes.paginas && typeof u.permissoes.paginas === 'object' &&
+        u.permissoes.acoes && typeof u.permissoes.acoes === 'object'
+    );
+    const perfilLegado = (perfil) => ({
+        perfil,
+        paginas: {
+            dashboard: true, relatorios: true, lancamentos: true,
+            cartoes: true, categorias: true, configuracoes: perfil === 'admin'
+        },
+        acoes: {
+            criarMovimento: perfil !== 'usuario',
+            excluirMovimento: perfil !== 'usuario',
+            financiamentos: perfil !== 'usuario',
+            lotes: perfil !== 'usuario',
+            usuarios: perfil === 'admin',
+            logs: perfil === 'admin'
+        }
+    });
+    const indicePrimeiroAtivo = dados.usuarios.findIndex(u => u && u.ativo !== false);
+    dados.usuarios.forEach((usuario, indice) => {
+        const perms = usuario?.permissoes;
+        const matrizCompleta = perms && typeof perms === 'object' &&
+            perms.paginas && typeof perms.paginas === 'object' &&
+            perms.acoes && typeof perms.acoes === 'object';
+        if (matrizCompleta) return;
+        // Em uma base antiga sem nenhuma matriz, o primeiro usuário ativo vira
+        // administrador inicial; os demais recebem perfil supervisor. Se a base
+        // já tem matriz, qualquer registro incompleto recebe perfil supervisor.
+        const perfil = !temMatrizDePermissoes && indice === indicePrimeiroAtivo ? 'admin' : 'supervisor';
+        usuario.permissoes = perfilLegado(perfil);
+        alterou = true;
+    });
+
+    // Registros de auditoria também precisam de identidade estável para a sincronização por três vias.
+    // Os IDs legados são determinísticos para que duas sessões não gerem IDs diferentes para a mesma linha antiga.
+    [
+        ['exclusao_movimento', 'legacy_exc'],
+        ['edicao_movimento', 'legacy_edit']
+    ].forEach(([nomeColecao, prefixo]) => {
+        dados[nomeColecao].forEach((registro, indice) => {
+            if (!registro || typeof registro !== 'object' || registro.id) return;
+            const conteudo = { ...registro };
+            delete conteudo.id;
+            registro.id = `${prefixo}_${encodeURIComponent(`${serializarEstavel(conteudo)}#${indice}`)}`;
+            alterou = true;
+        });
+    });
 
     dados.lancamentos.forEach(lanc => {
-        if (lanc.pago === undefined) { lanc.pago = lanc.status === 'pago'; alterou = true; }
-        if (!lanc.status) { lanc.status = lanc.pago ? 'pago' : 'pendente'; alterou = true; }
+        const pagoNormalizado = lanc.pago === true || String(lanc.status || '').toLowerCase() === 'pago';
+        if (lanc.pago !== pagoNormalizado) { lanc.pago = pagoNormalizado; alterou = true; }
+        const statusNormalizado = pagoNormalizado
+            ? 'pago'
+            : (String(lanc.status || '').toLowerCase() === 'atrasado' ? 'atrasado' : 'pendente');
+        if (lanc.status !== statusNormalizado) { lanc.status = statusNormalizado; alterou = true; }
         if (lanc.horaExtra == null) { lanc.horaExtra = 0; alterou = true; }
         if (!lanc.servicoEssencial) { lanc.servicoEssencial = 'nao'; alterou = true; }
         if (!lanc.escopo) { lanc.escopo = 'casal'; alterou = true; }
         if (!lanc.observacao) lanc.observacao = '';
         if (!lanc.cartaoId && lanc.formaPagamento !== 'CARTAO') lanc.cartaoId = null;
 
-        if (!lanc.parcelamentoId && Number(lanc.totalParcelas) > 1) {
+        if (!lanc.parcelamentoId && Number(lanc.totalParcelas) > 1 && lanc.dataCompra) {
             const base = descricaoBaseParcelamento(lanc.descricao);
-            const chave = `${lanc.usuarioId || 0}|${lanc.cartaoId || 0}|${base}|${lanc.totalParcelas}`;
+            // A descrição sozinha não identifica uma compra: a mesma despesa pode ter sido parcelada mais de uma vez.
+            const chave = `${lanc.usuarioId || 0}|${lanc.cartaoId || 0}|${base}|${lanc.totalParcelas}|${String(lanc.dataCompra).slice(0, 10)}`;
             if (!lanc._legacyParcelamentoChave) { lanc._legacyParcelamentoChave = chave; alterou = true; }
         }
 
         if (!lanc.financiamentoId && normalizarTexto(lanc.descricao).startsWith('financiamento:')) {
             const nome = normalizarTexto(lanc.descricao).replace(/^financiamento:\s*/, '').replace(/\s\(\d+\/\d+\)$/, '').trim();
-            const id = porFinanciamento.get(nome);
-            if (id != null) { lanc.financiamentoId = id; alterou = true; }
+            const todosCandidatos = (dados.financiamentos || []).filter(fin => normalizarTexto(fin.nome) === nome);
+            const candidatosDoDono = lanc.usuarioId == null
+                ? []
+                : todosCandidatos.filter(fin => String(fin.usuarioId) === String(lanc.usuarioId));
+            const candidatos = candidatosDoDono.length ? candidatosDoDono : todosCandidatos;
+            if (candidatos.length === 1) { lanc.financiamentoId = candidatos[0].id; alterou = true; }
         }
     });
 
@@ -382,7 +647,7 @@ function migrarDados(dados) {
     dados.lancamentos.forEach(lanc => {
         if (lanc._legacyParcelamentoChave) {
             if (!gruposParcelamento.has(lanc._legacyParcelamentoChave)) {
-                gruposParcelamento.set(lanc._legacyParcelamentoChave, gerarId('parc'));
+                gruposParcelamento.set(lanc._legacyParcelamentoChave, `legacy_${encodeURIComponent(lanc._legacyParcelamentoChave)}`);
             }
             lanc.parcelamentoId = gruposParcelamento.get(lanc._legacyParcelamentoChave);
             delete lanc._legacyParcelamentoChave;
@@ -404,10 +669,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 
     if (!estahNaPaginaLogin && typeof verificarAutenticacao === 'function') {
         const autorizado = await verificarAutenticacao();
-        if (autorizado) {
-            atualizarHeaderUsuario();
-            if (typeof carregarDashboard === 'function') carregarDashboard();
-        }
+        if (autorizado) atualizarHeaderUsuario();
     }
 });
 
@@ -486,22 +748,29 @@ function criarIndicadorSincronizacaoUi() {
     chip.onclick = async () => {
         chip.style.transform = 'scale(0.9)';
         setTimeout(() => chip.style.transform = 'scale(1)', 150);
+
+        const possuiPendencias = localStorage.getItem('syncPendente') === 'true' || Boolean(localStorage.getItem(SYNC_CONFLICT_KEY));
+        if (possuiPendencias) {
+            const confirmarDescarte = await mostrarConfirmacaoModal('Há alterações locais ainda não sincronizadas. Atualizar do servidor descartará essas alterações locais. Deseja continuar?');
+            if (!confirmarDescarte) return;
+        }
+
         atualizarIndicadorSyncUI('pending');
         try {
-            const json = await buscarDadosServidor(false);
+            const json = await buscarDadosServidor();
             const resultado = migrarDados(json);
-            memoriaSistema = resultado.dados;
-            window.revisaoServidorAtual = Number(resultado.dados._revision) || 0;
-            localStorage.setItem(DB_KEY, JSON.stringify(memoriaSistema));
+            gravarSnapshotLocal(resultado.dados, true);
+            syncPendingData = null;
             localStorage.removeItem('syncPendente');
+            localStorage.removeItem(SYNC_CONFLICT_KEY);
             atualizarIndicadorSyncUI('success');
-            await mostrarAlertaModal("Dados atualizados com sucesso do banco de dados!");
+            await mostrarAlertaModal('Dados atualizados do servidor com sucesso.');
         } catch (e) {
             atualizarIndicadorSyncUI('error');
-            await mostrarAlertaModal("Erro ao atualizar do servidor: " + e.message);
-        } finally {
-            setTimeout(() => window.location.reload(), 500);
+            await mostrarAlertaModal('Erro ao atualizar do servidor: ' + e.message);
+            return;
         }
+        window.location.reload();
     };
 }
 
@@ -521,8 +790,13 @@ function atualizarIndicadorSyncUI(status) {
     } else if (status === 'error') {
         chip.style.backgroundColor = 'var(--danger-soft)';
         chip.style.borderColor = 'color-mix(in srgb, var(--danger) 26%, var(--border))';
-        chip.title = "Status: Erro ao sincronizar";
-        chip.innerHTML = `<img src="imagens/sincronizar.png" alt="Erro" style="width: 20px; height: 20px; object-fit: contain;">`;
+        const conflito = lerJSONLocal(SYNC_CONFLICT_KEY, null);
+        const resumo = conflito?.mensagem || 'Falha temporária; as alterações locais continuam salvas.';
+        const campos = Array.isArray(conflito?.campos) && conflito.campos.length
+            ? ` Campos: ${conflito.campos.slice(0, 5).join(', ')}${conflito.campos.length > 5 ? '…' : ''}.`
+            : '';
+        chip.title = `Status: sincronização pendente. ${resumo}${campos} Clique para rever os dados.`;
+        chip.innerHTML = `<img src="imagens/sincronizar.png" alt="Sincronização pendente" style="width: 20px; height: 20px; object-fit: contain;">`;
     }
 }
 
@@ -543,29 +817,43 @@ function esconderLoading() {
     const overlayAntigo = document.getElementById('loadingOverlay');
     if (overlayAntigo) overlayAntigo.remove();
 }
-
 async function inicializarBanco() {
-    try {
-        if (localStorage.getItem('syncPendente') === 'true') {
-            const dadosPendentes = localStorage.getItem(DB_KEY);
-            if (dadosPendentes) {
-                syncPendingData = JSON.parse(dadosPendentes);
-                sincronizarComServidor();
+    const local = lerJSONLocal(DB_KEY, null);
+    const pendente = localStorage.getItem('syncPendente') === 'true';
+
+    if (local && pendente) {
+        memoriaSistema = migrarDados(local).dados;
+        syncPendingData = clonarDados(memoriaSistema);
+        if (!localStorage.getItem(SYNC_CONFLICT_KEY)) {
+            // Without a baseline we cannot distinguish local edits from server edits safely.
+            if (!lerJSONLocal(SYNC_BASELINE_KEY, null)) {
+                marcarConflitoSincronizacao(memoriaSistema, [], 'Não existe snapshot-base para mesclar as alterações pendentes.');
+            } else {
+                await sincronizarComServidor();
             }
         }
-        const json = await buscarDadosServidor(false);
-        const resultado = migrarDados(json);
-        if (!Number.isFinite(Number(resultado.dados._revision))) resultado.dados._revision = json._revision || 0;
-        
-        memoriaSistema = resultado.dados;
-        window.revisaoServidorAtual = resultado.dados._revision;
-        localStorage.setItem(DB_KEY, JSON.stringify(memoriaSistema));
+        return memoriaSistema;
+    }
+
+    try {
+        const json = await buscarDadosServidor();
+        const normalizado = migrarDados(json).dados;
+        memoriaSistema = normalizado;
+        window.revisaoServidorAtual = Number(normalizado._revision) || 0;
+        gravarSnapshotLocal(normalizado, true);
         localStorage.removeItem('syncPendente');
+        localStorage.removeItem(SYNC_CONFLICT_KEY);
+        atualizarIndicadorSyncUI('success');
+        return normalizado;
     } catch (e) {
-        console.warn("Sincronização em segundo plano adiada (modo offline ou instável).", e);
+        if (local) {
+            memoriaSistema = migrarDados(local).dados;
+            console.warn('Servidor indisponível; mantendo a cópia local.', e);
+            return memoriaSistema;
+        }
+        throw e;
     }
 }
-
 async function salvarDados(dados, opcoes = {}) {
     const normalizado = migrarDados(dados).dados;
     if (!Number.isFinite(Number(normalizado._revision))) {
@@ -575,64 +863,244 @@ async function salvarDados(dados, opcoes = {}) {
     memoriaSistema = normalizado;
     localStorage.setItem(DB_KEY, JSON.stringify(normalizado));
 
-    if (typeof carregarDashboard === 'function') carregarDashboard();
-    if (typeof carregarRelatorios === 'function') carregarRelatorios();
-    if (typeof renderizarCategorias === 'function') renderizarCategorias();
-    if (typeof carregarCentralPagamentos === 'function') carregarCentralPagamentos();
+    // A atualização visual não deve impedir que os dados sejam persistidos/sincronizados.
+    [
+        () => typeof carregarDashboard === 'function' && carregarDashboard(),
+        () => typeof carregarRelatorios === 'function' && carregarRelatorios(),
+        () => typeof renderizarCategorias === 'function' && renderizarCategorias(),
+        () => typeof carregarCentralPagamentos === 'function' && carregarCentralPagamentos()
+    ].forEach(atualizar => {
+        try { atualizar(); } catch (erro) { console.error('Falha ao atualizar a tela após salvar:', erro); }
+    });
 
-    if (opcoes.sincronizar !== false) {
-        syncPendingData = normalizado;
+    const usuarioSessaoId = localStorage.getItem('usuarioLogado');
+    const usuarioSessao = (normalizado.usuarios || []).find(u => String(u.id) === String(usuarioSessaoId));
+    const sessaoTeste = Boolean(usuarioSessao && normalizarTexto(usuarioSessao.nome) === 'teste');
+
+    if (opcoes.sincronizar !== false && !sessaoTeste) {
+        syncPendingData = clonarDados(normalizado);
         localStorage.setItem('syncPendente', 'true');
-        atualizarIndicadorSyncUI('pending');
-        agendarSincronizacaoSilenciosa();
+        if (!localStorage.getItem(SYNC_CONFLICT_KEY)) {
+            atualizarIndicadorSyncUI('pending');
+            agendarSincronizacaoSilenciosa();
+        } else {
+            atualizarIndicadorSyncUI('error');
+        }
+    } else if (sessaoTeste) {
+        // O perfil de teste permanece local e não envia lançamentos ao servidor.
+        if (syncTimer) clearTimeout(syncTimer);
+        syncTimer = null;
+        syncPendingData = null;
+        localStorage.removeItem('syncPendente');
     }
     return true;
 }
 
+function lerJSONLocal(chave, padrao = null) {
+    try {
+        const bruto = localStorage.getItem(chave);
+        return bruto == null ? padrao : JSON.parse(bruto);
+    } catch (_) {
+        return padrao;
+    }
+}
+
+function gravarSnapshotLocal(dados, definirBase = false) {
+    const copia = clonarDados(dados);
+    memoriaSistema = copia;
+    localStorage.setItem(DB_KEY, JSON.stringify(copia));
+    if (definirBase) localStorage.setItem(SYNC_BASELINE_KEY, JSON.stringify(copia));
+    window.revisaoServidorAtual = Number(copia._revision) || 0;
+    return copia;
+}
+
+function serializarEstavel(valor) {
+    if (valor === undefined) return '__UNDEFINED__';
+    if (valor === null || typeof valor !== 'object') return JSON.stringify(valor);
+    if (Array.isArray(valor)) return '[' + valor.map(serializarEstavel).join(',') + ']';
+    return '{' + Object.keys(valor).sort().map(chave => JSON.stringify(chave) + ':' + serializarEstavel(valor[chave])).join(',') + '}';
+}
+
+function valoresIguais(a, b) {
+    return serializarEstavel(a) === serializarEstavel(b);
+}
+
+function clonarValor(valor) {
+    return valor === undefined ? undefined : JSON.parse(JSON.stringify(valor));
+}
+
+function mesclarValorTresVias(base, local, remoto, caminho, conflitos) {
+    if (valoresIguais(local, base)) return clonarValor(remoto);
+    if (valoresIguais(remoto, base)) return clonarValor(local);
+    if (valoresIguais(local, remoto)) return clonarValor(local);
+
+    const ehObjeto = valor => valor !== null && typeof valor === 'object' && !Array.isArray(valor);
+    if (ehObjeto(local) && ehObjeto(remoto) && (base === undefined || ehObjeto(base))) {
+        const resultado = {};
+        const chaves = new Set([
+            ...Object.keys(base || {}),
+            ...Object.keys(local || {}),
+            ...Object.keys(remoto || {})
+        ]);
+        chaves.forEach(chave => {
+            const mesclado = mesclarValorTresVias(base?.[chave], local?.[chave], remoto?.[chave], `${caminho}.${chave}`, conflitos);
+            if (mesclado !== undefined) resultado[chave] = mesclado;
+        });
+        return resultado;
+    }
+
+    conflitos.push(caminho);
+    return clonarValor(local);
+}
+
+function indexarColecao(lista) {
+    const mapa = new Map();
+    const ocorrenciasSemId = new Map();
+    (Array.isArray(lista) ? lista : []).forEach(item => {
+        let chave;
+        if (item && item.id !== undefined && item.id !== null && item.id !== '') {
+            chave = `id:${String(item.id)}`;
+        } else {
+            // Conteúdo igual não significa identidade igual: usa ordinal para preservar duplicados.
+            const assinatura = serializarEstavel(item);
+            const ordinal = ocorrenciasSemId.get(assinatura) || 0;
+            ocorrenciasSemId.set(assinatura, ordinal + 1);
+            chave = `registro:${assinatura}#${ordinal}`;
+        }
+        mapa.set(chave, item);
+    });
+    return mapa;
+}
+
+function mesclarColecaoTresVias(nome, baseLista, localLista, remotoLista, conflitos) {
+    const base = indexarColecao(baseLista);
+    const local = indexarColecao(localLista);
+    const remoto = indexarColecao(remotoLista);
+    const ordem = [...remoto.keys(), ...local.keys(), ...base.keys()];
+    const vistos = new Set();
+    const resultado = [];
+
+    ordem.forEach(chave => {
+        if (vistos.has(chave)) return;
+        vistos.add(chave);
+        const b = base.get(chave);
+        const l = local.get(chave);
+        const r = remoto.get(chave);
+        const valor = mesclarValorTresVias(b, l, r, `${nome}[${chave}]`, conflitos);
+        if (valor !== undefined) resultado.push(valor);
+    });
+    return resultado;
+}
+
+function mesclarSnapshotsTresVias(base, local, remoto) {
+    const conflitos = [];
+    const resultado = clonarDados(remoto || {});
+    COLECOES_DADOS.forEach(nome => {
+        resultado[nome] = mesclarColecaoTresVias(nome, base?.[nome], local?.[nome], remoto?.[nome], conflitos);
+    });
+    const chaves = new Set([...Object.keys(base || {}), ...Object.keys(local || {}), ...Object.keys(remoto || {})]);
+    chaves.forEach(chave => {
+        if (COLECOES_DADOS.includes(chave) || chave === '_revision') return;
+        const valor = mesclarValorTresVias(base?.[chave], local?.[chave], remoto?.[chave], chave, conflitos);
+        if (valor !== undefined) resultado[chave] = valor;
+    });
+    resultado._revision = Number(remoto?._revision) || 0;
+    return { dados: resultado, conflitos: [...new Set(conflitos)] };
+}
+
+function marcarConflitoSincronizacao(dadosLocais, campos, mensagem) {
+    const conflito = {
+        dataHora: new Date().toISOString(),
+        campos: (campos || []).slice(0, 30),
+        mensagem: mensagem || 'Há alterações conflitantes entre esta sessão e o servidor.'
+    };
+    localStorage.setItem(SYNC_CONFLICT_KEY, JSON.stringify(conflito));
+    localStorage.setItem('syncPendente', 'true');
+    if (dadosLocais) {
+        memoriaSistema = dadosLocais;
+        localStorage.setItem(DB_KEY, JSON.stringify(dadosLocais));
+        syncPendingData = clonarDados(dadosLocais);
+    }
+    atualizarIndicadorSyncUI('error');
+    console.error('Sincronização bloqueada para evitar sobrescrita de dados:', conflito);
+}
 async function sincronizarComServidor() {
-    if (syncInFlight || !syncPendingData) return;
+    if (syncInFlight || !syncPendingData || localStorage.getItem(SYNC_CONFLICT_KEY)) return;
     syncInFlight = true;
-    const payloadDados = syncPendingData;
-    syncPendingData = null;
+    let payloadAtual = null;
+    let tentativas = 0;
 
     try {
-        const resposta = await fetch(API_URL, {
-            method: "POST",
-            headers: { "Content-Type": "text/plain;charset=utf-8" },
-            body: JSON.stringify({ action: "salvarDados", token: TOKEN_API, dados: payloadDados })
-        });
+        while (syncPendingData && tentativas < 5 && !localStorage.getItem(SYNC_CONFLICT_KEY)) {
+            tentativas++;
+            payloadAtual = syncPendingData;
+            syncPendingData = null;
 
-        const json = JSON.parse(await resposta.text());
+            const resposta = await fetch(API_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                body: JSON.stringify({ action: 'salvarDados', token: TOKEN_API, dados: payloadAtual })
+            });
+            if (!resposta.ok) throw new Error(`Falha HTTP ${resposta.status} ao salvar os dados.`);
+            const json = await resposta.json();
 
-        if (json.status === 'conflito') {
-            console.warn("Conflito detectado. Sincronizando versão do servidor...");
-            const dadosServidor = await buscarDadosServidor(false);
-            const resultadoServidor = migrarDados(dadosServidor);
-            window.revisaoServidorAtual = Number(resultadoServidor.dados._revision) || 0;
-            payloadDados._revision = window.revisaoServidorAtual;
-            syncPendingData = payloadDados;
-            syncInFlight = false;
-            sincronizarComServidor();
-            return;
+            if (json.status === 'conflito') {
+                const localAtual = lerJSONLocal(DB_KEY, payloadAtual) || payloadAtual;
+                const base = lerJSONLocal(SYNC_BASELINE_KEY, null);
+                const servidor = migrarDados(await buscarDadosServidor()).dados;
+
+                if (!base) {
+                    marcarConflitoSincronizacao(localAtual, [], 'O servidor mudou, mas esta instalação não tem um snapshot-base para comparar com segurança.');
+                    break;
+                }
+
+                const mesclagem = mesclarSnapshotsTresVias(migrarDados(base).dados, migrarDados(localAtual).dados, servidor);
+                if (mesclagem.conflitos.length) {
+                    marcarConflitoSincronizacao(localAtual, mesclagem.conflitos, 'Alguns campos foram alterados localmente e no servidor ao mesmo tempo. Nenhuma versão foi sobrescrita automaticamente.');
+                    break;
+                }
+
+                localStorage.setItem(SYNC_BASELINE_KEY, JSON.stringify(servidor));
+                mesclagem.dados._revision = Number(servidor._revision) || 0;
+                gravarSnapshotLocal(mesclagem.dados, false);
+                syncPendingData = clonarDados(mesclagem.dados);
+                localStorage.setItem('syncPendente', 'true');
+                continue;
+            }
+
+            if (json.status !== 'sucesso') throw new Error(json.mensagem || 'Erro desconhecido ao sincronizar os dados.');
+
+            const revisaoNova = Number(json._revision);
+            if (!Number.isFinite(revisaoNova)) throw new Error('O servidor não retornou uma revisão válida.');
+
+            // Registra como base somente o snapshot efetivamente aceito pelo servidor.
+            const snapshotAceito = clonarDados(payloadAtual);
+            snapshotAceito._revision = revisaoNova;
+            localStorage.setItem(SYNC_BASELINE_KEY, JSON.stringify(snapshotAceito));
+            window.revisaoServidorAtual = revisaoNova;
+
+            if (syncPendingData) syncPendingData._revision = revisaoNova;
+            if (memoriaSistema) {
+                memoriaSistema._revision = revisaoNova;
+                localStorage.setItem(DB_KEY, JSON.stringify(memoriaSistema));
+            }
+
+            if (!syncPendingData) {
+                localStorage.removeItem('syncPendente');
+                atualizarIndicadorSyncUI('success');
+            } else {
+                localStorage.setItem('syncPendente', 'true');
+                atualizarIndicadorSyncUI('pending');
+            }
         }
-
-        if (json.status !== 'sucesso') throw new Error(json.mensagem || "Erro desconhecido no servidor.");
-
-        localStorage.removeItem('syncPendente');
-        if (json._revision !== undefined && memoriaSistema) {
-            window.revisaoServidorAtual = json._revision;
-            memoriaSistema._revision = json._revision;
-            localStorage.setItem(DB_KEY, JSON.stringify(memoriaSistema));
-        }
-
-        atualizarIndicadorSyncUI('success');
-    } catch (e) {
-        console.warn("Sincronização adiada por instabilidade de rede:", e);
-        syncPendingData = payloadDados;
+    } catch (erro) {
+        console.warn('Sincronização adiada por erro de rede ou servidor:', erro);
+        if (!syncPendingData && payloadAtual) syncPendingData = clonarDados(lerJSONLocal(DB_KEY, payloadAtual) || payloadAtual);
         localStorage.setItem('syncPendente', 'true');
         atualizarIndicadorSyncUI('error');
     } finally {
         syncInFlight = false;
+        if (syncPendingData && !localStorage.getItem(SYNC_CONFLICT_KEY)) agendarSincronizacaoSilenciosa();
     }
 }
 
@@ -653,21 +1121,17 @@ function obterDados() {
 
 function agendarSincronizacaoSilenciosa() {
     if (syncTimer) clearTimeout(syncTimer);
-    syncTimer = setTimeout(sincronizarComServidor, 1500);
+    syncTimer = setTimeout(sincronizarComServidor, SYNC_DEBOUNCE_MS);
 }
 
-async function buscarDadosServidor(apenasMovimentos = false) {
-    const resposta = await fetch(`${API_URL}?action=obterDados&token=${encodeURIComponent(TOKEN_API)}&apenasMovimentos=${apenasMovimentos}`);
-    if (!resposta.ok) throw new Error('Falha de rede ao contatar o servidor.');
+async function buscarDadosServidor() {
+    const url = `${API_URL}?action=obterDados&token=${encodeURIComponent(TOKEN_API)}`;
+    const resposta = await fetch(url, { cache: 'no-store' });
+    if (!resposta.ok) throw new Error(`Falha HTTP ${resposta.status} ao consultar o servidor.`);
     const json = await resposta.json();
     if (json.status === 'erro') throw new Error(json.mensagem || 'Erro desconhecido do servidor.');
+    if (!Array.isArray(json.usuarios) || !Array.isArray(json.lancamentos)) throw new Error('A resposta do servidor não contém a estrutura esperada.');
     return json;
-}
-
-async function registrarLog(acao, detalhes, extras = {}) {
-    const dados = obterDados();
-    adicionarAuditoriaAoObjeto(dados, acao, detalhes, extras);
-    await salvarDados(dados);
 }
 
 function registrarLogInterno(dados, acao, detalhes, extras = {}) {
@@ -692,28 +1156,64 @@ function deslogarSistema() {
     localStorage.removeItem('adminLogado');
     window.location.href = 'index.html';
 }
-
-async function verificarAutenticacao() {
-    if (!localStorage.getItem(DB_KEY)) {
-        try {
-            const json = await buscarDadosServidor(false);
-            const resultado = migrarDados(json);
-            memoriaSistema = resultado.dados;
-            localStorage.setItem(DB_KEY, JSON.stringify(memoriaSistema));
-        } catch (e) {
-            console.warn("Erro ao carregar dados da sessão:", e);
-        }
+function verificarAutenticacao() {
+    if (!verificacaoAutenticacaoPromise) {
+        verificacaoAutenticacaoPromise = verificarAutenticacaoInterna().catch(erro => {
+            verificacaoAutenticacaoPromise = null;
+            console.error('Falha ao validar a sessão:', erro);
+            return false;
+        });
     }
+    return verificacaoAutenticacaoPromise;
+}
 
+async function verificarAutenticacaoInterna() {
     const usuarioId = localStorage.getItem('usuarioLogado');
     if (!usuarioId) {
         window.location.href = 'index.html';
         return false;
     }
 
-    const usuario = obterDados().usuarios.find(u => String(u.id) === String(usuarioId));
-    if (!usuario) {
+    try {
+        const dadosLocais = lerJSONLocal(DB_KEY, null);
+        const usuarioLocal = (dadosLocais?.usuarios || []).find(u => String(u.id) === String(usuarioId));
+        const sessaoTesteLocal = Boolean(
+            usuarioLocal && normalizarTexto(usuarioLocal.nome) === 'teste' && localStorage.getItem(BACKUP_TESTE_KEY)
+        );
+
+        if (sessaoTesteLocal) {
+            // Preserva os dados temporários entre páginas; eles serão descartados ao sair do perfil de teste.
+            memoriaSistema = migrarDados(dadosLocais).dados;
+        } else if (localStorage.getItem(SYNC_CONFLICT_KEY)) {
+            memoriaSistema = migrarDados(dadosLocais || {}).dados;
+            atualizarIndicadorSyncUI('error');
+        } else if (localStorage.getItem('syncPendente') === 'true') {
+            await inicializarBanco();
+        } else {
+            // Revalida a revisão ao abrir cada página para que abas e usuários não fiquem presos a dados antigos.
+            const json = await buscarDadosServidor();
+            const atualizados = migrarDados(json).dados;
+            gravarSnapshotLocal(atualizados, true);
+            localStorage.removeItem(SYNC_CONFLICT_KEY);
+        }
+    } catch (erro) {
+        console.warn('Servidor indisponível; tentando continuar com os dados locais:', erro);
+        if (!lerJSONLocal(DB_KEY, null)) {
+            window.location.href = 'index.html';
+            return false;
+        }
+    }
+
+    const dados = obterDados();
+    const usuario = (dados.usuarios || []).find(u => String(u.id) === String(usuarioId));
+    if (!usuario || usuario.ativo === false) {
         deslogarSistema();
+        return false;
+    }
+    const chavePagina = permissaoPaginaAtual();
+    if (!usuarioPodeAcessarPagina(usuario, chavePagina)) {
+        await mostrarAlertaModal('Seu perfil não tem permissão para acessar esta página.');
+        window.location.href = 'dashboard.html';
         return false;
     }
     return true;
@@ -935,146 +1435,170 @@ function mostrarAlertaModal(mensagem) {
         overlay.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === 'Escape') finalizar(); });
     });
 }
-
-async function verificarSenhaAdmin(nomeSecao = "esta seção") {
-    const usuario = obterUsuarioAtual();
-    if (usuario && normalizarTexto(usuario.nome) === 'teste') return true;
-    if (localStorage.getItem('adminAutorizado') === 'true') return true;
-
-    // A correção foi feita adicionando o parâmetro 'false' no final desta chamada
+async function verificarSenhaAdmin(nomeSecao = 'esta seção') {
     const senhaDigitada = await mostrarPromptSenha(
-        "Acesso restrito", 
-        `Área protegida por senha de administrador para ${nomeSecao}.`, 
-        false 
+        'Acesso restrito',
+        `Informe a senha administrativa para ${nomeSecao}.`,
+        false
     );
-    if (senhaDigitada === null) return false;
+    if (senhaDigitada === null || !String(senhaDigitada).trim()) return false;
 
-    if (senhaDigitada === SENHA_ADMIN) {
-        const lembrar = await mostrarConfirmacaoModal("Deseja lembrar esta autorização durante a sessão?");
-        if (lembrar) localStorage.setItem('adminAutorizado', 'true');
-        return true;
+    try {
+        const resposta = await fetch(API_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+            body: JSON.stringify({ action: 'verificarAdmin', token: TOKEN_API, senha: senhaDigitada })
+        });
+        if (!resposta.ok) throw new Error(`Falha HTTP ${resposta.status}`);
+        const resultado = await resposta.json();
+        if (resultado.status === 'sucesso' && resultado.autorizado === true) return true;
+        await mostrarAlertaModal('Senha administrativa incorreta.');
+        return false;
+    } catch (erro) {
+        console.error('Falha ao validar a senha administrativa:', erro);
+        await mostrarAlertaModal('Não foi possível validar a senha administrativa no servidor. Verifique a conexão.');
+        return false;
     }
-
-    await mostrarAlertaModal('Senha de administrador incorreta!');
-    return false;
 }
 
-// Consolidado de adicionarCategoria
+// Operações de categoria centralizadas, com propriedade, validação e limpeza garantidas.
 async function adicionarCategoria(nome, tipo) {
+    if (!await exigirPermissao('criarMovimento', 'gerenciar categorias')) return false;
     if (processandoAcaoModal) return false;
-    if (!await verificarSenhaAdmin("cadastrar categoria")) return false;
-    
-    processandoAcaoModal = true;
-    mostrarLoading("Cadastrando categoria...");
-    const dados = obterDados();
-    const nomeNormalizado = normalizarTexto(nome);
-    const usuarioAtualId = Number(obterUsuarioAtualId(dados));
-    const ID_SISTEMA = 5;
-
-    if (!nomeNormalizado || !['entrada', 'saida'].includes(tipo)) {
-        esconderLoading(); processandoAcaoModal = false;
-        await mostrarAlertaModal('Dados da categoria inválidos.');
-        return false;
-    }
-
-    const duplicada = dados.categorias.some(c => {
-        const criadorId = Number(c.criadopor);
-        const mesmoNomeTipo = c.tipo === tipo && normalizarTexto(c.nome) === nomeNormalizado;
-        const pertenceAoContexto = criadorId === ID_SISTEMA || criadorId === usuarioAtualId;
-        return mesmoNomeTipo && pertenceAoContexto;
-    });
-
-    if (duplicada) {
-        esconderLoading(); processandoAcaoModal = false;
-        await mostrarAlertaModal('Já existe uma categoria com este nome e tipo.');
-        return false;
-    }
-
-    const novaId = dados.categorias.reduce((m, c) => Math.max(m, Number(c.id) || 0), 0) + 1;
-    dados.categorias.push({ id: novaId, nome: String(nome).trim(), tipo, classificacao: 'personalizado', criadopor: usuarioAtualId });
-
-    registrarLogInterno(dados, "CADASTRO CATEGORIA", `Categoria personalizada criada: ${nome} (${tipo})`);
-    await salvarDados(dados);
-    
-    esconderLoading(); processandoAcaoModal = false;
-    await mostrarAlertaModal("Categoria cadastrada com sucesso!");
-    if (typeof renderizarCategorias === 'function') renderizarCategorias();
-    return true;
-}
-
-// Consolidado de atualizarCategoria
-async function atualizarCategoria(id, nome, tipo) {
-    if (processandoAcaoModal) return false;
-    if (!await verificarSenhaAdmin("editar categoria")) return false;
+    if (!await verificarSenhaAdmin('cadastrar categoria')) return false;
 
     processandoAcaoModal = true;
-    mostrarLoading("Atualizando categoria...");
+    mostrarLoading('Cadastrando categoria...');
     try {
         const dados = obterDados();
-        const categoria = dados.categorias.find(c => String(c.id) === String(id));
-        const nomeNormalizado = normalizarTexto(nome);
-        
-        if (!categoria || !nomeNormalizado || !['entrada', 'saida'].includes(tipo)) throw new Error('Dados da categoria inválidos.');
-        if (categoria.classificacao === 'padrao' || Number(categoria.criadopor) === 5) throw new Error('Categorias padrão do sistema não podem ser alteradas.');
+        const nomeLimpo = String(nome || '').trim();
+        const nomeNormalizado = normalizarTexto(nomeLimpo);
+        const usuarioAtualId = Number(obterUsuarioAtualId(dados));
 
-        const duplicada = dados.categorias.some(c => String(c.id) !== String(id) && c.tipo === tipo && normalizarTexto(c.nome) === nomeNormalizado);
-        if (duplicada) throw new Error('Já existe outra categoria com este nome e tipo.');
-
-        const tipoAntigo = categoria.tipo;
-        categoria.nome = String(nome).trim();
-        categoria.tipo = tipo;
-        categoria.updatedAt = new Date().toISOString();
-
-        if (tipoAntigo !== tipo) {
-            dados.lancamentos.forEach(l => {
-                if (String(l.categoriaId) === String(id)) l.updatedAt = new Date().toISOString();
-            });
+        if (!nomeNormalizado || !['entrada', 'saida'].includes(tipo)) {
+            throw new Error('Dados da categoria inválidos.');
         }
+        // As categorias são listadas em comum e usadas por todos os lançamentos;
+        // nomes duplicados globais causavam seleção ambígua entre usuários.
+        const duplicada = (dados.categorias || []).some(c =>
+            c.tipo === tipo && normalizarTexto(c.nome) === nomeNormalizado
+        );
+        if (duplicada) throw new Error('Já existe uma categoria com este nome e tipo.');
 
-        registrarLogInterno(dados, "EDIÇÃO CATEGORIA", `Categoria ID ${id} alterada para: ${categoria.nome} (${tipo})`);
+        const novaId = (dados.categorias || []).reduce((m, c) => Math.max(m, Number(c.id) || 0), 0) + 1;
+        dados.categorias.push({
+            id: novaId,
+            nome: nomeLimpo,
+            tipo,
+            classificacao: 'personalizado',
+            criadopor: usuarioAtualId
+        });
+        registrarLogInterno(dados, 'CADASTRO CATEGORIA', `Categoria personalizada criada: ${nomeLimpo} (${tipo})`);
         await salvarDados(dados);
-
-        esconderLoading(); processandoAcaoModal = false;
-        await mostrarAlertaModal("Categoria atualizada com sucesso!");
+        await mostrarAlertaModal('Categoria cadastrada com sucesso!');
         if (typeof renderizarCategorias === 'function') renderizarCategorias();
         return true;
     } catch (erro) {
-        esconderLoading(); processandoAcaoModal = false;
+        console.error('Falha ao cadastrar categoria:', erro);
+        await mostrarAlertaModal(erro.message || 'Não foi possível cadastrar a categoria.');
+        return false;
+    } finally {
+        esconderLoading();
+        processandoAcaoModal = false;
+    }
+}
+
+async function atualizarCategoria(id, nome, tipo) {
+    if (!await exigirPermissao('criarMovimento', 'gerenciar categorias')) return false;
+    if (processandoAcaoModal) return false;
+    if (!await verificarSenhaAdmin('editar categoria')) return false;
+
+    processandoAcaoModal = true;
+    mostrarLoading('Atualizando categoria...');
+    try {
+        const dados = obterDados();
+        const categoria = (dados.categorias || []).find(c => String(c.id) === String(id));
+        const nomeLimpo = String(nome || '').trim();
+        const nomeNormalizado = normalizarTexto(nomeLimpo);
+        const usuarioAtualId = Number(obterUsuarioAtualId(dados));
+
+        if (!categoria || !nomeNormalizado || !['entrada', 'saida'].includes(tipo)) {
+            throw new Error('Dados da categoria inválidos.');
+        }
+        if (categoria.classificacao === 'padrao' || Number(categoria.criadopor) === 5) {
+            throw new Error('Categorias padrão do sistema não podem ser alteradas.');
+        }
+        if (Number(categoria.criadopor) !== usuarioAtualId) {
+            throw new Error('Você só pode editar categorias criadas pelo seu usuário.');
+        }
+        const duplicada = (dados.categorias || []).some(c =>
+            String(c.id) !== String(id) && c.tipo === tipo && normalizarTexto(c.nome) === nomeNormalizado
+        );
+        if (duplicada) throw new Error('Já existe outra categoria com este nome e tipo.');
+
+        const tipoAntigo = categoria.tipo;
+        if (tipoAntigo !== tipo) {
+            const emUso = (dados.lancamentos || []).some(l => String(l.categoriaId) === String(id)) ||
+                (dados.financiamentos || []).some(f => String(f.categoriaId) === String(id));
+            if (emUso) {
+                throw new Error('Não é possível trocar o tipo de uma categoria em uso. Reclassifique os lançamentos antes.');
+            }
+        }
+
+        categoria.nome = nomeLimpo;
+        categoria.tipo = tipo;
+        registrarLogInterno(dados, 'EDIÇÃO CATEGORIA', `Categoria ID ${id} alterada para: ${categoria.nome} (${tipo})`);
+        await salvarDados(dados);
+        await mostrarAlertaModal('Categoria atualizada com sucesso!');
+        if (typeof renderizarCategorias === 'function') renderizarCategorias();
+        return true;
+    } catch (erro) {
+        console.error('Falha ao atualizar categoria:', erro);
         await mostrarAlertaModal(erro.message || 'Não foi possível atualizar a categoria.');
         return false;
+    } finally {
+        esconderLoading();
+        processandoAcaoModal = false;
     }
 }
 
 async function excluirCategoria(id) {
+    if (!await exigirPermissao('excluirMovimento', 'excluir categorias')) return false;
     if (processandoAcaoModal) return false;
-    if (!await verificarSenhaAdmin("excluir categoria")) return false;
-    
+    if (!await verificarSenhaAdmin('excluir categoria')) return false;
+
     processandoAcaoModal = true;
-    mostrarLoading("Excluindo categoria...");
-    const dados = obterDados();
-    const categoria = dados.categorias.find(c => String(c.id) === String(id));
+    mostrarLoading('Excluindo categoria...');
+    try {
+        const dados = obterDados();
+        const categoria = (dados.categorias || []).find(c => String(c.id) === String(id));
+        const usuarioAtualId = Number(obterUsuarioAtualId(dados));
+        if (!categoria) throw new Error('Categoria não encontrada. Atualize a lista e tente novamente.');
+        if (categoria.classificacao === 'padrao' || Number(categoria.criadopor) === 5) {
+            throw new Error('Categorias padrão do sistema não podem ser excluídas.');
+        }
+        if (Number(categoria.criadopor) !== usuarioAtualId) {
+            throw new Error('Você só pode excluir categorias criadas pelo seu usuário.');
+        }
 
-    if (categoria && (categoria.classificacao === 'padrao' || Number(categoria.criadopor) === 5)) {
-        esconderLoading(); processandoAcaoModal = false;
-        await mostrarAlertaModal('Categorias padrão do sistema não podem ser excluídas.');
+        const emUso = (dados.lancamentos || []).some(l => String(l.categoriaId) === String(id)) ||
+            (dados.financiamentos || []).some(f => String(f.categoriaId) === String(id));
+        if (emUso) throw new Error('Esta categoria está vinculada a lançamentos ou financiamentos e não pode ser excluída.');
+
+        dados.categorias = (dados.categorias || []).filter(c => String(c.id) !== String(id));
+        registrarLogInterno(dados, 'EXCLUSÃO CATEGORIA', `Categoria ID ${id} excluída`);
+        await salvarDados(dados);
+        await mostrarAlertaModal('Categoria excluída com sucesso!');
+        if (typeof renderizarCategorias === 'function') renderizarCategorias();
+        return true;
+    } catch (erro) {
+        console.error('Falha ao excluir categoria:', erro);
+        await mostrarAlertaModal(erro.message || 'Não foi possível excluir a categoria.');
         return false;
+    } finally {
+        esconderLoading();
+        processandoAcaoModal = false;
     }
-
-    const emUso = dados.lancamentos.some(l => Number(l.categoriaId) === Number(id)) || dados.financiamentos.some(f => Number(f.categoriaId) === Number(id));
-    if (emUso) {
-        esconderLoading(); processandoAcaoModal = false;
-        await mostrarAlertaModal('Esta categoria está vinculada a lançamentos ou financiamentos e não pode ser excluída.');
-        return false;
-    }
-
-    dados.categorias = dados.categorias.filter(c => String(c.id) !== String(id));
-    registrarLogInterno(dados, "EXCLUSÃO CATEGORIA", `Categoria ID ${id} excluída`);
-    await salvarDados(dados);
-    
-    esconderLoading(); processandoAcaoModal = false;
-    await mostrarAlertaModal("Categoria excluída com sucesso!");
-    if (typeof renderizarCategorias === 'function') renderizarCategorias();
-    return true;
 }
 
 function popularSelectsLancamento() {
@@ -1088,7 +1612,7 @@ function popularSelectsLancamento() {
     if (selectCartao) {
         selectCartao.innerHTML = '';
         const usuarioAtualId = Number(obterUsuarioAtualId(dados));
-        const cartoesUsuario = dados.cartoes.filter(c => c.ativo !== false && Number(c.usuarioId) === usuarioAtualId);
+        const cartoesUsuario = dados.cartoes.filter(c => c.ativo !== false && !c.isBeneficio && Number(c.usuarioId) === usuarioAtualId);
 
         if (cartoesUsuario.length === 0) {
             const opt = document.createElement('option');
@@ -1138,7 +1662,6 @@ function atualizarFiltroCategoriasPorTipo(tipo, categoriaIdPreferida = null) {
     selectCat.value = existeCategoriaPreferida ? String(categoriaAtual) : String(filtradas[0].id);
     selectCat.dataset.tipoAtual = tipoNormalizado;
 
-    verificarCategoriaSalario();
     return true;
 }
 
@@ -1155,45 +1678,68 @@ function tratarMudancaTipoLancamento() {
     const blocoEssencial = document.getElementById('blocoServicoEssencial');
     const labelData = document.getElementById('labelDataReferencia');
     const inputHE = document.getElementById('valorHoraExtra');
+    const blocoEscopo = document.getElementById('blocoEscopo');
+    const blocoStatus = document.getElementById('blocoStatusPagamento');
+    const blocoBem = document.getElementById('blocoBemLancamento');
 
     const ehEntrada = tipo === 'entrada';
 
     if (blocoHE) blocoHE.style.display = ehEntrada ? 'block' : 'none';
     if (blocoFormaPgto) blocoFormaPgto.style.display = ehEntrada ? 'none' : 'block';
     if (blocoEssencial) blocoEssencial.style.display = ehEntrada ? 'none' : 'block';
+    if (blocoEscopo) blocoEscopo.style.display = ehEntrada ? 'none' : 'block';
+    if (blocoStatus) blocoStatus.style.display = ehEntrada ? 'none' : 'block';
+    if (blocoBem) blocoBem.style.display = ehEntrada ? 'none' : 'block';
 
     if (labelData) labelData.textContent = ehEntrada ? 'Data de recebimento' : 'Data de vencimento / referência';
 
     if (ehEntrada) {
         if (blocoCartao) blocoCartao.style.display = 'none';
-        if (inputHE) inputHE.value = '0';
+        if (inputHE) inputHE.value = inputHE.value || '0';
     } else {
         tratarMudancaFormaPagamento();
     }
-}
 
+    // Centraliza a atualização de categoria/salário/hora extra após trocar o tipo.
+    if (typeof tratarMudancaCategoria === 'function') tratarMudancaCategoria();
+    else verificarCategoriaSalario();
+}
 function tratarMudancaFormaPagamento() {
     const selectForma = document.getElementById('formaPagamento');
-    const blocoCartao = document.getElementById('blocoCartao');
-    const blocoVencimento = document.getElementById('blocoVencimento');
-    const selectStatus = document.getElementById('statusPagamento');
-
     if (!selectForma) return;
 
-    const usaCartao = selectForma.value === 'CARTAO';
-    if (blocoCartao) blocoCartao.style.display = usaCartao ? 'block' : 'none';
-    if (blocoVencimento) blocoVencimento.style.display = usaCartao ? 'none' : 'block';
+    const forma = selectForma.value;
+    const usaCartao = forma === 'CARTAO';
+    const tipo = document.getElementById('tipoLancamento')?.value || 'saida';
+    const blocoCartao = document.getElementById('blocoCartao');
+    const blocoVencimento = document.getElementById('blocoVencimento');
+    const blocoStatus = document.getElementById('blocoStatusPagamento');
+    const selectStatus = document.getElementById('statusPagamento');
 
-    if (selectStatus) {
-        if (usaCartao || selectForma.value === 'BOLETO' || selectForma.value === 'FIXO') selectStatus.value = 'pendente';
-        else if (selectForma.value === 'DINHEIRO') selectStatus.value = 'pago';
+    if (blocoCartao) blocoCartao.style.display = usaCartao && tipo !== 'entrada' ? 'block' : 'none';
+    if (blocoVencimento) blocoVencimento.style.display = usaCartao && tipo !== 'entrada' ? 'none' : 'block';
+    if (blocoStatus) blocoStatus.style.display = tipo === 'entrada' || usaCartao ? 'none' : 'block';
+
+    if (selectStatus && tipo !== 'entrada') {
+        if (usaCartao || forma === 'BOLETO' || forma === 'FIXO') selectStatus.value = 'pendente';
+        else if (forma === 'DINHEIRO') selectStatus.value = 'pago';
     }
 }
 
 function inicializarControlesLancamento() {
     const tipoSelect = document.getElementById('tipoLancamento');
     const formaPagamento = document.getElementById('formaPagamento');
-    const categoriaSelect = document.getElementById('categoriaLancamento');
+    const cartaoSelect = document.getElementById('cartaoLancamento');
+
+    // Lê os parâmetros que os botões do Dashboard enviaram na URL
+    const params = new URLSearchParams(window.location.search);
+    const paramTipo = params.get('tipo');
+    const paramForma = params.get('forma');
+    const paramCartaoId = params.get('cartaoId');
+
+    // Aplica os valores da URL nos campos
+    if (tipoSelect && paramTipo) tipoSelect.value = paramTipo;
+    if (formaPagamento && paramForma) formaPagamento.value = paramForma;
 
     if (tipoSelect && tipoSelect.dataset.controleInicializado !== 'true') {
         tipoSelect.addEventListener('change', tratarMudancaTipoLancamento);
@@ -1205,15 +1751,21 @@ function inicializarControlesLancamento() {
         formaPagamento.dataset.controleInicializado = 'true';
     }
 
-    if (categoriaSelect && categoriaSelect.dataset.controleInicializado !== 'true') {
-        categoriaSelect.addEventListener('change', verificarCategoriaSalario);
-        categoriaSelect.dataset.controleInicializado = 'true';
+    // Popula a lista de cartões antes de tentar selecionar um
+    if (typeof popularSelectsLancamento === 'function') {
+        popularSelectsLancamento();
+    }
+
+    // Se a URL enviou um cartão específico (Nova Saída no Cartão), já deixa marcado
+    if (cartaoSelect && paramCartaoId) {
+        cartaoSelect.value = paramCartaoId;
     }
 
     tratarMudancaTipoLancamento();
 }
 
 async function adicionarLancamentoComParcelas(dadosForm) {
+    if (!await exigirPermissao('criarMovimento', 'criar lançamentos')) return false;
     if (processandoAcaoModal) return false;
     processandoAcaoModal = true;
     mostrarLoading("Salvando lançamento...");
@@ -1237,8 +1789,14 @@ async function adicionarLancamentoComParcelas(dadosForm) {
 
         let escopoFinal = dadosForm.tipo === 'saida' ? (dadosForm.escopo || 'casal') : 'casal';
         if (dadosForm.bemId) {
-            const bemObj = (dados.bens || []).find(b => String(b.id) === String(dadosForm.bemId));
-            if (bemObj && bemObj.compartilhado) escopoFinal = 'casal';
+            const bemObj = (dados.bens || []).find(b => String(b.id) === String(dadosForm.bemId) && b.ativo !== false);
+            if (!bemObj) throw new Error('O bem selecionado não existe ou está inativo.');
+            const donoBemId = bemObj.usuarioId == null ? null : String(bemObj.usuarioId);
+            const parceiroIdAtual = obterUsuarioAtual(dados)?.parceiroId == null ? null : String(obterUsuarioAtual(dados).parceiroId);
+            if (donoBemId && donoBemId !== String(usuarioId) && !(bemObj.compartilhado === true && donoBemId === parceiroIdAtual)) {
+                throw new Error('Este bem pertence a outro usuário e não está compartilhado.');
+            }
+            if (bemObj.compartilhado === true) escopoFinal = 'casal';
         }
 
         const valoresParcelas = dadosForm.formaPagamento === 'FIXO' ? Array.from({ length: qtdGerar }, () => Number(valorTotal.toFixed(2))) : dividirValorExato(valorTotal, qtdGerar);
@@ -1254,7 +1812,9 @@ async function adicionarLancamentoComParcelas(dadosForm) {
             cartaoObj = (dados.cartoes || []).find(c => String(c.id) === String(dadosForm.cartaoId));
         }
 
-        const hojeData = new Date();
+        if (dadosForm.formaPagamento === 'CARTAO' && (!cartaoObj || cartaoObj.ativo === false || cartaoObj.isBeneficio || Number(cartaoObj.usuarioId) !== usuarioId)) {
+            throw new Error('Selecione um cartão de crédito ativo (cartões de benefício não aceitam compras de crédito).');
+        }
 
         for (let i = 1; i <= qtdGerar; i++) {
             const dataVenc = adicionarMesesClamped(dataBase, i - 1);
@@ -1264,12 +1824,9 @@ async function adicionarLancamentoComParcelas(dadosForm) {
             let estaParcelaPaga = false;
             if (dadosForm.tipo === 'entrada') {
                 estaParcelaPaga = dadosForm.statusInicial ? (dadosForm.statusInicial === 'pago') : true;
-            } else if (dadosForm.formaPagamento === 'CARTAO' && cartaoObj) {
-                const anoV = dataVenc.getFullYear();
-                const mesV = dataVenc.getMonth(); 
-                const diaFechamento = Number(cartaoObj.fechamento || 1);
-                const dataFechamentoFatura = new Date(anoV, mesV - 1, diaFechamento);
-                estaParcelaPaga = hojeData <= dataFechamentoFatura && (i < qtdGerar); 
+            } else if (dadosForm.formaPagamento === 'CARTAO') {
+                // Uma compra no cartão só fica paga quando a fatura correspondente é quitada.
+                estaParcelaPaga = false;
             } else {
                 estaParcelaPaga = dadosForm.statusInicial ? (dadosForm.statusInicial === 'pago') : false;
             }
@@ -1320,49 +1877,103 @@ async function adicionarLancamentoComParcelas(dadosForm) {
 }
 
 // Consolidado de adicionarContaLotePorPeriodo
-async function adicionarContaLotePorPeriodo(descricao, valorParcela, dataInicio, qtdMeses, categoriaId, bemId = null) {
-    mostrarLoading("Gerando contas em lote...");
-    const dados = obterDados();
-    const usuarioId = parseInt(localStorage.getItem('usuarioLogado'));
-    
-    let escopoLote = 'casal';
-    if (bemId) {
-        const bemObj = (dados.bens || []).find(b => String(b.id) === String(bemId));
-        if (bemObj && !bemObj.compartilhado) escopoLote = 'individual';
+async function adicionarContaLotePorPeriodo(descricao, valorParcela, dataInicio, qtdMeses, categoriaId, bemId = null, formaPagamento = 'BOLETO', cartaoId = null) {
+    if (!await exigirPermissao('lotes', 'gerar contas em lote')) return false;
+    if (!await exigirPermissao('criarMovimento', 'criar lançamentos')) return false;
+    if (processandoAcaoModal) return false;
+    processandoAcaoModal = true;
+    mostrarLoading('Gerando contas em lote...');
+
+    try {
+        const dados = obterDados();
+        const usuarioId = Number(localStorage.getItem('usuarioLogado'));
+        const descricaoFinal = String(descricao || '').trim();
+        const valorFinal = numeroSeguro(valorParcela);
+        const quantidade = inteiroSeguro(qtdMeses, 0);
+        const dataBase = dataInicio instanceof Date ? new Date(dataInicio) : criarDataLocal(dataInicio);
+        const categoria = (dados.categorias || []).find(c => String(c.id) === String(categoriaId) && c.tipo === 'saida');
+
+        if (!descricaoFinal || valorFinal <= 0 || !dataBase || !Number.isFinite(dataBase.getTime())) throw new Error('Informe descrição, valor e data inicial válidos.');
+        if (!categoria) throw new Error('Selecione uma categoria válida de saída.');
+        if (quantidade < 1 || quantidade > 120) throw new Error('O lote deve conter de 1 a 120 meses.');
+        if (!['DINHEIRO', 'BOLETO', 'FIXO', 'CARTAO'].includes(formaPagamento)) throw new Error('Forma de pagamento inválida.');
+
+        const cartao = formaPagamento === 'CARTAO'
+            ? (dados.cartoes || []).find(c => String(c.id) === String(cartaoId) && c.ativo !== false && !c.isBeneficio && Number(c.usuarioId) === usuarioId)
+            : null;
+        if (formaPagamento === 'CARTAO' && !cartao) throw new Error('Selecione um cartão ativo pertencente ao usuário atual.');
+
+        let escopo = 'casal';
+        if (bemId) {
+            const bem = (dados.bens || []).find(b => String(b.id) === String(bemId) && b.ativo !== false);
+            if (!bem) throw new Error('O bem patrimonial selecionado não existe ou está inativo.');
+            const donoBemId = bem.usuarioId == null ? null : String(bem.usuarioId);
+            const parceiroIdAtual = obterUsuarioAtual(dados)?.parceiroId == null ? null : String(obterUsuarioAtual(dados).parceiroId);
+            if (donoBemId && donoBemId !== String(usuarioId) && !(bem.compartilhado === true && donoBemId === parceiroIdAtual)) {
+                throw new Error('Este bem pertence a outro usuário e não está compartilhado.');
+            }
+            if (!bem.compartilhado) escopo = 'individual';
+            else escopo = 'casal';
+        }
+
+        let proximaId = (dados.lancamentos || []).reduce((maior, l) => Math.max(maior, Number(l.id) || 0), 0) + 1;
+        const parcelamentoId = quantidade > 1 ? gerarId('lote') : null;
+        const agora = new Date().toISOString();
+        const hoje = dataLocalYYYYMMDD();
+
+        for (let i = 0; i < quantidade; i++) {
+            const dataCompraDate = adicionarMesesClamped(dataBase, i);
+            const dataCompraStr = dataParaString(dataCompraDate);
+            const vencimento = cartao
+                ? calcularPrimeiroVencimentoCartao(cartao, dataCompraStr)
+                : dataCompraStr;
+            const atrasada = vencimento < hoje;
+
+            dados.lancamentos.push({
+                id: proximaId++, usuarioId, descricao: `${descricaoFinal} (${i + 1}/${quantidade})`,
+                valor: Number(valorFinal.toFixed(2)), tipo: 'saida', categoriaId: categoria.id,
+                formaPagamento: formaPagamento === 'FIXO' ? 'BOLETO' : formaPagamento,
+                cartaoId: cartao ? cartao.id : null, bemId: bemId ? Number(bemId) : null,
+                dataCompra: cartao ? dataCompraStr : null, vencimento, recorrencia: formaPagamento === 'FIXO' ? 'mensal' : 'unica',
+                parcelaAtual: i + 1, totalParcelas: quantidade, parcelamentoId,
+                observacao: 'Gerado por lote retroativo/período', horaExtra: 0,
+                servicoEssencial: 'nao', escopo, pago: false, status: atrasada ? 'atrasado' : 'pendente',
+                createdAt: agora, updatedAt: agora
+            });
+        }
+
+        // --- BLOCO CORRIGIDO: NOTIFICAÇÃO DE CASAL ---
+        if (escopo === 'casal') {
+            const usuarioAtual = (dados.usuarios || []).find(u => Number(u.id) === Number(usuarioId));
+            if (usuarioAtual && usuarioAtual.parceiroId) {
+                if (!Array.isArray(dados.notificacoes)) dados.notificacoes = [];
+                const primeiroNome = usuarioAtual.nome.split(' ')[0];
+                dados.notificacoes.push({
+                    id: gerarId('notif'), usuarioDestinoId: usuarioAtual.parceiroId, remetenteId: usuarioId,
+                    tipo: 'lancamento_casal', titulo: 'Novo Lote de Contas 🏠',
+                    mensagem: `${primeiroNome} registrou um lote de contas de casal: ${descricaoFinal} no valor de ${formatarMoeda(valorFinal)} por mês.`,
+                    lida: false, createdAt: agora
+                });
+            }
+        }
+        // ---------------------------------------------
+
+        registrarLogInterno(dados, 'CONTA LOTE PERÍODO', `Lote criado: ${descricaoFinal} (${quantidade} meses; forma: ${formaPagamento})`);
+        await salvarDados(dados);
+        await mostrarAlertaModal('Contas em lote criadas com sucesso.');
+        return true;
+    } catch (erro) {
+        console.error('Falha ao criar contas em lote:', erro);
+        await mostrarAlertaModal(erro.message || 'Não foi possível criar as contas em lote.');
+        return false;
+    } finally {
+        esconderLoading();
+        processandoAcaoModal = false;
     }
-
-    let proximaIdLanc = dados.lancamentos.reduce((m, l) => Math.max(m, Number(l.id) || 0), 0) + 1;
-    const parcelamentoId = qtdMeses > 1 ? gerarId('lote') : null;
-
-    for (let i = 0; i < qtdMeses; i++) {
-        let dataVenc = adicionarMesesClamped(dataInicio, i);
-        const anoVenc = dataVenc.getFullYear();
-        const mesVenc = String(dataVenc.getMonth() + 1).padStart(2, '0');
-        const diaVenc = String(dataVenc.getDate()).padStart(2, '0');
-        const dataVencStr = `${anoVenc}-${mesVenc}-${diaVenc}`;
-
-        const mesAnoVenc = `${anoVenc}-${mesVenc}`;
-        const mesAnoAtual = `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`;
-        const jaPassou = mesAnoVenc < mesAnoAtual;
-
-        dados.lancamentos.push({
-            id: proximaIdLanc++, usuarioId, descricao: `${descricao} (${i + 1}/${qtdMeses})`, valor: Number(valorParcela.toFixed(2)),
-            tipo: 'saida', categoriaId: Number(categoriaId), formaPagamento: 'BOLETO', cartaoId: null, bemId: bemId ? Number(bemId) : null,
-            vencimento: dataVencStr, recorrencia: 'unica', parcelaAtual: i + 1, totalParcelas: qtdMeses, parcelamentoId,
-            observacao: 'Gerado por lote retroativo/período', horaExtra: 0, servicoEssencial: 'nao', escopo: escopoLote,
-            pago: false, status: jaPassou ? 'atrasado' : 'pendente', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString()
-        });
-    }
-
-    registrarLogInterno(dados, "CONTA LOTE PERÍODO", `Lote por período criado: ${descricao} (${qtdMeses} meses)`);
-    await salvarDados(dados);
-    
-    esconderLoading();
-    await mostrarAlertaModal("Lotes criados com sucesso!");
-    if (typeof carregarRelatorios === 'function') carregarRelatorios();
 }
 
 async function adicionarFinanciamentoComRecorrencia(nome, recorrente, valorParcela, qtdMeses, primeiroVencimento, categoriaId = null, bemId = null) {
+    if (!await exigirPermissao('financiamentos', 'criar financiamentos')) return false;
     if (processandoAcaoModal) return false;
     if (!await verificarSenhaAdmin("cadastrar contrato de financiamento")) return false;
 
@@ -1378,13 +1989,27 @@ async function adicionarFinanciamentoComRecorrencia(nome, recorrente, valorParce
         const dataBase = criarDataLocal(primeiroVencimento);
         const catFinalId = categoriaId || dados.categorias.find(c => normalizarTexto(c.nome).includes('financiamento'))?.id || dados.categorias.find(c => c.tipo === 'saida')?.id || null;
 
-        if (!nomeFinal || valorFinal <= 0 || !dataBase || !catFinalId) throw new Error('Preencha os dados do financiamento corretamente.');
-
-        let escopoFin = 'casal';
-        if (bemId) {
-            const bemObj = (dados.bens || []).find(b => String(b.id) === String(bemId));
-            if (bemObj && !bemObj.compartilhado) escopoFin = 'individual';
+        const categoriaFin = (dados.categorias || []).find(c => String(c.id) === String(catFinalId) && c.tipo === 'saida');
+        const nomeContratoDuplicado = (dados.financiamentos || []).some(f =>
+            Number(f.usuarioId) === usuarioId && normalizarTexto(f.nome) === normalizarTexto(nomeFinal)
+        );
+        if (nomeContratoDuplicado) throw new Error('Você já possui um financiamento com esse nome. Use uma descrição diferente para evitar vinculações ambíguas.');
+        if (!nomeFinal || !Number.isFinite(valorFinal) || valorFinal <= 0 || !dataBase || !Number.isFinite(dataBase.getTime()) || !categoriaFin) {
+            throw new Error('Preencha os dados do financiamento corretamente e selecione uma categoria de saída válida.');
         }
+        if (meses < 1 || meses > 360) throw new Error('A quantidade de parcelas deve ficar entre 1 e 360.');
+        const bemObj = bemId ? (dados.bens || []).find(b => String(b.id) === String(bemId) && b.ativo !== false) : null;
+        if (!bemObj) throw new Error('Selecione um bem patrimonial ativo e válido.');
+        const proprietarioBemId = Number(bemObj.usuarioId || 0);
+        const usuarioAtual = (dados.usuarios || []).find(u => Number(u.id) === usuarioId);
+        const parceiroAtualId = Number(usuarioAtual?.parceiroId || 0);
+        const bemPertenceAoParceiro = proprietarioBemId !== 0 && proprietarioBemId !== usuarioId &&
+            proprietarioBemId === parceiroAtualId && bemObj.compartilhado === true;
+        if (proprietarioBemId !== 0 && proprietarioBemId !== usuarioId && !bemPertenceAoParceiro) {
+            throw new Error('Você não pode vincular um financiamento a um bem privado de outro usuário.');
+        }
+
+        let escopoFin = bemObj.compartilhado ? 'casal' : 'individual';
 
         const financiamentoId = dados.financiamentos.reduce((m, f) => Math.max(m, Number(f.id) || 0), 0) + 1;
         const parcelamentoId = gerarId('finparc');
@@ -1427,26 +2052,44 @@ async function adicionarFinanciamentoComRecorrencia(nome, recorrente, valorParce
 
 // Consolidado de AtualizarLancamento
 async function atualizarLancamentoNoBanco(id, novosDados) {
+    if (!await exigirPermissao('criarMovimento', 'editar lançamentos')) return false;
     const dados = obterDados();
-    const lancamento = dados.lancamentos.find(l => Number(l.id) === Number(id));
+    const lancamento = (dados.lancamentos || []).find(l => String(l.id) === String(id));
     if (!lancamento) {
         await mostrarAlertaModal("Lançamento não encontrado.");
-        return;
+        return false;
+    }
+    if (!usuarioPodeAlterarLancamento(lancamento, dados)) {
+        await mostrarAlertaModal('Você não tem permissão para editar este lançamento.');
+        return false;
+    }
+    const tipoValido = ['entrada', 'saida'].includes(novosDados?.tipo);
+    const categoriaValida = (dados.categorias || []).some(c =>
+        String(c.id) === String(novosDados?.categoriaId) && c.tipo === novosDados?.tipo
+    );
+    if (!tipoValido || !categoriaValida) {
+        await mostrarAlertaModal('Selecione uma categoria válida para o tipo de lançamento escolhido.');
+        return false;
+    }
+    const valorNovo = numeroSeguro(novosDados?.valor, NaN);
+    if (!Number.isFinite(valorNovo) || valorNovo <= 0) {
+        await mostrarAlertaModal('O valor do lançamento deve ser maior que zero.');
+        return false;
     }
 
     const grupoParcelamentoId = resolverParcelamentoId(lancamento);
     const financiamentoId = resolverFinanciamentoIdPorLancamento(lancamento, dados);
-    const ehVinculado = Boolean(grupoParcelamentoId) || Boolean(financiamentoId) || (lancamento.totalParcelas && lancamento.totalParcelas > 1);
+    const ehVinculado = Boolean(grupoParcelamentoId) || Boolean(financiamentoId);
 
     let aplicarParaTodas = false;
     if (ehVinculado) {
         const escolha = await mostrarOpcaoEscopoModal("Este lançamento faz parte de um financiamento ou compra parcelada. Deseja tornar essa modificação para todas outras parcelas?");
-        if (escolha === null) return; 
+        if (escolha === null) return false;
         aplicarParaTodas = (escolha === 'todas');
     }
 
     const motivo = await mostrarPromptTextoModal("Justificativa Obrigatória", "Informe o motivo da edição deste lançamento:");
-    if (!motivo) return;
+    if (!motivo) return false;
 
     mostrarLoading("Atualizando lançamento(s)...");
 
@@ -1456,9 +2099,27 @@ async function atualizarLancamentoNoBanco(id, novosDados) {
     const dataHoraAtual = new Date().toLocaleString('pt-BR');
 
     if (aplicarParaTodas) {
-        const relacionados = financiamentoId 
-            ? dados.lancamentos.filter(l => Number(l.financiamentoId) === Number(financiamentoId))
+        const relacionados = financiamentoId
+            ? dados.lancamentos.filter(l => String(resolverFinanciamentoIdPorLancamento(l, dados)) === String(financiamentoId))
             : dados.lancamentos.filter(l => String(l.parcelamentoId) === String(grupoParcelamentoId));
+        if (!relacionados.length || relacionados.some(l => !usuarioPodeAlterarLancamento(l, dados))) {
+            esconderLoading();
+            await mostrarAlertaModal('O grupo contém parcelas que não podem ser alteradas por este usuário. Nenhum registro foi modificado.');
+            return false;
+        }
+
+        const financiamentoEditado = financiamentoId == null
+            ? null
+            : (dados.financiamentos || []).find(f => String(f.id) === String(financiamentoId));
+        if (financiamentoEditado) {
+            const descricaoBaseNova = String(novosDados.descricao || '').replace(/\s\(\d+\/\d+\)$/, '').trim();
+            financiamentoEditado.nome = descricaoBaseNova.replace(/^Financiamento:\s*/i, '').trim() || financiamentoEditado.nome;
+            financiamentoEditado.valorParcela = Number(valorNovo.toFixed(2));
+            financiamentoEditado.categoriaId = novosDados.categoriaId;
+            const dataReferencia = novosDados.vencimento ? criarDataLocal(novosDados.vencimento) : null;
+            if (dataReferencia) financiamentoEditado.primeiroVencimento = dataParaString(adicionarMesesClamped(dataReferencia, 1 - Number(lancamento.parcelaAtual || 1)));
+            financiamentoEditado.updatedAt = new Date().toISOString();
+        }
 
         relacionados.forEach(l => {
             const descricaoAntiga = l.descricao;
@@ -1472,15 +2133,31 @@ async function atualizarLancamentoNoBanco(id, novosDados) {
             l.tipo = novosDados.tipo;
             l.categoriaId = novosDados.categoriaId;
             l.formaPagamento = novosDados.formaPagamento;
+            if (novosDados.valor !== undefined && novosDados.valor !== null && novosDados.valor !== '') {
+                l.valor = Number(numeroSeguro(novosDados.valor).toFixed(2));
+            }
             l.observacao = novosDados.observacao;
             l.servicoEssencial = novosDados.tipo === 'saida' ? (novosDados.servicoEssencial || 'nao') : 'nao';
             l.escopo = novosDados.tipo === 'saida' ? (novosDados.escopo || 'casal') : 'casal';
+            if (novosDados.formaPagamento === 'CARTAO' && novosDados.tipo === 'saida') {
+                l.cartaoId = novosDados.cartaoId || l.cartaoId || null;
+                l.dataCompra = novosDados.dataCompra || l.dataCompra || null;
+            } else {
+                l.cartaoId = null;
+                l.dataCompra = null;
+            }
+            if (novosDados.vencimento) {
+                const novaDataReferencia = criarDataLocal(novosDados.vencimento);
+                if (novaDataReferencia) {
+                    const numeroParcelaAtual = Number(lancamento.parcelaAtual || 1);
+                    const numeroParcelaRelacionada = Number(l.parcelaAtual || numeroParcelaAtual);
+                    l.vencimento = dataParaString(adicionarMesesClamped(novaDataReferencia, numeroParcelaRelacionada - numeroParcelaAtual));
+                }
+            }
             l.updatedAt = new Date().toISOString();
 
-            if (novosDados.formaPagamento === 'CARTAO') l.cartaoId = novosDados.cartaoId || l.cartaoId || null;
-
             dados.edicao_movimento.push({
-                dataHora: dataHoraAtual, usuario: nomeUsuario, lancamentoId: l.id,
+                id: gerarId('edit'), dataHora: dataHoraAtual, usuario: nomeUsuario, usuarioId: Number(usuarioId), lancamentoId: l.id,
                 descricaoAntiga, descricaoNova: l.descricao, valorAntigo, valorNovo: l.valor, motivo: `[EM LOTE] ${motivo}`
             });
         });
@@ -1499,15 +2176,18 @@ async function atualizarLancamentoNoBanco(id, novosDados) {
         lancamento.vencimento = novosDados.vencimento;
         lancamento.updatedAt = new Date().toISOString();
 
-        if (novosDados.formaPagamento === 'CARTAO') {
+        if (novosDados.formaPagamento === 'CARTAO' && novosDados.tipo === 'saida') {
             lancamento.cartaoId = novosDados.cartaoId || lancamento.cartaoId || null;
             lancamento.dataCompra = novosDados.dataCompra || lancamento.dataCompra || null;
+        } else {
+            lancamento.cartaoId = null;
+            lancamento.dataCompra = null;
         }
         lancamento.servicoEssencial = novosDados.tipo === 'saida' ? (novosDados.servicoEssencial || 'nao') : 'nao';
         lancamento.escopo = novosDados.tipo === 'saida' ? (novosDados.escopo || 'casal') : 'casal';
 
         dados.edicao_movimento.push({
-            dataHora: dataHoraAtual, usuario: nomeUsuario, lancamentoId: id,
+            id: gerarId('edit'), dataHora: dataHoraAtual, usuario: nomeUsuario, usuarioId: Number(usuarioId), lancamentoId: id,
             descricaoAntiga, descricaoNova: novosDados.descricao, valorAntigo, valorNovo: novosDados.valor, motivo
         });
 
@@ -1517,12 +2197,15 @@ async function atualizarLancamentoNoBanco(id, novosDados) {
     await salvarDados(dados);
     esconderLoading();
     await mostrarAlertaModal("Lançamento(s) atualizado(s) com sucesso!");
-    
     if (typeof carregarDashboard === 'function') carregarDashboard();
     if (typeof carregarRelatorios === 'function') carregarRelatorios();
+    if (typeof carregarCentralPagamentos === 'function') carregarCentralPagamentos();
+    return true;
 }
 
 async function excluirFinanciamento(id) {
+    if (!await exigirPermissao('financiamentos', 'excluir financiamentos')) return false;
+    if (!await exigirPermissao('excluirMovimento', 'excluir movimentos')) return false;
     if (processandoAcaoModal) return false;
     if (!await verificarSenhaAdmin("excluir financiamento")) return false;
 
@@ -1536,15 +2219,18 @@ async function excluirFinanciamento(id) {
         const dados = obterDados();
         const fin = dados.financiamentos.find(f => String(f.id) === String(id));
         if (!fin) throw new Error('Financiamento não encontrado.');
+        if (Number(fin.usuarioId) !== Number(obterUsuarioAtualId(dados))) {
+            throw new Error('Você só pode excluir contratos vinculados ao seu usuário.');
+        }
 
-        const parcelas = dados.lancamentos.filter(l => String(l.financiamentoId) === String(id) || (l.tipo === 'saida' && normalizarTexto(l.descricao).includes(normalizarTexto(`Financiamento: ${fin.nome}`))));
+        const parcelas = dados.lancamentos.filter(l => pertenceAoFinanciamento(l, fin, dados));
 
         parcelas.forEach(l => {
             if (!Array.isArray(dados.exclusao_movimento)) dados.exclusao_movimento = [];
             const usuario = obterUsuarioAtual(dados);
             dados.exclusao_movimento.push({
                 id: gerarId('exc'), dataHora: new Date().toLocaleString('pt-BR'), usuario: usuario ? usuario.nome : 'Desconhecido',
-                lancamentoId: l.id, descricao: l.descricao, valor: l.valor, motivo: '[FINANCIAMENTO] Exclusão do contrato'
+                usuarioId: usuario ? Number(usuario.id) : null, lancamentoId: l.id, descricao: l.descricao, valor: l.valor, motivo: '[FINANCIAMENTO] Exclusão do contrato'
             });
         });
 
@@ -1566,6 +2252,7 @@ async function excluirFinanciamento(id) {
 }
 
 async function alternarStatusPagamento(id) {
+    if (!await exigirPermissao('criarMovimento', 'alterar o status de pagamentos')) return false;
     if (processandoAcaoModal) return false;
     processandoAcaoModal = true;
     mostrarLoading("Atualizando status...");
@@ -1573,6 +2260,12 @@ async function alternarStatusPagamento(id) {
         const dados = obterDados();
         const lancamento = dados.lancamentos.find(l => String(l.id) === String(id));
         if (!lancamento) throw new Error('Lançamento não encontrado.');
+        if (!usuarioPodeAlterarLancamento(lancamento, dados)) {
+            throw new Error('Você não tem permissão para alterar o status deste lançamento.');
+        }
+        if (lancamento.formaPagamento === 'CARTAO') {
+            throw new Error('Compras no cartão são quitadas pela fatura consolidada. Abra a fatura do cartão para alterar o status.');
+        }
 
         const novoPago = !Boolean(lancamento.pago);
         lancamento.pago = novoPago;
@@ -1580,6 +2273,16 @@ async function alternarStatusPagamento(id) {
         lancamento.dataPagamento = novoPago ? dataLocalYYYYMMDD() : null;
         lancamento.usuarioPagamentoId = novoPago ? obterUsuarioAtualId(dados) : null;
         lancamento.updatedAt = new Date().toISOString();
+        const financiamentoIdAtualizado = resolverFinanciamentoIdPorLancamento(lancamento, dados);
+        if (financiamentoIdAtualizado != null) {
+            const financiamento = (dados.financiamentos || []).find(f => String(f.id) === String(financiamentoIdAtualizado));
+            if (financiamento) {
+                financiamento.mesesPagos = dados.lancamentos.filter(l =>
+                    String(resolverFinanciamentoIdPorLancamento(l, dados)) === String(financiamento.id) && (l.pago === true || l.status === 'pago')
+                ).length;
+                financiamento.updatedAt = new Date().toISOString();
+            }
+        }
 
         registrarLogInterno(dados, "STATUS PAGAMENTO", `Lançamento ID ${id} (${lancamento.descricao}) marcado como ${novoPago ? 'PAGO' : 'PENDENTE'}`, { entidade: 'lancamento', entidadeId: id });
         await salvarDados(dados);
@@ -1595,23 +2298,6 @@ async function alternarStatusPagamento(id) {
         esconderLoading(); processandoAcaoModal = false;
         await mostrarAlertaModal(erro.message || 'Não foi possível atualizar o status.');
         return false;
-    }
-}
-
-async function salvarFinanciamentoForm(event) {
-    event.preventDefault();
-    const nome = document.getElementById('nomeFinanciamento')?.value?.trim();
-    const valorParcela = numeroSeguro(document.getElementById('valorParcelaFin')?.value);
-    const qtdMeses = inteiroSeguro(document.getElementById('qtdMesesFin')?.value, 1);
-    const categoriaId = document.getElementById('categoriaFinanciamento')?.value || null;
-    const primeiroVencimento = document.getElementById('primeiroVencimentoFin')?.value;
-
-    const sucesso = await adicionarFinanciamentoComRecorrencia(nome, 'sim', valorParcela, qtdMeses, primeiroVencimento, categoriaId);
-
-    if (sucesso) {
-        document.getElementById('formFinanciamento')?.reset();
-        const campo = document.getElementById('primeiroVencimentoFin');
-        if (campo) campo.value = dataLocalYYYYMMDD();
     }
 }
 
@@ -1644,8 +2330,30 @@ function carregarDashboard() {
         return (!mesAno || dataRef.startsWith(mesAno)) && (escopo === 'todos' || (l.tipo === 'entrada') || (l.escopo || 'casal') === escopo);
     });
 
-    let totalEntradas = 0, totalSaidas = 0;
-    filtrados.forEach(l => { l.tipo === 'entrada' ? totalEntradas += Number(l.valor || 0) : totalSaidas += Number(l.valor || 0); });
+let totalEntradas = 0, totalSaidas = 0;
+    let totalSalario = 0, totalUber = 0, totalCartaoCredito = 0;
+
+    filtrados.forEach(l => {
+        const val = Number(l.valor || 0);
+        const catObj = categorias.find(c => Number(c.id) === Number(l.categoriaId));
+        const catNome = catObj ? normalizarTexto(catObj.nome) : '';
+
+        if (l.tipo === 'entrada') {
+            totalEntradas += val;
+            
+            if (['salario', 'adiantamento', 'ferias', 'plr', 'decimo terceiro', '13'].some(t => catNome.includes(t))) {
+                totalSalario += val;
+            } else if (['uber', '99', 'indrive'].some(t => catNome.includes(t))) {
+                totalUber += val;
+            }
+        } else {
+            totalSaidas += val;
+            
+            if (l.formaPagamento === 'CARTAO') {
+                totalCartaoCredito += val;
+            }
+        }
+    });
 
     const elTotalEntradas = document.getElementById('totalEntradas');
     if (elTotalEntradas) elTotalEntradas.textContent = `R$ ${totalEntradas.toLocaleString('pt-BR', {minimumFractionDigits: 2})}`;
@@ -1659,6 +2367,91 @@ function carregarDashboard() {
         elSaldo.className = `stat-value ${(totalEntradas - totalSaidas) >= 0 ? 'positivo' : 'negativo'}`;
     }
 
+ const elSubEntradas = document.getElementById('subDetalhesEntradas');
+    if (elSubEntradas) {
+        let outrosGanhos = totalEntradas - totalSalario - totalUber;
+        if (outrosGanhos < 0) outrosGanhos = 0;
+        
+        let textoSubEntradas = `<strong>Salário:</strong> R$ ${totalSalario.toLocaleString('pt-BR', {minimumFractionDigits: 2})}`;
+        if (totalUber > 0) textoSubEntradas += `<br><strong>Uber:</strong> R$ ${totalUber.toLocaleString('pt-BR', {minimumFractionDigits: 2})}`;
+        textoSubEntradas += `<br><strong>Outros ganhos:</strong> R$ ${outrosGanhos.toLocaleString('pt-BR', {minimumFractionDigits: 2})}`;
+        
+        elSubEntradas.innerHTML = textoSubEntradas;
+        elSubEntradas.style.color = 'var(--text-main)';
+        elSubEntradas.style.lineHeight = '1.5';
+        elSubEntradas.style.fontSize = '0.85rem';
+        elSubEntradas.style.marginTop = '10px';
+    }
+
+    const elSubSaidas = document.getElementById('subDetalhesSaidas');
+    if (elSubSaidas) {
+        let outrasDespesas = totalSaidas - totalCartaoCredito;
+        if (outrasDespesas < 0) outrasDespesas = 0;
+        
+        elSubSaidas.innerHTML = `<strong>Cartão:</strong> R$ ${totalCartaoCredito.toLocaleString('pt-BR', {minimumFractionDigits: 2})}<br><strong>Outras despesas:</strong> R$ ${outrasDespesas.toLocaleString('pt-BR', {minimumFractionDigits: 2})}`;
+        elSubSaidas.style.color = 'var(--text-main)';
+        elSubSaidas.style.lineHeight = '1.5';
+        elSubSaidas.style.fontSize = '0.85rem';
+        elSubSaidas.style.marginTop = '10px';
+    }
+
+    // === CÁLCULO: MAIOR FOCO DE ATENÇÃO ===
+    const elFocoValor = document.getElementById('maiorFocoValor');
+    const elFocoDetalhe = document.getElementById('maiorFocoDetalhe');
+    
+    if (elFocoValor && elFocoDetalhe) {
+        // Agrupar apenas as SAÍDAS do mês filtrado por categoria
+        const gastosPorCategoria = {};
+        
+        filtrados.forEach(l => {
+            if (l.tipo === 'saida') {
+                const catId = l.categoriaId;
+                gastosPorCategoria[catId] = (gastosPorCategoria[catId] || 0) + Number(l.valor || 0);
+            }
+        });
+
+        // Transformar em array e ordenar do maior para o menor
+        const categoriasOrdenadas = Object.keys(gastosPorCategoria)
+            .map(id => ({ id: Number(id), total: gastosPorCategoria[id] }))
+            .sort((a, b) => b.total - a.total);
+
+        if (categoriasOrdenadas.length === 0) {
+            elFocoValor.textContent = "R$ 0,00";
+            elFocoDetalhe.textContent = "Nenhum gasto registrado";
+        } else {
+            // Pegar até os 3 maiores
+            const top3 = categoriasOrdenadas.slice(0, 3);
+            
+            // O valor exibido grandão será o da categoria número 1
+            const top1Cat = categorias.find(c => Number(c.id) === top3[0].id);
+            const top1Nome = top1Cat ? top1Cat.nome : 'Outros';
+            
+            elFocoValor.textContent = `${top1Nome}: R$ ${top3[0].total.toLocaleString('pt-BR', {minimumFractionDigits: 2})}`;
+            
+            // Construir o subtítulo com os próximos (se houver)
+            let textoSub = "";
+            for (let i = 1; i < top3.length; i++) {
+                const catObj = categorias.find(c => Number(c.id) === top3[i].id);
+                const nomeCat = catObj ? catObj.nome : 'Outros';
+                textoSub += `<strong>${escaparHTML(nomeCat)}:</strong> R$ ${top3[i].total.toLocaleString('pt-BR', {minimumFractionDigits: 2})}`;
+                if (i < top3.length - 1) textoSub += "<br>";
+            }
+            
+            if (textoSub === "") {
+                 elFocoDetalhe.innerHTML = "Não há outros gastos.";
+            } else {
+                 elFocoDetalhe.innerHTML = textoSub;
+            }
+            
+            // Formatar os detalhes igual fizemos nos de entrada/saída
+            elFocoDetalhe.style.color = 'var(--text-main)';
+            elFocoDetalhe.style.lineHeight = '1.5';
+            elFocoDetalhe.style.fontSize = '0.85rem';
+            elFocoDetalhe.style.marginTop = '10px';
+            elFocoValor.style.fontSize = 'clamp(1.15rem, 2.2vw, 1.4rem)'; // Dá uma ajustada no tamanho do titulo para caber o texto
+        }
+    }
+
     const tbodyLanc = document.getElementById('tabelaUltimosLancamentos');
     if (tbodyLanc) {
         tbodyLanc.innerHTML = '';
@@ -1669,17 +2462,19 @@ function carregarDashboard() {
         } else {
             lancamentosTabela.forEach(l => {
                 const catObj = categorias.find(c => Number(c.id) === Number(l.categoriaId)) || { nome: 'Geral' };
+                const usuarioObj = (dados.usuarios || []).find(u => String(u.id) === String(l.usuarioId));
+                const nomeUsuario = l.usuario || usuarioObj?.nome || 'Sistema';
                 tbodyLanc.innerHTML += `
                     <tr>
-                        <td>${l.usuario || 'Sistema'}</td>
-                        <td><strong>${l.descricao}</strong></td>
-                        <td>${catObj.nome}</td>
-                        <td>${formatarDataBR(l.dataPagamento)}</td>
-                        <td>${formatarDataBR(l.vencimento)}</td>
-                        <td class="${l.tipo === 'entrada' ? 'positivo' : 'negativo'}">R$ ${Number(l.valor || 0).toLocaleString('pt-BR', {minimumFractionDigits: 2})}</td>
+                        <td>${escaparHTML(nomeUsuario)}</td>
+                        <td><strong>${escaparHTML(l.descricao)}</strong></td>
+                        <td>${escaparHTML(catObj.nome)}</td>
+                        <td>${escaparHTML(formatarDataBR(l.dataPagamento))}</td>
+                        <td>${escaparHTML(formatarDataBR(l.vencimento))}</td>
+                        <td class="${l.tipo === 'entrada' ? 'positivo' : 'negativo'}">${escaparHTML(formatarMoeda(l.valor))}</td>
                         <td>
-                            <button onclick="window.location.href='editar-lancamento.html?id=${l.id}'" class="btn-acao-icone editar" title="Editar"><img src="imagens/editar.png" alt="Editar"></button>
-                            <button onclick="removerLancamentoInteligente(${l.id})" class="btn-acao-icone excluir" title="Excluir"><img src="imagens/excluir.png" alt="Excluir"></button>
+                            <button type="button" onclick="window.location.href='editar-lancamento.html?id=${encodeURIComponent(String(l.id))}'" class="btn-acao-icone editar" title="Editar"><img src="imagens/editar.png" alt="Editar"></button>
+                            <button type="button" onclick="removerLancamentoInteligente(${Number(l.id)})" class="btn-acao-icone excluir" title="Excluir"><img src="imagens/excluir.png" alt="Excluir"></button>
                         </td>
                     </tr>
                 `;
@@ -1687,9 +2482,11 @@ function carregarDashboard() {
         }
     }
     atualizarGraficosDashboard(totalEntradas, totalSaidas, dados);
+    renderizarCentralLembretes(filtrados, dados, mesAno);
 }
 
 function atualizarGraficosDashboard(totalEntradas, totalSaidas, dados) {
+    if (typeof Chart === 'undefined') { console.warn('Chart.js não foi carregado; gráficos ignorados.'); return; }
     const escopoAtual = document.getElementById('filtroEscopoDashboardGeral')?.value || 'casal';
 
     const canvasES = document.getElementById('graficoEntradasSaidas');
@@ -1710,16 +2507,41 @@ function atualizarGraficosDashboard(totalEntradas, totalSaidas, dados) {
     }
 
     const mesAnoSelecionado = document.getElementById('filtroMesAno')?.value || '';
-    const categoriaSelecionadaId = document.getElementById('filtroCategoriaDashboard')?.value || 'todas';
-    const lancamentosPermitidos = filtrarDadosPorPermissao(dados.lancamentos || [], dados, escopoAtual);
+    const selectFiltroCategoria = document.getElementById('filtroCategoriaDashboard');
+    let categoriaSelecionadaId = selectFiltroCategoria?.value || 'todas';
+    if (selectFiltroCategoria) {
+        const categoriasSaida = (dados.categorias || [])
+            .filter(c => c.tipo === 'saida')
+            .sort((a, b) => normalizarTexto(a.nome).localeCompare(normalizarTexto(b.nome), 'pt-BR'));
+        const categoriaAindaExiste = categoriasSaida.some(c => String(c.id) === String(categoriaSelecionadaId));
+        selectFiltroCategoria.replaceChildren();
+        const opcaoTodas = document.createElement('option');
+        opcaoTodas.value = 'todas';
+        opcaoTodas.textContent = 'Todas';
+        selectFiltroCategoria.appendChild(opcaoTodas);
+        categoriasSaida.forEach(c => {
+            const option = document.createElement('option');
+            option.value = String(c.id);
+            option.textContent = c.nome || 'Categoria sem nome';
+            selectFiltroCategoria.appendChild(option);
+        });
+        selectFiltroCategoria.value = categoriaAindaExiste ? String(categoriaSelecionadaId) : 'todas';
+        categoriaSelecionadaId = selectFiltroCategoria.value || 'todas';
+    }
 
-    const lancamentosPeriodo = lancamentosPermitidos.filter(l => 
-        l.tipo === 'saida' && (!mesAnoSelecionado || !l.vencimento || l.vencimento.startsWith(mesAnoSelecionado)) &&
-        (categoriaSelecionadaId === 'todas' || Number(l.categoriaId) === Number(categoriaSelecionadaId))
+    const lancamentosPermitidos = filtrarDadosPorPermissao(dados.lancamentos || [], dados, escopoAtual);
+    const lancamentosEscopo = lancamentosPermitidos.filter(l =>
+        escopoAtual === 'todos' || (l.escopo || 'casal') === escopoAtual
+    );
+    const lancamentosDespesasPeriodo = lancamentosEscopo.filter(l =>
+        l.tipo === 'saida' && (!mesAnoSelecionado || String(l.vencimento || l.data || l.dataCompra || l.createdAt || '').startsWith(mesAnoSelecionado))
+    );
+    const lancamentosPeriodo = lancamentosDespesasPeriodo.filter(l =>
+        categoriaSelecionadaId === 'todas' || String(l.categoriaId) === String(categoriaSelecionadaId)
     );
 
     const somatorioPorCategoria = {};
-    lancamentosPeriodo.forEach(l => somatorioPorCategoria[l.categoriaId] = (somatorioPorCategoria[l.categoriaId] || 0) + Number(l.valor));
+    lancamentosPeriodo.forEach(l => somatorioPorCategoria[l.categoriaId] = (somatorioPorCategoria[l.categoriaId] || 0) + numeroSeguro(l.valor));
 
     const labelsCategorias = [], valoresCategorias = [], coresPadrao = ['#3b82f6', '#f59e0b', '#10b981', '#8b5cf6', '#ec4899', '#06b6d4', '#64748b', '#ef4444'];
     for (let catId in somatorioPorCategoria) {
@@ -1745,21 +2567,38 @@ function atualizarGraficosDashboard(totalEntradas, totalSaidas, dados) {
         });
     }
 
+    const filtroServicoEssencial = document.getElementById('filtroServicoEssencialDashboard')?.value || 'todos';
+    const lancamentosClassificacao = lancamentosDespesasPeriodo.filter(l =>
+        filtroServicoEssencial === 'todos' || (l.servicoEssencial === 'sim' ? 'sim' : 'nao') === filtroServicoEssencial
+    );
     let totalEssencial = 0, totalNaoEssencial = 0;
-    lancamentosPeriodo.forEach(l => l.servicoEssencial === 'sim' ? totalEssencial += Number(l.valor) : totalNaoEssencial += Number(l.valor));
+    lancamentosClassificacao.forEach(l => l.servicoEssencial === 'sim' ? totalEssencial += numeroSeguro(l.valor) : totalNaoEssencial += numeroSeguro(l.valor));
 
     const canvasServicos = document.getElementById('graficoServicosEssenciais');
     if (canvasServicos) {
         if (chartServicosEssenciaisInstance) chartServicosEssenciaisInstance.destroy();
+        const temClassificacao = totalEssencial > 0 || totalNaoEssencial > 0;
+        let labelsServicos = ['Essenciais', 'Não essenciais'];
+        let valoresServicos = [totalEssencial, totalNaoEssencial];
+        let coresServicos = ['#10b981', '#f59e0b'];
+        if (!temClassificacao) {
+            labelsServicos = ['Sem despesas'];
+            valoresServicos = [1];
+            coresServicos = ['#cbd5e1'];
+        } else if (filtroServicoEssencial === 'sim') {
+            labelsServicos = ['Essenciais'];
+            valoresServicos = [totalEssencial];
+            coresServicos = ['#10b981'];
+        } else if (filtroServicoEssencial === 'nao') {
+            labelsServicos = ['Não essenciais'];
+            valoresServicos = [totalNaoEssencial];
+            coresServicos = ['#f59e0b'];
+        }
         chartServicosEssenciaisInstance = new Chart(canvasServicos, {
             type: 'pie',
             data: {
-                labels: ['Essenciais', 'Não Essenciais'],
-                datasets: [{
-                    data: (totalEssencial > 0 || totalNaoEssencial > 0) ? [totalEssencial, totalNaoEssencial] : [1],
-                    backgroundColor: (totalEssencial > 0 || totalNaoEssencial > 0) ? ['#10b981', '#f59e0b'] : ['#cbd5e1'],
-                    borderWidth: 1
-                }]
+                labels: labelsServicos,
+                datasets: [{ data: valoresServicos, backgroundColor: coresServicos, borderWidth: 1 }]
             },
             options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom', labels: { boxWidth: 12 } } } }
         });
@@ -1769,20 +2608,27 @@ function atualizarGraficosDashboard(totalEntradas, totalSaidas, dados) {
     const cartoesUsuario = filtrarDadosPorPermissao(dados.cartoes || [], dados, escopoAtual).filter(c => c.ativo !== false);
     
     if (selectFiltroCartao) {
-        const valorAtual = selectFiltroCartao.value;
-        selectFiltroCartao.innerHTML = '<option value="todos">Todos</option>';
+        const valorAtual = selectFiltroCartao.value || 'todos';
+        selectFiltroCartao.replaceChildren();
+        const opcaoTodosCartoes = document.createElement('option');
+        opcaoTodosCartoes.value = 'todos';
+        opcaoTodosCartoes.textContent = 'Todos';
+        selectFiltroCartao.appendChild(opcaoTodosCartoes);
         cartoesUsuario.forEach(c => {
-            selectFiltroCartao.innerHTML += `<option value="${c.id}">${c.nome}</option>`;
+            const option = document.createElement('option');
+            option.value = String(c.id);
+            option.textContent = c.nome || 'Cartão sem nome';
+            selectFiltroCartao.appendChild(option);
         });
-        if (valorAtual) selectFiltroCartao.value = valorAtual;
+        selectFiltroCartao.value = cartoesUsuario.some(c => String(c.id) === String(valorAtual)) ? String(valorAtual) : 'todos';
     }
 
-    const cartaoSelecionadoId = selectFiltroCartao ? selectFiltroCartao.value : 'todos';
+    const cartaoSelecionadoId = selectFiltroCartao ? (selectFiltroCartao.value || 'todos') : 'todos';
     let totalLimiteGeral = 0, totalUsadoGeral = 0;
 
     cartoesUsuario.forEach(cartao => {
         if (cartaoSelecionadoId === 'todos' || Number(cartao.id) === Number(cartaoSelecionadoId)) {
-            totalUsadoGeral += lancamentosPermitidos.filter(l => Number(l.cartaoId) === Number(cartao.id) && !l.pago).reduce((acc, l) => acc + Number(l.valor), 0);
+            totalUsadoGeral += lancamentosEscopo.filter(l => Number(l.cartaoId) === Number(cartao.id) && l.tipo === 'saida' && !l.pago).reduce((acc, l) => acc + numeroSeguro(l.valor), 0);
             totalLimiteGeral += Number(cartao.limite || cartao.limiteTotal || 0);
         }
     });
@@ -1807,12 +2653,14 @@ function atualizarGraficosDashboard(totalEntradas, totalSaidas, dados) {
 }
 
 function carregarRelatorios() {
+    if (typeof window.carregarRelatorioMensal === 'function') return window.carregarRelatorioMensal();
+    if (typeof Chart === 'undefined') { console.warn('Chart.js não foi carregado; relatórios gráficos ignorados.'); return; }
     const dados = obterDados();
     const mesAnoSelecionado = document.getElementById('filtroMesAnoRelatorio')?.value || '';
     const servicoFiltroVal = document.getElementById('filtroServicoEssencialDashboard')?.value || 'todos';
 
     const lancamentosPeriodo = dados.lancamentos.filter(l => 
-        (!mesAnoSelecionado || !l.vencimento || l.vencimento.startsWith(mesAnoSelecionado)) &&
+        (!mesAnoSelecionado || String(l.vencimento || l.data || l.dataCompra || l.createdAt || '').startsWith(mesAnoSelecionado)) &&
         (servicoFiltroVal === 'todos' || (l.tipo === 'saida' && l.servicoEssencial === servicoFiltroVal) || (l.tipo === 'entrada' && servicoFiltroVal !== 'sim'))
     );
 
@@ -1904,21 +2752,58 @@ function carregarRelatorios() {
 }
 
 async function alternarStatusFaturaConsolidada(cartaoId, anoMes, statusPago) {
-    mostrarLoading("Atualizando fatura...");
-    const dados = obterDados();
-    dados.lancamentos.forEach(l => {
-        if (Number(l.cartaoId) === Number(cartaoId) && l.vencimento && l.vencimento.startsWith(anoMes)) {
-            l.pago = statusPago;
-            l.status = statusPago ? 'pago' : 'pendente';
-            l.dataPagamento = statusPago ? dataLocalYYYYMMDD() : null;
-            l.usuarioPagamentoId = statusPago ? obterUsuarioAtualId(dados) : null;
-            l.updatedAt = new Date().toISOString();
+    if (!await exigirPermissao('criarMovimento', 'alterar o status de faturas')) return false;
+    if (processandoAcaoModal) return false;
+
+    processandoAcaoModal = true;
+    mostrarLoading('Atualizando fatura...');
+    try {
+        const dados = obterDados();
+        const usuarioId = Number(obterUsuarioAtualId(dados));
+        const cartao = (dados.cartoes || []).find(c => String(c.id) === String(cartaoId));
+        if (!cartao || cartao.ativo === false || cartao.isBeneficio) {
+            throw new Error('A fatura precisa pertencer a um cartão de crédito ativo.');
         }
-    });
-    registrarLogInterno(dados, "STATUS FATURA", `Fatura do cartão ID ${cartaoId} (${anoMes}) marcada como ${statusPago ? 'PAGA' : 'PENDENTE'}`);
-    await salvarDados(dados);
-    esconderLoading();
-    carregarRelatorios();
+        if (Number(cartao.usuarioId) !== usuarioId) {
+            throw new Error('Somente o responsável pelo cartão pode quitar ou reabrir sua fatura.');
+        }
+        if (!/^\d{4}-\d{2}$/.test(String(anoMes || ''))) {
+            throw new Error('Competência da fatura inválida.');
+        }
+
+        const itens = (dados.lancamentos || []).filter(l =>
+            l.tipo === 'saida' && l.formaPagamento === 'CARTAO' &&
+            String(l.cartaoId) === String(cartaoId) &&
+            String(l.vencimento || '').startsWith(String(anoMes))
+        );
+        if (!itens.length) throw new Error('Nenhuma compra foi encontrada nesta fatura.');
+        if (itens.some(l => !usuarioPodeAlterarLancamento(l, dados))) {
+            throw new Error('A fatura contém movimentações que não podem ser alteradas por este usuário. Nenhum status foi modificado.');
+        }
+
+        const hoje = dataLocalYYYYMMDD();
+        const agora = new Date().toISOString();
+        itens.forEach(l => {
+            l.pago = Boolean(statusPago);
+            l.status = statusPago ? 'pago' : (l.vencimento && l.vencimento < hoje ? 'atrasado' : 'pendente');
+            l.dataPagamento = statusPago ? hoje : null;
+            l.usuarioPagamentoId = statusPago ? usuarioId : null;
+            l.updatedAt = agora;
+        });
+
+        registrarLogInterno(dados, 'STATUS FATURA', `Fatura do cartão ${cartao.nome} (${anoMes}) marcada como ${statusPago ? 'PAGA' : 'PENDENTE'}`);
+        await salvarDados(dados);
+        if (typeof carregarRelatorios === 'function') carregarRelatorios();
+        if (typeof carregarDashboard === 'function') carregarDashboard();
+        return true;
+    } catch (erro) {
+        console.error('Falha ao atualizar fatura:', erro);
+        await mostrarAlertaModal(erro.message || 'Não foi possível atualizar a fatura.');
+        return false;
+    } finally {
+        esconderLoading();
+        processandoAcaoModal = false;
+    }
 }
 
 function abrirDetalhamentoFatura(cartaoId, anoMes) {
@@ -1933,12 +2818,15 @@ function abrirDetalhamentoFatura(cartaoId, anoMes) {
         linhasHtml = `<tr><td colspan="4" style="text-align: center;">Nenhuma compra encontrada nesta fatura.</td></tr>`;
     } else {
         itensDaFatura.forEach(item => {
+            const parcela = Number(item.totalParcelas) > 1
+                ? `${escaparHTML(item.parcelaAtual)}/${escaparHTML(item.totalParcelas)}`
+                : 'À vista';
             linhasHtml += `
                 <tr>
-                    <td>${item.descricao}</td>
-                    <td style="text-align: center;">${item.totalParcelas > 1 ? `${item.parcelaAtual}/${item.totalParcelas}` : 'À vista'}</td>
-                    <td style="text-align: right;">R$ ${Number(item.valor).toFixed(2)}</td>
-                    <td style="text-align: center;">${item.vencimento}</td>
+                    <td>${escaparHTML(item.descricao || '-')}</td>
+                    <td style="text-align: center;">${parcela}</td>
+                    <td style="text-align: right;">${escaparHTML(formatarMoeda(item.valor))}</td>
+                    <td style="text-align: center;">${escaparHTML(formatarDataBR(item.vencimento))}</td>
                 </tr>
             `;
         });
@@ -1948,8 +2836,8 @@ function abrirDetalhamentoFatura(cartaoId, anoMes) {
     overlay.className = 'modal-overlay';
     overlay.innerHTML = `
         <div class="modal-box" style="max-width: 800px; width: 95%;">
-            <h3>Detalhamento da Fatura: ${nomeCartao}</h3>
-            <p style="margin-bottom: 14px; font-size: 0.9rem;">Competência: ${anoMes}</p>
+            <h3>Detalhamento da Fatura: ${escaparHTML(nomeCartao)}</h3>
+            <p style="margin-bottom: 14px; font-size: 0.9rem;">Competência: ${escaparHTML(anoMes)}</p>
             <div class="tabela-container" style="max-height: 400px; overflow-y: auto; overflow-x: hidden; margin-bottom: 20px;">
                 <table class="tabela" style="width: 100%;">
                     <thead>
@@ -1969,10 +2857,19 @@ function abrirDetalhamentoParcelamento(lancamentoId, paginaAtual = 1) {
     const lancamento = (dados.lancamentos || []).find(l => Number(l.id) === Number(lancamentoId));
     if (!lancamento) return;
 
-    const chaveGrupo = lancamento.parcelamentoId || descricaoBaseParcelamento(lancamento.descricao);
-    const parcelasGrupo = (dados.lancamentos || []).filter(l => (lancamento.parcelamentoId && l.parcelamentoId === lancamento.parcelamentoId) || (!lancamento.parcelamentoId && descricaoBaseParcelamento(l.descricao) === chaveGrupo));
+    const chaveGrupo = resolverParcelamentoId(lancamento);
+    const financiamentoId = resolverFinanciamentoIdPorLancamento(lancamento, dados);
+    let parcelasGrupo;
+    if (chaveGrupo) {
+        parcelasGrupo = (dados.lancamentos || []).filter(l => String(l.parcelamentoId) === String(chaveGrupo));
+    } else if (financiamentoId != null) {
+        parcelasGrupo = (dados.lancamentos || []).filter(l => String(resolverFinanciamentoIdPorLancamento(l, dados)) === String(financiamentoId));
+    } else {
+        // A descrição não é uma chave segura: podem existir compras diferentes com o mesmo nome.
+        parcelasGrupo = [lancamento];
+    }
 
-    parcelasGrupo.sort((a, b) => new Date(a.vencimento) - new Date(b.vencimento));
+    parcelasGrupo.sort((a, b) => String(a.vencimento || '').localeCompare(String(b.vencimento || '')));
 
     const itensPorPagina = 30;
     const totalParcelas = parcelasGrupo.length || Number(lancamento.totalParcelas) || 1;
@@ -1983,6 +2880,7 @@ function abrirDetalhamentoParcelamento(lancamentoId, paginaAtual = 1) {
     const fim = inicio + itensPorPagina;
     const parcelasPagina = parcelasGrupo.slice(inicio, fim);
 
+    const lancamentoIdSeguro = Number(lancamento.id);
     const valorParcela = Number(lancamento.valor || 0);
     const valorTotalCompra = parcelasGrupo.reduce((acc, p) => acc + Number(p.valor || 0), 0);
     
@@ -1992,13 +2890,13 @@ function abrirDetalhamentoParcelamento(lancamentoId, paginaAtual = 1) {
     let infoFormaPagamento = '';
     if (lancamento.formaPagamento === 'CARTAO') {
         const cartaoObj = (dados.cartoes || []).find(c => String(c.id) === String(lancamento.cartaoId));
-        infoFormaPagamento = `Cartão Utilizado: ${cartaoObj ? cartaoObj.nome : 'Crédito'}`;
+        infoFormaPagamento = `Cartão Utilizado: ${escaparHTML(cartaoObj ? cartaoObj.nome : 'Crédito')}`;
     } else if (lancamento.formaPagamento === 'BOLETO') {
         infoFormaPagamento = `Forma de Pagamento: Boleto / Conta`;
     } else if (lancamento.formaPagamento === 'FIXO') {
         infoFormaPagamento = `Forma de Pagamento: Conta fixa / mensal`;
     } else {
-        infoFormaPagamento = `Forma de Pagamento: ${lancamento.formaPagamento || 'Não informada'}`;
+        infoFormaPagamento = `Forma de Pagamento: ${escaparHTML(lancamento.formaPagamento || 'Não informada')}`;
     }
 
     let linhasTabelaHtml = '';
@@ -2006,8 +2904,8 @@ function abrirDetalhamentoParcelamento(lancamentoId, paginaAtual = 1) {
         linhasTabelaHtml += `
             <tr>
                 <td style="text-align: center;">${inicio + idx + 1}/${totalParcelas}</td>
-                <td>${formatarDataBR(p.vencimento)}</td>
-                <td style="text-align: right;">R$ ${Number(p.valor || 0).toFixed(2)}</td>
+                <td>${escaparHTML(formatarDataBR(p.vencimento))}</td>
+                <td style="text-align: right;">${escaparHTML(formatarMoeda(p.valor))}</td>
                 <td style="text-align: center;"><span class="status-badge ${p.pago ? 'status-pago' : 'status-pendente'}">${p.pago ? 'Pago' : 'Pendente'}</span></td>
             </tr>
         `;
@@ -2017,9 +2915,9 @@ function abrirDetalhamentoParcelamento(lancamentoId, paginaAtual = 1) {
     if (totalPaginas > 1) {
         paginacaoHtml = `
             <div style="display: flex; justify-content: space-between; align-items: center; margin: 15px 0; gap: 10px;">
-                <button type="button" class="btn-secundario" ${paginaSegura === 1 ? 'disabled style="opacity: 0.5;"' : ''} onclick="abrirDetalhamentoParcelamento(${lancamentoId}, ${paginaSegura - 1})">← Anterior</button>
+                <button type="button" class="btn-secundario" ${paginaSegura === 1 ? 'disabled style="opacity: 0.5;"' : ''} onclick="abrirDetalhamentoParcelamento(${lancamentoIdSeguro}, ${paginaSegura - 1})">← Anterior</button>
                 <span style="font-size: 0.85rem; font-weight: bold;">Página ${paginaSegura} de ${totalPaginas}</span>
-                <button type="button" class="btn-secundario" ${paginaSegura === totalPaginas ? 'disabled style="opacity: 0.5;"' : ''} onclick="abrirDetalhamentoParcelamento(${lancamentoId}, ${paginaSegura + 1})">Próxima →</button>
+                <button type="button" class="btn-secundario" ${paginaSegura === totalPaginas ? 'disabled style="opacity: 0.5;"' : ''} onclick="abrirDetalhamentoParcelamento(${lancamentoIdSeguro}, ${paginaSegura + 1})">Próxima →</button>
             </div>
         `;
     }
@@ -2062,7 +2960,7 @@ async function mostrarOpcaoEscopoModal(mensagem) {
         overlay.innerHTML = `
             <div class="modal-box" style="text-align: center;">
                 <h3>Ação em Lote / Parcelamento</h3>
-                <p style="margin: 15px 0; text-align: center;">${mensagem}</p>
+                <p style="margin: 15px 0; text-align: center;">${escaparHTML(mensagem)}</p>
                 <div class="modal-buttons" style="flex-direction: column; gap: 8px;">
                     <button id="btnApenasEsta" style="background-color: #3b82f6; width: 100%; margin: 0;">Apenas esta parcela</button>
                     <button id="btnTodas" style="background-color: #f59e0b; width: 100%; margin: 0;">Todas as parcelas</button>
@@ -2080,21 +2978,30 @@ async function mostrarOpcaoEscopoModal(mensagem) {
 
 // Consolidado de RemoverLancamento
 async function removerLancamentoInteligente(id) {
+    if (!await exigirPermissao('excluirMovimento', 'excluir lançamentos')) return false;
     const dados = obterDados();
-    const lanc = dados.lancamentos.find(l => Number(l.id) === Number(id));
-    if (!lanc) return;
+    const lanc = (dados.lancamentos || []).find(l => String(l.id) === String(id));
+    if (!lanc) {
+        await mostrarAlertaModal('Lançamento não encontrado.');
+        return false;
+    }
+    if (!usuarioPodeAlterarLancamento(lanc, dados)) {
+        await mostrarAlertaModal('Você não tem permissão para excluir este lançamento.');
+        return false;
+    }
 
     const grupoParcelamentoId = resolverParcelamentoId(lanc);
-    const ehParceladoOuLote = Boolean(grupoParcelamentoId) || (lanc.totalParcelas && lanc.totalParcelas > 1);
+    const financiamentoId = resolverFinanciamentoIdPorLancamento(lanc, dados);
+    const ehParceladoOuLote = Boolean(grupoParcelamentoId) || Boolean(financiamentoId);
 
     let escopo = 'esta';
     if (ehParceladoOuLote) {
         escopo = await mostrarOpcaoEscopoModal(`Este lançamento possui ${lanc.totalParcelas || 'vários'} registros associados. Deseja excluir apenas esta parcela ou todas?`);
-        if (!escopo) return;
+        if (!escopo) return false;
     }
 
     const motivo = await mostrarPromptTextoModal("Justificativa Obrigatória", "Informe o motivo da exclusão:");
-    if (!motivo) return;
+    if (!motivo) return false;
 
     mostrarLoading("Processando exclusão...");
     const usuarioId = localStorage.getItem('usuarioLogado');
@@ -2104,7 +3011,8 @@ async function removerLancamentoInteligente(id) {
 
     if (escopo === 'esta') {
         dados.exclusao_movimento.push({
-            dataHora: dataHoraAtual, usuario: nomeUsuario, lancamentoId: id,
+            id: gerarId('exc'), dataHora: dataHoraAtual, usuario: nomeUsuario,
+            usuarioId: Number(usuarioId), lancamentoId: id,
             descricao: lanc.descricao, valor: lanc.valor, motivo: motivo
         });
 
@@ -2114,11 +3022,11 @@ async function removerLancamentoInteligente(id) {
         const descricaoBase = descricaoBaseParcelamento(lanc.descricao);
         const relacionados = grupoParcelamentoId
             ? dados.lancamentos.filter(l => String(l.parcelamentoId) === String(grupoParcelamentoId))
-            : dados.lancamentos.filter(l => descricaoBaseParcelamento(l.descricao) === descricaoBase);
+            : dados.lancamentos.filter(l => String(resolverFinanciamentoIdPorLancamento(l, dados)) === String(financiamentoId));
 
         relacionados.forEach(l => {
             dados.exclusao_movimento.push({
-                id: gerarId('exc'), dataHora: dataHoraAtual, usuario: nomeUsuario,
+                id: gerarId('exc'), dataHora: dataHoraAtual, usuario: nomeUsuario, usuarioId: Number(usuarioId),
                 lancamentoId: l.id, descricao: l.descricao, valor: l.valor, motivo: `[LOTE] ${motivo}`
             });
         });
@@ -2133,47 +3041,8 @@ async function removerLancamentoInteligente(id) {
     await mostrarAlertaModal("Exclusão realizada com sucesso!");
     if (typeof carregarDashboard === 'function') carregarDashboard();
     if (typeof carregarRelatorios === 'function') carregarRelatorios();
-}
-
-async function adicionarSalarioFracionado(descricaoBase, valorTotalSalario, categoriaId, dataReferencia) {
-    if (processandoAcaoModal) return;
-    processandoAcaoModal = true;
-    mostrarLoading("Cadastrando salário fracionado...");
-
-    const dados = obterDados();
-    const usuarioId = parseInt(localStorage.getItem('usuarioLogado'));
-    let proximaId = dados.lancamentos.reduce((m, l) => Math.max(m, Number(l.id) || 0), 0) + 1;
-
-    const [ano, mes, _] = dataReferencia.split('-').map(Number);
-    const valorAdiantamento = Number((valorTotalSalario * 0.40).toFixed(2));
-    const dataDia15 = `${ano}-${String(mes).padStart(2, '0')}-15`;
-    const valorRestante = Number((valorTotalSalario - valorAdiantamento).toFixed(2));
-    const ultimoDiaMes = new Date(ano, mes, 0).getDate();
-    const dataFimMes = `${ano}-${String(mes).padStart(2, '0')}-${String(ultimoDiaMes).padStart(2, '0')}`;
-
-    const entradasSalario = [
-        {
-            id: proximaId++, usuarioId, descricao: `${descricaoBase} (Adiantamento 40%)`, valor: valorAdiantamento,
-            tipo: 'entrada', categoriaId: Number(categoriaId), formaPagamento: 'BOLETO', cartaoId: null,
-            vencimento: dataDia15, recorrencia: 'mensal', parcelaAtual: 1, totalParcelas: 1,
-            observacao: 'Gerado automaticamente', horaExtra: 0, servicoEssencial: 'nao', pago: true
-        },
-        {
-            id: proximaId++, usuarioId, descricao: `${descricaoBase} (Restante 60%)`, valor: valorRestante,
-            tipo: 'entrada', categoriaId: Number(categoriaId), formaPagamento: 'BOLETO', cartaoId: null,
-            vencimento: dataFimMes, recorrencia: 'mensal', parcelaAtual: 1, totalParcelas: 1,
-            observacao: 'Gerado automaticamente', horaExtra: 0, servicoEssencial: 'nao', pago: true
-        }
-    ];
-
-    dados.lancamentos.push(...entradasSalario);
-    registrarLogInterno(dados, "SALÁRIO FRACIONADO", `Adiantamento e saldo cadastrados para ${descricaoBase}: R$ ${valorTotalSalario}`);
-    await salvarDados(dados);
-
-    esconderLoading(); processandoAcaoModal = false;
-    await mostrarAlertaModal("Salário fracionado cadastrado com sucesso (Dia 15 e Final do Mês)!");
-    if (typeof carregarDashboard === 'function') carregarDashboard();
-    if (typeof carregarRelatorios === 'function') carregarRelatorios();
+    if (typeof carregarCentralPagamentos === 'function') carregarCentralPagamentos();
+    return true;
 }
 
 function verificarCategoriaSalario() {
@@ -2241,13 +3110,17 @@ function renderizarSinoNotificacoes() {
     sinoBtn.onclick = () => abrirCentralNotificacoes();
 }
 
-function abrirCentralNotificacoes() {
+async function abrirCentralNotificacoes() {
     const dados = obterDados();
     const usuarioId = localStorage.getItem('usuarioLogado');
     const notificacoes = (dados.notificacoes || []).filter(n => Number(n.usuarioDestinoId) === Number(usuarioId));
 
-    notificacoes.forEach(n => n.lida = true);
-    salvarDados(dados, { sincronizar: false });
+    const haviaNaoLidas = notificacoes.some(n => !n.lida);
+    if (haviaNaoLidas) {
+        notificacoes.forEach(n => { n.lida = true; });
+        // O estado de leitura faz parte dos dados compartilhados e precisa chegar ao servidor.
+        await salvarDados(dados);
+    }
 
     let itensHtml = '';
     if (notificacoes.length === 0) {
@@ -2256,21 +3129,22 @@ function abrirCentralNotificacoes() {
         notificacoes.reverse().forEach(n => {
             let acoesHtml = '';
             if (n.tipo === 'solicitacao_parceiro' && n.statusAprovacao === 'pendente') {
-                acoesHtml = `
+                const idSeguro = String(n.id == null ? '' : n.id).replace(/[^a-zA-Z0-9_-]/g, '');
+                acoesHtml = idSeguro ? `
                     <div style="margin-top: 8px; display: flex; gap: 8px;">
-                        <button onclick="responderSolicitacaoParceiro('${n.id}', true)" style="background: var(--success); padding: 6px 12px; font-size: 0.8rem;">Aprovar</button>
-                        <button onclick="responderSolicitacaoParceiro('${n.id}', false)" style="background: var(--danger); padding: 6px 12px; font-size: 0.8rem;">Negar</button>
+                        <button onclick="responderSolicitacaoParceiro('${idSeguro}', true)" style="background: var(--success); padding: 6px 12px; font-size: 0.8rem;">Aprovar</button>
+                        <button onclick="responderSolicitacaoParceiro('${idSeguro}', false)" style="background: var(--danger); padding: 6px 12px; font-size: 0.8rem;">Negar</button>
                     </div>
-                `;
+                ` : '';
             } else if (n.statusAprovacao && n.statusAprovacao !== 'pendente') {
                 acoesHtml = `<p style="font-size: 0.78rem; font-weight: bold; margin-top: 4px; color: ${n.statusAprovacao === 'aprovado' ? 'var(--success)' : 'var(--danger)'};">Status: ${n.statusAprovacao.toUpperCase()}</p>`;
             }
 
             itensHtml += `
                 <div style="background: var(--surface-2); padding: 12px; border-radius: 8px; margin-bottom: 8px; text-align: left; border-left: 4px solid var(--primary);">
-                    <strong style="font-size: 0.9rem; color: var(--text-main);">${n.titulo}</strong>
-                    <p style="font-size: 0.85rem; margin-top: 4px; color: var(--text-muted);">${n.mensagem}</p>
-                    <small style="font-size: 0.7rem; color: var(--text-muted);">${n.createdAt ? new Date(n.createdAt).toLocaleString('pt-BR') : ''}</small>
+                    <strong style="font-size: 0.9rem; color: var(--text-main);">${escaparHTML(n.titulo || '')}</strong>
+                    <p style="font-size: 0.85rem; margin-top: 4px; color: var(--text-muted);">${escaparHTML(n.mensagem || '')}</p>
+                    <small style="font-size: 0.7rem; color: var(--text-muted);">${n.createdAt ? escaparHTML(new Date(n.createdAt).toLocaleString('pt-BR')) : ''}</small>
                     ${acoesHtml}
                 </div>
             `;
@@ -2365,8 +3239,20 @@ async function abrirModalPrimeiroAcesso() {
 
         const novoId = dados.usuarios.reduce((max, u) => Math.max(max, Number(u.id) || 0), 0) + 1;
         const hashSenha = await gerarHash(senha);
+        const primeiroUsuario = dados.usuarios.length === 0;
+        const permissoes = primeiroUsuario
+            ? {
+                perfil: 'admin',
+                paginas: { dashboard: true, relatorios: true, lancamentos: true, cartoes: true, categorias: true, configuracoes: true },
+                acoes: { criarMovimento: true, excluirMovimento: true, financiamentos: true, lotes: true, usuarios: true, logs: true }
+            }
+            : {
+                perfil: 'usuario',
+                paginas: { dashboard: true, relatorios: true, lancamentos: true, cartoes: true, categorias: true, configuracoes: false },
+                acoes: { criarMovimento: false, excluirMovimento: false, financiamentos: false, lotes: false, usuarios: false, logs: false }
+            };
 
-        dados.usuarios.push({ id: novoId, usuario, nome, pin: hashSenha, senha: hashSenha, ativo: true });
+        dados.usuarios.push({ id: novoId, usuario, nome, pin: hashSenha, senha: hashSenha, ativo: true, permissoes });
 
         registrarLogInterno(dados, "CADASTRO USUÁRIO", `Novo usuário cadastrado via Primeiro Acesso: ${nome} (${usuario})`);
         await salvarDados(dados);
@@ -2376,18 +3262,6 @@ async function abrirModalPrimeiroAcesso() {
     };
 }
 
-function calcularStatusParcelaCartao(dataVencimentoStr, cartaoObj, dataCompraStr) {
-    if (!cartaoObj || !cartaoObj.fechamento) return 'pendente';
-    
-    const hoje = new Date();
-    const [anoVenc, mesVenc, diaVenc] = String(dataVencimentoStr).split('-').map(Number);
-    const dataFechamento = new Date(anoVenc, mesVenc - 1, Number(cartaoObj.fechamento));
-    dataFechamento.setMonth(dataFechamento.getMonth() - 1);
-
-    if (hoje > dataFechamento) return 'pendente';
-    return 'pago';
-}
-
 function redirecionarNovoLancamento(tipoAcao) {
     if (tipoAcao === 'entrada') { window.location.href = 'lancamentos.html?tipo=entrada'; return; }
     if (tipoAcao === 'saida') { window.location.href = 'lancamentos.html?tipo=saida&forma=DINHEIRO'; return; }
@@ -2395,7 +3269,7 @@ function redirecionarNovoLancamento(tipoAcao) {
     if (tipoAcao === 'cartao') {
         const dados = obterDados();
         const usuarioAtualId = Number(obterUsuarioAtualId(dados));
-        const cartoes = (dados.cartoes || []).filter(c => c.ativo !== false && Number(c.usuarioId) === usuarioAtualId);
+        const cartoes = (dados.cartoes || []).filter(c => c.ativo !== false && !c.isBeneficio && Number(c.usuarioId) === usuarioAtualId);
 
         if (!cartoes.length) {
             mostrarAlertaModal('Nenhum cartão ativo cadastrado para o seu usuário. Cadastre um cartão primeiro em Cadastros > Cartões.');
@@ -2421,42 +3295,241 @@ function renderizarCategorias() {
     const dados = obterDados();
     const lista = document.getElementById('listaCategorias');
     if (!lista) return;
-    lista.innerHTML = '';
-    
+    lista.replaceChildren();
+
     const filtroSelect = document.getElementById('filtroTipoCategoria');
     const filtroValor = filtroSelect ? filtroSelect.value : 'todos';
-
     let categoriasPermitidas = dados.categorias || [];
     if (filtroValor !== 'todos') categoriasPermitidas = categoriasPermitidas.filter(c => c.tipo === filtroValor);
 
     if (categoriasPermitidas.length === 0) {
-        lista.innerHTML = '<li>Nenhuma categoria encontrada.</li>';
+        const li = document.createElement('li');
+        li.textContent = 'Nenhuma categoria encontrada.';
+        lista.appendChild(li);
         return;
     }
 
-    const nomesPadrao = ["alimentação", "moradia / contas", "salário", "financiamentos", "lazer", "transporte", "internet", "energia/luz", "carro", "pet"];
-
+    const usuarioAtualId = Number(obterUsuarioAtualId(dados));
     categoriasPermitidas.forEach(cat => {
-        const nomeLower = String(cat.nome || '').trim().toLowerCase();
-        const ehPadrao = nomesPadrao.includes(nomeLower);
+        const nome = String(cat.nome || 'Categoria sem nome');
+        const ehPadrao = cat.classificacao === 'padrao' || Number(cat.criadopor) === 5;
+        const podeGerenciar = !ehPadrao && Number(cat.criadopor) === usuarioAtualId && usuarioPode('criarMovimento');
 
         const li = document.createElement('li');
-        li.innerHTML = `
-            <span>${cat.nome} (<strong>${cat.tipo.toUpperCase()}</strong>) - <span style="font-size:0.75rem; color:var(--text-muted);">${ehPadrao ? 'Padrão' : 'Personalizada'}</span></span>
-            <div>
-                ${!ehPadrao ? `
-                    <button onclick="prepararEdicaoCategoria(${cat.id}, '${cat.nome}', '${cat.tipo}')" class="btn-acao-icone editar" title="Editar"><img src="imagens/editar.png" alt="Editar"></button>
-                    <button onclick="excluirCategoriaPrompt(${cat.id})" class="btn-acao-icone excluir" title="Excluir"><img src="imagens/excluir.png" alt="Excluir"></button>
-                ` : `<span style="font-size: 0.75rem; color: var(--text-muted);">Sistema</span>`}
-            </div>
-        `;
+        const descricao = document.createElement('span');
+        descricao.append(document.createTextNode(`${nome} (`));
+        const tipo = document.createElement('strong');
+        tipo.textContent = String(cat.tipo || '').toUpperCase();
+        descricao.append(tipo, document.createTextNode(') - '));
+
+        const classificacao = document.createElement('span');
+        classificacao.style.cssText = 'font-size:0.75rem; color:var(--text-muted);';
+        classificacao.textContent = ehPadrao ? 'Padrão' : (Number(cat.criadopor) === usuarioAtualId ? 'Personalizada' : 'Compartilhada');
+        descricao.appendChild(classificacao);
+
+        const acoes = document.createElement('div');
+        if (podeGerenciar) {
+            const btnEditar = document.createElement('button');
+            btnEditar.type = 'button';
+            btnEditar.className = 'btn-acao-icone editar';
+            btnEditar.title = 'Editar categoria';
+            btnEditar.setAttribute('aria-label', `Editar categoria ${nome}`);
+            const imgEditar = document.createElement('img');
+            imgEditar.src = 'imagens/editar.png';
+            imgEditar.alt = 'Editar';
+            btnEditar.appendChild(imgEditar);
+            btnEditar.addEventListener('click', () => prepararEdicaoCategoria(cat.id, nome, cat.tipo));
+
+            const btnExcluir = document.createElement('button');
+            btnExcluir.type = 'button';
+            btnExcluir.className = 'btn-acao-icone excluir';
+            btnExcluir.title = 'Excluir categoria';
+            btnExcluir.setAttribute('aria-label', `Excluir categoria ${nome}`);
+            const imgExcluir = document.createElement('img');
+            imgExcluir.src = 'imagens/excluir.png';
+            imgExcluir.alt = 'Excluir';
+            btnExcluir.appendChild(imgExcluir);
+            btnExcluir.addEventListener('click', () => excluirCategoriaPrompt(cat.id));
+
+            acoes.append(btnEditar, btnExcluir);
+        } else {
+            const info = document.createElement('span');
+            info.style.cssText = 'font-size:0.75rem; color:var(--text-muted);';
+            info.textContent = ehPadrao ? 'Sistema' : 'Somente leitura';
+            acoes.appendChild(info);
+        }
+
+        li.append(descricao, acoes);
         lista.appendChild(li);
     });
 }
 
 function atualizarHeaderUsuario() {
     const usuario = obterUsuarioAtual();
+    if (usuario) aplicarPermissoesNavegacao(usuario);
     const spanNome = document.getElementById('usuarioLogadoNome');
     if (spanNome && usuario) spanNome.textContent = `Olá, ${usuario.nome}`;
     if (typeof renderizarSinoNotificacoes === 'function') renderizarSinoNotificacoes();
+}
+
+/* =========================================================
+   CENTRAL DE LEMBRETES INTELIGENTE
+   ========================================================= */
+
+function renderizarCentralLembretes(filtradosMes, dados, mesAnoFiltro) {
+    const lista = document.getElementById('listaCentralLembretes');
+    const contador = document.getElementById('contadorLembretes');
+    if (!lista) return;
+    
+    lista.innerHTML = '';
+    const hojeDataStr = dataLocalYYYYMMDD();
+    const faturas = {};
+    const lembretes = [];
+    
+    // 1. Separar contas avulsas de compras em cartão
+    filtradosMes.forEach(l => {
+        if (l.tipo !== 'saida') return;
+        
+        if (l.formaPagamento === 'CARTAO' && l.cartaoId) {
+            const mesFatura = l.vencimento ? l.vencimento.substring(0, 7) : mesAnoFiltro;
+            const chave = `${l.cartaoId}_${mesFatura}`;
+            
+            if (!faturas[chave]) {
+                const cartaoObj = dados.cartoes.find(c => Number(c.id) === Number(l.cartaoId));
+                faturas[chave] = {
+                    cartaoId: l.cartaoId,
+                    cartaoNome: cartaoObj ? cartaoObj.nome : 'Cartão',
+                    valorTotal: 0,
+                    vencimento: l.vencimento,
+                    todosPagos: true,
+                    mesAno: mesFatura
+                };
+            }
+            faturas[chave].valorTotal += Number(l.valor || 0);
+            if (!l.pago) faturas[chave].todosPagos = false;
+            // Pega o vencimento mais distante se houver variações no mesmo mês
+            if (l.vencimento > faturas[chave].vencimento) faturas[chave].vencimento = l.vencimento;
+            
+        } else {
+            lembretes.push({
+                id: l.id,
+                descricao: l.descricao,
+                valor: Number(l.valor || 0),
+                vencimento: l.vencimento,
+                pago: Boolean(l.pago),
+                isFatura: false
+            });
+        }
+    });
+    
+    // 2. Mesclar faturas consolidadas no array principal
+    Object.values(faturas).forEach(f => {
+        lembretes.push({
+            cartaoId: f.cartaoId,
+            descricao: `Fatura: ${f.cartaoNome}`,
+            valor: f.valorTotal,
+            vencimento: f.vencimento,
+            pago: f.todosPagos,
+            isFatura: true,
+            mesAno: f.mesAno
+        });
+    });
+    
+    // 3. Regra Mestre de Retenção:
+    // Se PENDENTE: Sempre mostra.
+    // Se PAGO: Só mostra se a data de vencimento for HOJE ou no FUTURO. (some no dia seguinte ao vencimento)
+    const lembretesFiltrados = lembretes.filter(item => {
+        if (!item.pago) return true;
+        if (!item.vencimento) return false; 
+        return item.vencimento >= hojeDataStr;
+    });
+    
+    // 4. Ordenar do mais urgente para o mais distante
+    lembretesFiltrados.sort((a, b) => {
+        const da = a.vencimento || '9999-99-99';
+        const db = b.vencimento || '9999-99-99';
+        return da.localeCompare(db);
+    });
+    
+    // Atualiza o Badge contador no topo do card
+    if (contador) {
+        const pendentesCount = lembretesFiltrados.filter(l => !l.pago).length;
+        if (pendentesCount > 0) {
+            contador.style.display = 'inline-flex';
+            contador.textContent = pendentesCount;
+        } else {
+            contador.style.display = 'none';
+        }
+    }
+    
+    // Fallback vazio
+    if (lembretesFiltrados.length === 0) {
+        lista.innerHTML = `<li><span class="muted" style="width: 100%; text-align: center; display: block; padding: 10px 0;">Nenhum pagamento pendente no radar. 🎉</span></li>`;
+        return;
+    }
+    
+    // 5. Renderizar
+    let html = '';
+    lembretesFiltrados.forEach(item => {
+        const statusStr = item.pago ? 'Pago' : (item.vencimento < hojeDataStr ? 'Atrasado' : 'Pendente');
+        const statusClass = item.pago ? 'status-pago' : (item.vencimento < hojeDataStr ? 'status-atrasado' : 'status-pendente');
+        
+        // Elementos Dinâmicos Baseados no Status
+        const btnColorClass = item.pago ? 'desfazer' : 'pagar';
+        const titleAcao = item.pago ? 'Desmarcar pagamento' : 'Marcar como pago';
+        const imgBtn = item.pago ? 'imagens/desfazer.png' : 'imagens/pagar.png';
+        const opacidade = item.pago ? '0.55' : '1';
+        const tachado = item.pago ? 'text-decoration: line-through;' : '';
+        
+        // Direcionamento da ação (Lançamento solto x Fatura de Cartão)
+        const cartaoIdSeguro = Number(item.cartaoId);
+        const lancamentoIdSeguro = Number(item.id);
+        const mesAnoSeguro = /^\d{4}-\d{2}$/.test(String(item.mesAno || '')) ? String(item.mesAno) : '';
+        let acaoClick = item.isFatura && Number.isFinite(cartaoIdSeguro) && mesAnoSeguro
+            ? `onclick="toggleFaturaDaCentral(${cartaoIdSeguro}, '${mesAnoSeguro}', ${!item.pago})"`
+            : Number.isFinite(lancamentoIdSeguro) ? `onclick="alternarStatusPagamento(${lancamentoIdSeguro})"` : 'disabled';
+        
+        html += `
+            <li style="opacity: ${opacidade}; transition: opacity 0.3s; align-items: center; border-bottom: 1px solid var(--border);">
+                <div style="display: flex; flex-direction: column; gap: 4px; flex: 1; min-width: 0;">
+                    <strong style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; ${tachado}">${escaparHTML(item.descricao)}</strong>
+                    <div style="font-size: 0.78rem; color: var(--text-muted);">
+                        Vencimento: <strong>${escaparHTML(formatarDataBR(item.vencimento))}</strong>
+                    </div>
+                </div>
+                <div style="display: flex; align-items: center; gap: 14px; flex-shrink: 0;">
+                    <span style="font-weight: 850; font-size: 1.1rem; ${tachado}" class="${item.pago ? 'muted' : 'negativo'}">
+                        R$ ${item.valor.toLocaleString('pt-BR', {minimumFractionDigits: 2})}
+                    </span>
+                    <div style="display: flex; flex-direction: column; align-items: center; gap: 6px; min-width: 70px;">
+                        <span class="status-badge ${statusClass}">${statusStr}</span>
+                    </div>
+                    <button ${acaoClick} class="btn-acao-icone ${btnColorClass}" title="${titleAcao}" style="margin: 0; width: 38px; height: 38px;">
+                        <img src="${imgBtn}" alt="Ação" style="width: 20px; height: 20px;" onerror="this.style.display='none'; this.parentNode.innerHTML='${item.pago ? '↩' : '✓'}'">
+                    </button>
+                </div>
+            </li>
+        `;
+    });
+    
+    lista.innerHTML = html;
+}
+
+// Wrapper para sincronizar Fatura com a UI do Dashboard
+async function toggleFaturaDaCentral(cartaoId, mesAno, statusPago) {
+    await alternarStatusFaturaConsolidada(cartaoId, mesAno, statusPago);
+    if (typeof carregarDashboard === 'function') carregarDashboard();
+}
+
+// Expansão e retração do card
+function toggleCentralLembretes() {
+    const corpo = document.getElementById('corpoCentralLembretes');
+    const icone = document.getElementById('iconeToggleLembretes');
+    if (corpo.style.display === 'none') {
+        corpo.style.display = 'block';
+        icone.style.transform = 'rotate(0deg)';
+    } else {
+        corpo.style.display = 'none';
+        icone.style.transform = 'rotate(-90deg)';
+    }
 }

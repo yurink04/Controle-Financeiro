@@ -104,7 +104,7 @@
             let totalGeral = 0, totalPago = 0, totalPendente = 0;
             
             // APLICAÇÃO DO FILTRO DE PERMISSÃO / COMPARTILHAMENTO
-            const lancamentosSaida = filtrarDadosPorPermissao(dados.lancamentos || [], dados, 'casal').filter(l => l.tipo === 'saida');
+            const lancamentosSaida = filtrarDadosPorPermissao(dados.lancamentos || [], dados, 'casal').filter(l => l.tipo === 'saida' && (l.usuarioId == null || usuarioPodeAlterarLancamento(l, dados)));
 
             if (visaoAtualPagamentos === 'parcelada') {
                 if (cabecalho) {
@@ -118,32 +118,39 @@
                     `;
                 }
 
-                const grupos = {};
+                const grupos = new Map();
                 lancamentosSaida.forEach(l => {
                     if (Number(l.totalParcelas || 1) > 1 || l.parcelamentoId) {
-                        const chave = l.parcelamentoId || descricaoBaseParcelamento(l.descricao || '');
-                        if (!grupos[chave]) {
-                            grupos[chave] = { descricao: descricaoBaseParcelamento(l.descricao || ''), parcelas: [] };
+                        // Só agrupamos quando existe uma identidade explícita. Registros legados
+                        // sem parcelamentoId permanecem separados para evitar juntar compras distintas.
+                        const chave = l.parcelamentoId ? String(l.parcelamentoId) : `legado:${String(l.id)}`;
+                        if (!grupos.has(chave)) {
+                            grupos.set(chave, { descricao: descricaoBaseParcelamento(l.descricao || ''), parcelas: [] });
                         }
-                        grupos[chave].parcelas.push(l);
+                        grupos.get(chave).parcelas.push(l);
                     }
                 });
+                grupos.forEach(grupo => grupo.parcelas.sort((a, b) => {
+                    const parcelaA = Number(a.parcelaAtual || 0), parcelaB = Number(b.parcelaAtual || 0);
+                    if (parcelaA !== parcelaB) return parcelaA - parcelaB;
+                    return String(a.vencimento || '').localeCompare(String(b.vencimento || ''));
+                }));
 
-                const chaves = Object.keys(grupos);
+                const chaves = [...grupos.keys()];
                 if (chaves.length === 0) {
                     tbody.innerHTML = `<tr><td colspan="6" style="text-align: center;">Nenhuma compra parcelada encontrada.</td></tr>`;
                 } else {
                     chaves.forEach(chave => {
-                        const grupo = grupos[chave];
+                        const grupo = grupos.get(chave);
                         const totalP = grupo.parcelas.length;
-                        const pagas = grupo.parcelas.filter(p => p.pago).length;
+                        const pagas = grupo.parcelas.filter(p => p.pago === true || p.status === 'pago').length;
                         const primeiroLanc = grupo.parcelas[0];
                         const valorParcela = Number(primeiroLanc?.valor || 0);
                         const valorTotalCompra = grupo.parcelas.reduce((acc, p) => acc + Number(p.valor || 0), 0);
-                        const valorPendenteGrupo = grupo.parcelas.filter(p => !p.pago).reduce((acc, p) => acc + Number(p.valor || 0), 0);
+                        const valorPendenteGrupo = grupo.parcelas.filter(p => !(p.pago === true || p.status === 'pago')).reduce((acc, p) => acc + Number(p.valor || 0), 0);
 
                         totalGeral += valorTotalCompra;
-                        totalPago += grupo.parcelas.filter(p => p.pago).reduce((acc, p) => acc + Number(p.valor || 0), 0);
+                        totalPago += grupo.parcelas.filter(p => p.pago === true || p.status === 'pago').reduce((acc, p) => acc + Number(p.valor || 0), 0);
                         totalPendente += valorPendenteGrupo;
 
                         let formaTexto = 'Boleto / Conta';
@@ -168,7 +175,7 @@
                             <td>R$ ${valorTotalCompra.toLocaleString('pt-BR', {minimumFractionDigits: 2})}</td>
                             <td>
                                 <button type="button" onclick="window.location.href='detalhes-central-parcelada.html?id=${Number(primeiroLanc.id)}'" class="btn-acao-icone visualizar" title="Detalhes"><img src="imagens/visualizar.png" alt="Detalhes"></button>
-                                <button type="button" onclick="window.location.href='editar-lancamento.html?id=${Number(primeiroLanc.id)}&returnUrl=central-pagamentos.html'" class="btn-acao-icone editar" title="Editar"><img src="imagens/editar.png" alt="Editar"></button>
+                                ${usuarioPodeAlterarLancamento(primeiroLanc, dados) ? `<button type="button" onclick="window.location.href='editar-lancamento.html?id=${Number(primeiroLanc.id)}&returnUrl=central-pagamentos.html'" class="btn-acao-icone editar" title="Editar"><img src="imagens/editar.png" alt="Editar"></button>` : ''}
                             </td>
                         `;
                         tbody.appendChild(tr);
@@ -197,11 +204,11 @@
                     filtradosMes.forEach(l => {
                         const valor = Number(l.valor || 0);
                         totalGeral += valor;
-                        if (l.pago) totalPago += valor; else totalPendente += valor;
+                        if (l.pago === true || l.status === 'pago') totalPago += valor; else totalPendente += valor;
 
                         const cat = (dados.categorias || []).find(c => String(c.id) === String(l.categoriaId));
-                        const statusTexto = l.pago ? 'Pago' : 'Pendente';
-                        const statusClasse = l.pago ? 'status-pago' : 'status-pendente';
+                        const statusTexto = (l.pago === true || l.status === 'pago') ? 'Pago' : (l.status === 'atrasado' ? 'Atrasado' : 'Pendente');
+                        const statusClasse = (l.pago === true || l.status === 'pago') ? 'status-pago' : (l.status === 'atrasado' ? 'status-atrasado' : 'status-pendente');
 
                         let formaTexto = 'Boleto / Conta';
                         if (l.formaPagamento === 'CARTAO') {
@@ -224,8 +231,10 @@
                             <td>R$ ${valor.toLocaleString('pt-BR', {minimumFractionDigits: 2})}</td>
                             <td><span class="status-badge ${statusClasse}">${statusTexto}</span></td>
                             <td>
-                                <button type="button" onclick="alternarStatusPagamentoCentral(${l.id})" class="btn-acao-icone ${l.pago ? 'desfazer' : 'pagar'}" title="Alterar status">${l.pago ? '↩' : '✓'}</button>
-                                <button type="button" onclick="window.location.href='editar-lancamento.html?id=${Number(l.id)}&returnUrl=central-pagamentos.html'" class="btn-acao-icone editar" title="Editar"><img src="imagens/editar.png" alt="Editar"></button>
+                                ${l.formaPagamento === 'CARTAO'
+                                    ? '<button type="button" class="btn-acao-icone" disabled title="A quitação é controlada pela fatura do cartão">💳</button>'
+                                    : `<button type="button" onclick="alternarStatusPagamentoCentral(${Number(l.id)})" class="btn-acao-icone ${(l.pago === true || l.status === 'pago') ? 'desfazer' : 'pagar'}" title="Alterar status">${(l.pago === true || l.status === 'pago') ? '↩' : '✓'}</button>`}
+                                ${usuarioPodeAlterarLancamento(l, dados) ? `<button type="button" onclick="window.location.href='editar-lancamento.html?id=${Number(l.id)}&returnUrl=central-pagamentos.html'" class="btn-acao-icone editar" title="Editar"><img src="imagens/editar.png" alt="Editar"></button>` : ''}
                             </td>
                         `;
                         tbody.appendChild(tr);
@@ -246,7 +255,6 @@
             if (ok) carregarCentralPagamentos();
         }
 
-        carregarCentralPagamentos();
     </script>
 </body>
 </html>

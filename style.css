@@ -428,10 +428,10 @@ body.dark-mode .header-tools button[title="Alternar tema"] img {
     display: flex;
     align-items: flex-end;
     justify-content: space-between;
-
     gap: 18px;
-
     margin-bottom: 18px;
+    position: relative;
+    z-index: 50;
 }
 
 .page-heading h2 {
@@ -1418,83 +1418,103 @@ table.tabela tbody tr:last-child td {
     width: auto;
 }
 
-
 /* =========================================================
-   KPI
+   KPI os 
+   tttttttttttt
    ========================================================= */
+.card-mestre {
+    grid-column: 1 / -1;
+    padding: 16px 20px;
+}
 
-.kpi-card {
+.mestre-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr); /* Força 4 colunas perfeitamente iguais (25% cada) */
+    gap: 20px;
+    align-items: center; /* Centraliza tudo verticalmente, acabando com o espaço vazio no fundo */
+}
+
+.mestre-bloco {
     position: relative;
-    overflow: hidden;
-}
-
-.kpi-accent {
-    position: absolute;
-
-    inset: 0 auto 0 0;
-
-    width: 4px;
-
-    background:
-        var(--primary);
-}
-
-.kpi-accent.success {
-    background:
-        var(--success);
-}
-
-.kpi-accent.danger {
-    background:
-        var(--danger);
-}
-
-.kpi-accent.warning {
-    background:
-        var(--warning);
-}
-
-.subtle-divider {
-    border-top:
-        1px solid var(--border);
-
-    margin-top: 12px;
-
-    padding-top: 10px;
-}
-
-.inline-value {
     display: flex;
-
-    align-items: baseline;
-
-    justify-content: space-between;
-
-    gap: 10px;
+    flex-direction: column;
+    justify-content: center;
+    padding-right: 10px;
 }
 
-.audit-action {
-    display: inline-flex;
+/* Divisórias mais bem posicionadas */
+.mestre-bloco:not(:last-child)::after {
+    content: "";
+    position: absolute;
+    right: -10px;
+    top: 5px;
+    bottom: 5px;
+    width: 1px;
+    background: var(--border-strong);
+    opacity: 0.25;
+}
 
+.saldo-destaque {
+    font-size: clamp(1.4rem, 2vw, 1.7rem); /* Levemente menor para não destoar */
+    margin-top: 4px;
+    line-height: 1;
+}
+
+.detalhe-valor {
+    font-size: 1.25rem;
+    margin-top: 4px;
+    line-height: 1;
+}
+
+/* Reduz o tamanho da fonte do Foco, pois "Apartamento: R$ X" ocupa muito espaço horizontal */
+#maiorFocoValor {
+    font-size: 1.1rem;
+    margin-top: 6px;
+    line-height: 1.2;
+}
+
+.mestre-bloco .stat-detail {
+    margin-top: 8px;
+    line-height: 1.5;
+    font-size: 0.75rem;
+}
+
+.kpi-entrada, .kpi-saida {
+    display: flex;
     align-items: center;
-
-    padding: 4px 8px;
-
-    border-radius: 999px;
-
-    background:
-        var(--surface-2);
-
-    border:
-        1px solid var(--border);
-
-    color:
-        var(--text-main);
-
-    font-size: .68rem;
-    font-weight: 800;
+    gap: 4px;
 }
 
+.kpi-entrada { color: var(--success); }
+.kpi-saida { color: var(--danger); }
+
+/* Responsividade Mestre */
+@media (max-width: 950px) {
+    .mestre-grid {
+        grid-template-columns: 1fr 1fr;
+        gap: 16px;
+        align-items: start;
+    }
+    .mestre-bloco { padding-right: 0; }
+    .mestre-bloco:not(:last-child)::after { display: none; }
+    .mestre-bloco {
+        border-bottom: 1px solid var(--border);
+        padding-bottom: 12px;
+    }
+    .mestre-bloco:nth-child(3),
+    .mestre-bloco:nth-child(4) {
+        border-bottom: none;
+        padding-bottom: 0;
+    }
+}
+
+@media (max-width: 500px) {
+    .mestre-grid { grid-template-columns: 1fr; gap: 12px; }
+    .mestre-bloco:nth-child(3) {
+        border-bottom: 1px solid var(--border);
+        padding-bottom: 12px;
+    }
+}
 
 /* =========================================================
    INDICADOR DE SINCRONIZAÇÃO
@@ -3347,3 +3367,109 @@ body.dark-mode .header-tools button[title="Ocultar/Mostrar Valores"] img {
         margin-bottom: 12px !important; 
     }
 }
+
+/* =========================================================
+   ANIMAÇÃO E ESTILO — CENTRAL DE LEMBRETES (SANFONA)
+   ========================================================= */
+.lembretes-expansivel {
+    display: grid;
+    grid-template-rows: 1fr;
+    transition: grid-template-rows 0.35s cubic-bezier(0.4, 0, 0.2, 1), 
+                margin-top 0.35s ease, 
+                padding-top 0.35s ease, 
+                border-color 0.35s ease;
+    margin-top: 16px;
+    padding-top: 12px;
+    border-top: 1px solid var(--border);
+}
+
+.lembretes-expansivel.recolhido {
+    grid-template-rows: 0fr;
+    margin-top: 0;
+    padding-top: 0;
+    border-top-color: transparent;
+}
+
+.lembretes-conteudo {
+    overflow: hidden;
+}
+
+/* --- BOTÃO AÇÃO EXPANSÍVEL (DASHBOARD) --- */
+.dropdown-acao {
+    position: relative;
+    display: inline-block;
+    z-index: 999; /* <-- ADICIONE ESTA LINHA */
+}
+
+.btn-acao-principal {
+    background-color: var(--primary);
+    color: white;
+    padding: 10px 20px;
+    font-weight: bold;
+    border-radius: 8px;
+    cursor: pointer;
+    border: none;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    transition: var(--transition-fast);
+}
+
+.btn-acao-principal:hover {
+    background-color: color-mix(in srgb, var(--primary) 85%, black);
+}
+
+.dropdown-acao-conteudo {
+    display: none;
+    position: absolute;
+    right: 0;
+    top: 110%;
+    background-color: var(--surface);
+    min-width: 220px;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.15);
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    z-index: 9999; /* <-- AUMENTE ESTE VALOR PARA 9999 */
+    overflow: hidden;
+    animation: fadeIn 0.2s ease-in-out;
+}
+
+/* Opcional: Animação suave para exibir o menu */
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(-10px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+.dropdown-acao:hover .dropdown-acao-conteudo {
+    display: block;
+}
+
+.dropdown-acao-conteudo button {
+    width: 100%;
+    text-align: left;
+    padding: 12px 16px;
+    background: none;
+    border: none;
+    border-bottom: 1px solid var(--border);
+    cursor: pointer;
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: var(--text-main);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    transition: background-color 0.2s;
+}
+
+.dropdown-acao-conteudo button:last-child {
+    border-bottom: none;
+}
+
+.dropdown-acao-conteudo button:hover {
+    background-color: var(--surface-2);
+}
+
+/* Cores específicas para os ícones/indicadores dentro do menu */
+.indicador-entrada { color: var(--success); font-weight: bold; }
+.indicador-saida { color: var(--danger); font-weight: bold; }
+.indicador-cartao { color: #d97706; font-weight: bold; }

@@ -57,6 +57,10 @@
             const autenticado = await verificarAutenticacao();
             if (autenticado) {
                 renderizarCartoes();
+                if (!usuarioPode('criarMovimento')) {
+                    const formCartao = document.getElementById('formCartao');
+                    if (formCartao) formCartao.closest('.form-card').hidden = true;
+                }
             }
         });
 
@@ -82,6 +86,7 @@
 
         async function salvarCartaoForm(event) {
             event.preventDefault();
+            if (!await exigirPermissao('criarMovimento', 'criar ou editar cartões')) return;
             const idEdit = document.getElementById('cartaoIdEdit').value;
             const nome = document.getElementById('nomeCartao').value.trim();
             // Correção: Protegido contra 'NaN'
@@ -95,15 +100,29 @@
             dados.cartoes = dados.cartoes || [];
             const usuarioAtualId = Number(obterUsuarioAtualId(dados));
 
+            if (!nome || !Number.isFinite(limite) || limite < 0 || (!isBeneficio && (!Number.isInteger(fechamento) || fechamento < 1 || fechamento > 31 || !Number.isInteger(vencimento) || vencimento < 1 || vencimento > 31))) {
+                await mostrarAlertaModal('Confira o nome, limite/saldo e os dias de fechamento/vencimento do cartão.');
+                return;
+            }
+
             if (idEdit) {
-                const c = dados.cartoes.find(card => Number(card.id) === Number(idEdit));
-                if (c) {
-                    c.nome = nome;
-                    c.limite = limite;
-                    c.fechamento = fechamento;
-                    c.vencimento = vencimento;
-                    c.isBeneficio = isBeneficio;
+                const c = dados.cartoes.find(card => Number(card.id) === Number(idEdit) && Number(card.usuarioId) === usuarioAtualId);
+                if (!c) {
+                    await mostrarAlertaModal('Você só pode editar cartões vinculados ao seu usuário.');
+                    return;
                 }
+                const possuiMovimentos = (dados.lancamentos || []).some(l => String(l.cartaoId) === String(c.id));
+                if (possuiMovimentos && Boolean(c.isBeneficio) !== Boolean(isBeneficio)) {
+                    await mostrarAlertaModal('Não é possível mudar o tipo de um cartão que já possui movimentações vinculadas.');
+                    return;
+                }
+                c.nome = nome;
+                c.limite = limite;
+                c.fechamento = fechamento;
+                c.vencimento = vencimento;
+                c.isBeneficio = isBeneficio;
+                c.tipoCartao = isBeneficio ? 'beneficio' : 'credito';
+                c.updatedAt = new Date().toISOString();
             } else {
                 const novoId = dados.cartoes.reduce((m, c) => Math.max(m, Number(c.id) || 0), 0) + 1;
                 dados.cartoes.push({
@@ -114,7 +133,10 @@
                     fechamento,
                     vencimento,
                     isBeneficio,
-                    ativo: true
+                    tipoCartao: isBeneficio ? 'beneficio' : 'credito',
+                    ativo: true,
+                    createdAt: new Date().toISOString(),
+                    updatedAt: new Date().toISOString()
                 });
             }
 
@@ -146,12 +168,10 @@
                     div.style.marginBottom = '0';
                     div.innerHTML = `
                         <span class="status-badge status-pendente" style="margin-bottom: 8px; display: inline-block;">CRÉDITO</span>
-                        <h3 style="margin-bottom: 6px;">${c.nome}</h3>
+                        <h3 style="margin-bottom: 6px;">${escaparHTML(c.nome)}</h3>
                         <p class="muted small">Limite: <strong>R$ ${Number(c.limite || 0).toLocaleString('pt-BR', {minimumFractionDigits: 2})}</strong></p>
                         <p class="muted small" style="margin-top: 2px;">Fechamento: Dia ${c.fechamento} | Vencimento: Dia ${c.vencimento}</p>
-                        <div style="margin-top: 14px; display: flex; gap: 6px;">
-                            <button onclick="prepararEdicaoCartao(${c.id})" class="btn-secundario small" style="padding: 6px 12px;">Editar</button>
-                        </div>
+                        ${Number(c.usuarioId) === Number(obterUsuarioAtualId(dados)) && usuarioPode('criarMovimento') ? `<div style="margin-top: 14px; display: flex; gap: 6px;"><button onclick="prepararEdicaoCartao(${Number(c.id)})" class="btn-secundario small" style="padding: 6px 12px;">Editar</button></div>` : ''}
                     `;
                     gridCredito.appendChild(div);
                 });
@@ -174,11 +194,9 @@
                     div.style.marginBottom = '0';
                     div.innerHTML = `
                         <span class="status-badge status-pago" style="margin-bottom: 8px; display: inline-block;">BENEFÍCIO (VR/VA)</span>
-                        <h3 style="margin-bottom: 6px;">${c.nome}</h3>
+                        <h3 style="margin-bottom: 6px;">${escaparHTML(c.nome)}</h3>
                         <p class="muted small">Saldo Atual: <strong class="positivo">R$ ${saldoAtual.toLocaleString('pt-BR', {minimumFractionDigits: 2})}</strong></p>
-                        <div style="margin-top: 14px; display: flex; gap: 6px;">
-                            <button onclick="prepararEdicaoCartao(${c.id})" class="btn-secundario small" style="padding: 6px 12px;">Editar</button>
-                        </div>
+                        ${Number(c.usuarioId) === Number(obterUsuarioAtualId(dados)) && usuarioPode('criarMovimento') ? `<div style="margin-top: 14px; display: flex; gap: 6px;"><button onclick="prepararEdicaoCartao(${Number(c.id)})" class="btn-secundario small" style="padding: 6px 12px;">Editar</button></div>` : ''}
                     `;
                     gridBeneficio.appendChild(div);
                 });
@@ -187,8 +205,11 @@
 
         function prepararEdicaoCartao(id) {
             const dados = obterDados();
-            const c = (dados.cartoes || []).find(card => Number(card.id) === Number(id));
-            if (!c) return;
+            const c = (dados.cartoes || []).find(card => Number(card.id) === Number(id) && Number(card.usuarioId) === Number(obterUsuarioAtualId(dados)));
+            if (!c || !usuarioPode('criarMovimento')) {
+                mostrarAlertaModal('Você só pode editar cartões próprios e com permissão de alteração.');
+                return;
+            }
 
             document.getElementById('cartaoIdEdit').value = c.id;
             document.getElementById('nomeCartao').value = c.nome;

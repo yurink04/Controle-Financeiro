@@ -256,7 +256,7 @@
             
             usuario.preferenciasNotificacao = {
                 ativo: document.getElementById('notifAtivaVencimento').checked,
-                diasAntecedencia: parseInt(document.getElementById('notifDiasAntecedencia').value) || 3
+                diasAntecedencia: inteiroSeguro(document.getElementById('notifDiasAntecedencia').value, 3)
             };
 
             const novoParceiroId = document.getElementById('meuParceiro').value ? Number(document.getElementById('meuParceiro').value) : null;

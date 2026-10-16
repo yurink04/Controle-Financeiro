@@ -209,9 +209,9 @@
                 }
 
                 tr.innerHTML = `
-                    <td><strong>${u.nome}</strong></td>
+                    <td><strong>${escaparHTML(u.nome)}</strong></td>
                     <td>${statusBadge}</td>
-                    <td>Renda Fixa: <strong>${rendaFixaStr}</strong> | <span class="status-badge" style="background: var(--surface-2); color: var(--text-main);">${perfilNome}</span> <small class="muted">Parceiro: ${parceiroNome}</small></td>
+                    <td>Renda Fixa: <strong>${rendaFixaStr}</strong> | <span class="status-badge" style="background: var(--surface-2); color: var(--text-main);">${escaparHTML(perfilNome)}</span> <small class="muted">Parceiro: ${escaparHTML(parceiroNome)}</small></td>
                     <td>
                         <div style="display: flex; gap: 4px;">
                             <button onclick="abrirModalUsuario(${u.id})" class="btn-acao-icone editar" title="Editar"><img src="imagens/editar.png" alt="Editar"></button>
@@ -270,8 +270,12 @@
         function abrirModalUsuario(id = null) {
             const modal = document.getElementById('modalUsuario');
             const titulo = document.getElementById('modalUsuarioTitulo');
+            if (!usuarioPode('usuarios')) {
+                mostrarAlertaModal('Seu perfil não tem permissão para gerenciar usuários.');
+                return;
+            }
             document.getElementById('formUsuarioModal').reset();
-            
+            aplicarPerfilPredefinido();
             popularSelectParceiros(id);
 
             if (id) {
@@ -322,6 +326,7 @@
 
         async function salvarUsuarioConfig(event) {
             event.preventDefault();
+            if (!await exigirPermissao('usuarios', 'gerenciar usuários')) return;
             const id = document.getElementById('editUsuarioId').value;
             const nome = document.getElementById('nomeUsuarioModal').value.trim();
             const rendaFixa = numeroSeguro(document.getElementById('rendaFixaUsuarioModal').value);
@@ -350,20 +355,56 @@
             };
 
             const dados = obterDados();
+            if (!nome) {
+                await mostrarAlertaModal('Informe o nome do usuário.');
+                return;
+            }
+            const duplicado = (dados.usuarios || []).some(user =>
+                String(user.id) !== String(id || '') && [user.usuario, user.nome].filter(Boolean).some(valor => normalizarTexto(valor) === normalizarTexto(nome))
+            );
+            if (duplicado) {
+                await mostrarAlertaModal('Já existe um usuário com este nome/login. Use um nome diferente.');
+                return;
+            }
 
-            if (id) {
-                const u = dados.usuarios.find(user => Number(user.id) === Number(id));
-                if (u) {
-                    u.nome = nome;
-                    u.rendaFixa = rendaFixa;
-                    u.parceiroId = parceiroId;
-                    u.ativo = ativo;
-                    u.permissoes = permissoes;
-                    if (resetPin) {
-                        u.pin = ""; 
-                        u.senha = "";
-                    }
+            const usuarioEditado = id ? dados.usuarios.find(user => String(user.id) === String(id)) : null;
+            if (id && !usuarioEditado) {
+                await mostrarAlertaModal('O usuário que você tentou editar não existe mais. Atualize a tela e tente novamente.');
+                return;
+            }
+            if (parceiroId && String(parceiroId) === String(id || '')) {
+                await mostrarAlertaModal('Um usuário não pode ser vinculado como próprio parceiro.');
+                return;
+            }
+            const parceiroSelecionado = parceiroId ? dados.usuarios.find(user => String(user.id) === String(parceiroId)) : null;
+            if (parceiroId && (!parceiroSelecionado || parceiroSelecionado.ativo === false)) {
+                await mostrarAlertaModal('Selecione um parceiro válido e ativo.');
+                return;
+            }
+            if (parceiroSelecionado && parceiroSelecionado.parceiroId != null &&
+                String(parceiroSelecionado.parceiroId) !== String(id || '') &&
+                String(parceiroSelecionado.id) !== String(usuarioEditado?.parceiroId || '')) {
+                await mostrarAlertaModal('Este usuário já está vinculado a outro parceiro. Remova o vínculo anterior antes de continuar.');
+                return;
+            }
+
+            const parceiroAnteriorId = usuarioEditado?.parceiroId == null ? null : String(usuarioEditado.parceiroId);
+            if (usuarioEditado && parceiroAnteriorId && parceiroAnteriorId !== String(parceiroId || '')) {
+                const parceiroAnterior = dados.usuarios.find(user => String(user.id) === parceiroAnteriorId);
+                if (parceiroAnterior && String(parceiroAnterior.parceiroId) === String(usuarioEditado.id)) parceiroAnterior.parceiroId = null;
+            }
+
+            if (usuarioEditado) {
+                usuarioEditado.nome = nome;
+                usuarioEditado.rendaFixa = rendaFixa;
+                usuarioEditado.parceiroId = parceiroId;
+                usuarioEditado.ativo = ativo;
+                usuarioEditado.permissoes = permissoes;
+                if (resetPin) {
+                    usuarioEditado.pin = '';
+                    usuarioEditado.senha = '';
                 }
+                if (parceiroSelecionado) parceiroSelecionado.parceiroId = Number(usuarioEditado.id);
             } else {
                 const novoId = dados.usuarios.reduce((m, u) => Math.max(m, Number(u.id) || 0), 0) + 1;
                 dados.usuarios.push({
@@ -371,11 +412,12 @@
                     nome,
                     rendaFixa,
                     parceiroId,
-                    pin: "",
-                    senha: "",
+                    pin: '',
+                    senha: '',
                     ativo,
                     permissoes
                 });
+                if (parceiroSelecionado) parceiroSelecionado.parceiroId = novoId;
             }
 
             await salvarDados(dados);
@@ -385,6 +427,7 @@
         }
 
         async function excluirOuDesativarUsuario(id) {
+            if (!await exigirPermissao('usuarios', 'excluir ou desativar usuários')) return;
             if (!await verificarSenhaAdmin("excluir ou desativar usuário")) return;
             
             const dados = obterDados();
@@ -393,10 +436,11 @@
 
             const temLancamentos = dados.lancamentos.some(l => Number(l.usuarioId) === Number(id));
             const temCartoes = dados.cartoes.some(c => Number(c.usuarioId) === Number(id) && c.ativo !== false);
+            const temVinculoParceiro = dados.usuarios.some(user => String(user.id) !== String(id) && String(user.parceiroId || '') === String(id));
 
-            if (temLancamentos || temCartoes) {
+            if (temLancamentos || temCartoes || temVinculoParceiro) {
                 const confirmarDesativacao = await mostrarConfirmacaoModal(
-                    `O usuário "${u.nome}" possui lançamentos ou cartões vinculados e não pode ser excluído permanentemente.\n\nDeseja desativar este usuário?`
+                    `O usuário "${escaparHTML(u.nome)}" possui lançamentos, cartões ou vínculo de parceiro e não pode ser excluído permanentemente.\n\nDeseja desativar este usuário?`
                 );
                 if (confirmarDesativacao) {
                     u.ativo = false;
@@ -406,7 +450,7 @@
                 }
             } else {
                 const confirmarExclusao = await mostrarConfirmacaoModal(
-                    `Deseja realmente excluir o usuário "${u.nome}" permanentemente?`
+                    `Deseja realmente excluir o usuário "${escaparHTML(u.nome)}" permanentemente?`
                 );
                 if (confirmarExclusao) {
                     dados.usuarios = dados.usuarios.filter(user => Number(user.id) !== Number(id));
@@ -429,37 +473,63 @@
         }
 
         async function importarBackupJSON(event) {
-            const arquivo = event.target.files[0];
+            const input = event?.target;
+            const arquivo = input?.files?.[0];
             if (!arquivo) return;
 
-            const confirmar = await mostrarConfirmacaoModal("Restaurar um backup substituirá todos os dados atuais do sistema. Deseja continuar?");
-            if (!confirmar) {
-                event.target.value = '';
-                return;
-            }
+            try {
+                if (!await verificarSenhaAdmin('restaurar um backup local')) return;
+                const confirmar = await mostrarConfirmacaoModal('Restaurar um backup substituirá todos os dados atuais do sistema e da nuvem. Faça um backup atual antes de continuar. Deseja prosseguir?');
+                if (!confirmar) return;
 
-            const leitor = new FileReader();
-            leitor.onload = async function(e) {
-                try {
-                    const dadosImportados = JSON.parse(e.target.result);
-                    
-                    // Validação de Integridade do JSON (Evita corrupção do banco)
-                    if (!dadosImportados || typeof dadosImportados !== 'object') {
-                        throw new Error("Formato de arquivo inválido. O arquivo não é um objeto JSON válido.");
-                    }
-                    if (!Array.isArray(dadosImportados.usuarios) || !Array.isArray(dadosImportados.lancamentos)) {
-                        throw new Error("O arquivo não contém a estrutura esperada do sistema (ex: falta a aba de usuários ou lançamentos).");
-                    }
-
-                    await salvarDados(dadosImportados);
-                    await mostrarAlertaModal("Backup restaurado com sucesso! A página será recarregada.");
-                    window.location.reload();
-                } catch (err) {
-                    await mostrarAlertaModal("Erro ao restaurar backup: " + (err.message || "Certifique-se de que é um JSON válido gerado pelo sistema."));
-                    event.target.value = ''; // Limpa o input file
+                const texto = await arquivo.text();
+                const dadosImportados = JSON.parse(texto);
+                if (!dadosImportados || typeof dadosImportados !== 'object' || Array.isArray(dadosImportados)) {
+                    throw new Error('O arquivo não contém um objeto JSON válido.');
                 }
-            };
-            leitor.readAsText(arquivo);
+
+                const colecoesObrigatorias = [
+                    'usuarios', 'categorias', 'cartoes', 'lancamentos', 'financiamentos', 'bens',
+                    'notificacoes', 'logs', 'exclusao_movimento', 'edicao_movimento'
+                ];
+                const ausentes = colecoesObrigatorias.filter(nome => !Array.isArray(dadosImportados[nome]));
+                if (ausentes.length) {
+                    throw new Error('Backup incompleto. Coleções ausentes ou inválidas: ' + ausentes.join(', '));
+                }
+                const registrosInvalidos = colecoesObrigatorias.some(nome =>
+                    dadosImportados[nome].some(registro => !registro || typeof registro !== 'object' || Array.isArray(registro))
+                );
+                if (registrosInvalidos) throw new Error('Há registros inválidos no backup. Nenhum dado foi restaurado.');
+
+                mostrarLoading('Validando backup e preparando restauração...');
+                const dadosNuvem = await buscarDadosServidor();
+                const normalizados = migrarDados(dadosImportados).dados;
+                normalizados._revision = Number(dadosNuvem._revision) || 0;
+
+                // Cancela a fila antiga e faz a base de três vias coincidir com a revisão atual do servidor.
+                if (syncTimer) clearTimeout(syncTimer);
+                syncTimer = null;
+                syncPendingData = null;
+                localStorage.removeItem('syncPendente');
+                localStorage.removeItem(SYNC_CONFLICT_KEY);
+                localStorage.setItem(SYNC_BASELINE_KEY, JSON.stringify(dadosNuvem));
+
+                await salvarDados(normalizados);
+                await sincronizarComServidor();
+                esconderLoading();
+
+                if (localStorage.getItem(SYNC_CONFLICT_KEY) || localStorage.getItem('syncPendente') === 'true') {
+                    throw new Error('A restauração foi aplicada localmente, mas a sincronização com a nuvem está pendente ou em conflito. Verifique o indicador de sincronização antes de sair desta página.');
+                }
+                await mostrarAlertaModal('Backup validado e restaurado na nuvem com sucesso. A página será recarregada.');
+                window.location.reload();
+            } catch (err) {
+                esconderLoading();
+                console.error('Falha ao restaurar backup:', err);
+                await mostrarAlertaModal('Erro ao restaurar backup: ' + (err.message || 'arquivo inválido ou falha de conexão.'));
+            } finally {
+                if (input) input.value = '';
+            }
         }
 
         async function restaurarBackupNuvem() {
@@ -469,7 +539,13 @@
 
             mostrarLoading("Buscando dados na nuvem...");
             try {
-                const dadosNuvem = await buscarDadosServidor();
+                const dadosNuvem = migrarDados(await buscarDadosServidor()).dados;
+                if (syncTimer) clearTimeout(syncTimer);
+                syncTimer = null;
+                syncPendingData = null;
+                localStorage.removeItem('syncPendente');
+                localStorage.removeItem(SYNC_CONFLICT_KEY);
+                gravarSnapshotLocal(dadosNuvem, true);
                 await salvarDados(dadosNuvem, { sincronizar: false });
                 esconderLoading();
                 await mostrarAlertaModal("Dados restaurados da nuvem com sucesso! A página será recarregada.");
@@ -482,6 +558,7 @@
         }
 
         async function tentarAcessarAdminLogs() {
+            if (!await exigirPermissao('logs', 'acessar logs de auditoria')) return;
             const autorizado = await verificarSenhaAdmin("painel administrativo");
             if (autorizado) {
                 document.getElementById('painelAdminConteudo').style.display = 'block';
@@ -505,16 +582,18 @@
             [...logs].reverse().forEach(log => {
                 const tr = document.createElement('tr');
                 tr.innerHTML = `
-                    <td>${log.dataHoraFormatada || log.dataHora}</td>
-                    <td>${log.usuario || 'Sistema'}</td>
-                    <td><strong>${log.acao}</strong></td>
-                    <td>${log.detalhes || '-'}</td>
+                    <td>${escaparHTML(log.dataHoraFormatada || log.dataHora || "-")}</td>
+                    <td>${escaparHTML(log.usuario || 'Sistema')}</td>
+                    <td><strong>${escaparHTML(log.acao || '-')}</strong></td>
+                    <td>${escaparHTML(log.detalhes || '-')}</td>
                 `;
                 tbody.appendChild(tr);
             });
         }
 
         async function limparLogsAntigos() {
+            if (!await exigirPermissao('logs', 'limpar logs de auditoria')) return;
+            if (!await verificarSenhaAdmin('limpar os logs de auditoria')) return;
             const confirmar = await mostrarConfirmacaoModal("Deseja realmente limpar todos os registros de logs de auditoria?");
             if (!confirmar) return;
 

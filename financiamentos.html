@@ -105,7 +105,10 @@
 
         async function abrirModalNovoFinanciamento() {
             const dados = obterDados();
-            const bensAtivos = filtrarDadosPorPermissao(dados.bens || [], dados, 'casal').filter(b => b.ativo !== false);
+            const usuario = obterUsuarioAtual(dados);
+            const usuarioId = String(usuario?.id ?? '');
+            const parceiroId = String(usuario?.parceiroId ?? '');
+            const bensAtivos = (dados.bens || []).filter(b => b.ativo !== false && (b.usuarioId == null || String(b.usuarioId) === usuarioId || (b.compartilhado === true && String(b.usuarioId) === parceiroId)));
             
             if (bensAtivos.length === 0) {
                 const criar = await mostrarConfirmacaoModal("Você precisa cadastrar pelo menos um bem patrimonial antes de criar um financiamento. Deseja ir para a tela de Bens agora?");
@@ -179,24 +182,25 @@
             }
 
             financiamentos.forEach(f => {
-                const lancamentosFin = dados.lancamentos.filter(l => Number(l.financiamentoId) === Number(f.id));
+                const lancamentosFin = (dados.lancamentos || []).filter(l => pertenceAoFinanciamento(l, f, dados));
                 const pagos = lancamentosFin.filter(l => l.pago).length;
                 const saldoDevedor = lancamentosFin.filter(l => !l.pago).reduce((acc, l) => acc + Number(l.valor || 0), 0);
-                const percentual = Math.min(100, Math.round((pagos / Number(f.totalMeses)) * 100)) || 0;
+                const totalMeses = Math.max(1, Number(f.totalMeses) || lancamentosFin.length || 1);
+                const percentual = Math.min(100, Math.round((pagos / totalMeses) * 100)) || 0;
 
                 const bemObj = (dados.bens || []).find(b => Number(b.id) === Number(f.bemId));
                 const nomeBem = bemObj ? bemObj.nome : 'Não vinculado';
 
                 const tr = document.createElement('tr');
                 tr.innerHTML = `
-                    <td><strong>${f.nome}</strong></td>
-                    <td>${nomeBem}</td>
-                    <td>${pagos}/${f.totalMeses} (${percentual}%)</td>
+                    <td><strong>${escaparHTML(f.nome)}</strong></td>
+                    <td>${escaparHTML(nomeBem)}</td>
+                    <td>${pagos}/${totalMeses} (${percentual}%)</td>
                     <td>R$ ${Number(f.valorParcela || 0).toLocaleString('pt-BR', {minimumFractionDigits: 2})}</td>
                     <td class="negativo">R$ ${saldoDevedor.toLocaleString('pt-BR', {minimumFractionDigits: 2})}</td>
                     <td>
-                        <button onclick="window.location.href='detalhes-financiamento.html?id=${f.id}'" class="btn-acao-icone visualizar" title="Detalhes"><img src="imagens/visualizar.png" alt="Detalhes"></button>
-                        <button onclick="excluirFinanciamentoGeral(${f.id})" class="btn-acao-icone excluir" title="Excluir"><img src="imagens/excluir.png" alt="Excluir"></button>
+                        <button onclick="window.location.href='detalhes-financiamento.html?id=${encodeURIComponent(String(f.id))}'" class="btn-acao-icone visualizar" title="Detalhes"><img src="imagens/visualizar.png" alt="Detalhes"></button>
+                        ${Number(f.usuarioId) === Number(obterUsuarioAtualId(dados)) && usuarioPode('financiamentos') ? `<button onclick="excluirFinanciamentoGeral(${Number(f.id)})" class="btn-acao-icone excluir" title="Excluir"><img src="imagens/excluir.png" alt="Excluir"></button>` : ''}
                     </td>
                 `;
                 tbody.appendChild(tr);

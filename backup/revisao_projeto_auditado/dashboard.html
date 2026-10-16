@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#2563eb">
+    <title>Dashboard | Controle Financeiro</title>
+    <link rel="stylesheet" href="style.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+    
+    <main class="container">
+        <div class="page-heading">
+            <div>
+                <h2>Visão geral</h2>
+                <p>Acompanhe entradas, despesas, patrimônio e compromissos ativos do mês.</p>
+            </div>
+            <div class="toolbar-actions" style="display: flex; gap: 8px; flex-wrap: wrap;">
+                <button type="button" class="btn-sucesso" onclick="redirecionarNovoLancamento('entrada')" style="padding: 10px 16px; font-weight: bold; border-radius: 8px; cursor: pointer; border: none; color: #fff;">+ Nova Entrada</button>
+                <button type="button" class="btn-perigo" onclick="redirecionarNovoLancamento('saida')" style="padding: 10px 16px; font-weight: bold; border-radius: 8px; cursor: pointer; border: none; color: #fff;">- Nova Saída</button>
+                <button type="button" class="btn-warning" onclick="redirecionarNovoLancamento('cartao')" style="padding: 10px 16px; font-weight: bold; border-radius: 8px; cursor: pointer; border: none; background-color: #d97706; color: white;">💳 Nova Saída no Cartão</button>
+            </div>
+        </div>
+
+        <section class="form-card filter-bar">
+            <div>
+                <div class="section-title" style="margin-bottom: 2px;"><h2>Resumo mensal</h2></div>
+                <p class="muted small">Use os filtros para analisar por período e escopo.</p>
+            </div>
+            <div style="display: flex; gap: 12px; flex-wrap: wrap;">
+                <div class="filter-group">
+                    <label for="filtroEscopoDashboardGeral">Escopo</label>
+                    <select id="filtroEscopoDashboardGeral" onchange="carregarDashboard()" style="width:auto; min-width:140px;">
+                        <option value="casal">Casal / Casa</option>
+                        <option value="individual">Individual</option>
+                    </select>
+                </div>
+                <div class="filter-group">
+                    <label for="filtroMesAno">Mês / Ano</label>
+                    <input type="month" id="filtroMesAno" onchange="carregarDashboard()" style="width:auto; min-width:150px;">
+                </div>
+            </div>
+        </section>
+
+       <section class="stat-grid" aria-label="Indicadores financeiros do mês">
+        <!-- Novo Card Mestre (Unifica Saldo, Entradas, Saídas e Foco) -->
+        <div class="stat-box kpi-card card-mestre">
+            <span class="kpi-accent" style="background: var(--primary);"></span>
+            
+            <div class="mestre-grid">
+                <!-- 1. Saldo -->
+                <div class="mestre-bloco">
+                    <div class="stat-label">Saldo geral do Mês</div>
+                    <div id="saldoGeral" class="stat-value saldo-destaque">R$ 0,00</div>
+                    <p class="stat-detail">(Entradas abatendo as Saídas)</p>
+                </div>
+
+                <!-- 2. Entradas -->
+                <div class="mestre-bloco">
+                    <div class="stat-label kpi-entrada">
+                        <span>↓</span> Entradas
+                    </div>
+                    <div id="totalEntradas" class="stat-value positivo detalhe-valor">R$ 0,00</div>
+                    <div id="subDetalhesEntradas" class="stat-detail"></div>
+                </div>
+                
+                <!-- 3. Saídas -->
+                <div class="mestre-bloco">
+                    <div class="stat-label kpi-saida">
+                        <span>↑</span> Saídas
+                    </div>
+                    <div id="totalSaidas" class="stat-value negativo detalhe-valor">R$ 0,00</div>
+                    <div id="subDetalhesSaidas" class="stat-detail"></div>
+                </div>
+
+                <!-- 4. Foco de Atenção -->
+                <div class="mestre-bloco">
+                    <div class="stat-label" style="color: #b91c1c;">⚠️ Foco de atenção</div>
+                    <div id="maiorFocoValor" class="stat-value" style="color: #b91c1c;">R$ 0,00</div>
+                    <div id="maiorFocoDetalhe" class="stat-detail">Nenhum gasto registrado</div>
+                </div>
+            </div>
+        </div>
+        </section>
+
+<!-- Central de Lembretes (Expansível) -->
+        <section class="form-card" id="cardCentralLembretes" style="margin-top: 16px; padding: 18px 24px; transition: var(--transition);">
+            <div class="section-title" style="cursor: pointer; user-select: none; margin-bottom: 0;" onclick="toggleCentralLembretes()">
+                <div style="display: flex; align-items: center; justify-content: space-between; width: 100%;">
+                    <div style="display: flex; align-items: center; gap: 10px;">
+                        <h2 style="margin: 0; color: var(--primary);">🔔 Central de Lembretes</h2>
+                        <span class="audit-action" id="contadorLembretes" style="background: var(--danger-soft); color: var(--danger); border-color: var(--danger); display: none;">0</span>
+                    </div>
+                    <span id="iconeToggleLembretes" style="font-size: 1.2rem; transition: transform 0.3s; color: var(--text-muted);">▼</span>
+                </div>
+            </div>
+            
+            <div id="corpoCentralLembretes" class="lembretes-expansivel">
+                <div class="lembretes-conteudo">
+                    <ul id="listaCentralLembretes" class="lista-simples">
+                        <!-- Preenchido automaticamente via JS -->
+                    </ul>
+                </div>
+            </div>
+        </section>
+
+        <!-- Gráficos -->
+        <section class="grid-2" style="margin-top:16px;">
+            <article class="form-card chart-card">
+                <div class="chart-head">
+                    <div><h3>Entradas x saídas</h3><span class="muted small">Comparação do período selecionado</span></div>
+                </div>
+                <div class="chart-container"><canvas id="graficoEntradasSaidas"></canvas></div>
+            </article>
+
+            <article class="form-card chart-card" id="cardGraficoCategorias">
+                <div class="chart-head">
+                    <div><h3>Gastos por categoria</h3><span class="muted small">Distribuição das despesas</span></div>
+                    <select id="filtroCategoriaDashboard" onchange="carregarDashboard()">
+                        <option value="todas">Todas</option>
+                    </select>
+                </div>
+                <div class="chart-container"><canvas id="graficoGastosCategorias"></canvas></div>
+            </article>
+
+            <article class="form-card chart-card" id="cardGraficoEssenciais">
+                <div class="chart-head">
+                    <div><h3>Essenciais x não essenciais</h3><span class="muted small">Classificação das saídas</span></div>
+                    <select id="filtroServicoEssencialDashboard" onchange="carregarDashboard()">
+                        <option value="todos">Todos</option>
+                        <option value="sim">Essenciais</option>
+                        <option value="nao">Não essenciais</option>
+                    </select>
+                </div>
+                <div class="chart-container"><canvas id="graficoServicosEssenciais"></canvas></div>
+            </article>
+
+            <article class="form-card chart-card" id="cardGraficoCartoes">
+                <div class="chart-head">
+                    <div><h3>Limite dos cartões</h3><span class="muted small">Uso atual dos cartões ativos</span></div>
+                    <select id="filtroGraficoCartao" onchange="carregarDashboard()">
+                        <option value="todos">Todos</option>
+                    </select>
+                </div>
+                <div class="chart-container"><canvas id="graficoCartoesLimite"></canvas></div>
+            </article>
+        </section>
+
+        <section class="form-card" id="secaoProximosPagamentos" style="margin-top:16px; display: none;">
+            <div class="section-title">
+                <div><h2>Próximos pagamentos</h2><p>Contas e faturas pendentes nos próximos 30 dias.</p></div>
+            </div>
+            <ul id="listaProximosPagamentos" class="lista-simples"></ul>
+        </section>
+
+        <section class="form-card" style="margin-top: 16px;">
+            <div class="section-title">
+                <div><h2>Últimos lançamentos do mês</h2><p>Use o filtro para visualizar somente entradas ou saídas.</p></div>
+                <div class="filter-group">
+                    <label for="filtroTipoUltimosLancamentos">Exibir</label>
+                    <select id="filtroTipoUltimosLancamentos" onchange="carregarDashboard()" style="width:auto;">
+                        <option value="todos">Todos</option>
+                        <option value="entrada">Entradas</option>
+                        <option value="saida">Saídas</option>
+                    </select>
+                </div>
+            </div>
+            <div class="tabela-container">
+                <table class="tabela">
+                    <thead>
+                        <tr>
+                            <th>Usuário</th><th>Descrição</th><th>Categoria</th><th>Pagamento</th><th>Vencimento</th><th>Valor</th><th>Ações</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tabelaUltimosLancamentos"></tbody>
+                </table>
+            </div>
+        </section>
+    </main>
+
+    <script src="script.js"></script>
+    <script>
+    document.addEventListener('DOMContentLoaded', async () => {
+        injetarHeader();
+        const autenticado = await verificarAutenticacao();
+        
+        if (autenticado) {
+            // Preenche o campo de mês/ano com a data atual
+            const filtroMesInput = document.getElementById('filtroMesAno');
+            if (filtroMesInput && !filtroMesInput.value) {
+                const hoje = new Date();
+                const anoAtual = hoje.getFullYear();
+                const mesAtual = String(hoje.getMonth() + 1).padStart(2, '0');
+                filtroMesInput.value = `${anoAtual}-${mesAtual}`;
+            }
+
+            // Carrega os dados da tela
+            carregarDashboard();
+        }
+    });
+</script>
+</body>
+</html>
