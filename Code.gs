@@ -10,11 +10,11 @@ if (!SENHA_MESTRA_API || !SENHA_ADMIN) {
 var SCHEMA = {
   usuarios: [
     'id', 'usuario', 'nome', 'pin', 'rendaFixa', 'parceiroId', 'ativo',
-    'permissoes', 'preferenciasNotificacao'
+    'permissoes', 'preferenciasNotificacao', 'fotoPerfil'
   ],
 
   categorias: ['id', 'nome', 'tipo', 'classificacao', 'criadopor'],
-
+  
   cartoes: [
     'id', 'usuarioId', 'nome', 'limite', 'fechamento', 'vencimento',
     'isBeneficio', 'tipoCartao', 'ativo', 'createdAt', 'updatedAt'
@@ -69,7 +69,6 @@ var CAMPOS_DATA = {
   primeiroVencimento: true
 };
 
-// Estes campos são armazenados como JSON em células do Sheets e precisam voltar como objetos.
 var CAMPOS_JSON = {
   permissoes: true,
   preferenciasNotificacao: true
@@ -129,7 +128,6 @@ function doGet(e) {
     }
 
     if (action === 'obterDados') {
-      // Impede que a leitura capture algumas abas antes e outras depois de uma gravação concorrente.
       var leituraLock = LockService.getScriptLock();
       leituraLock.waitLock(15000);
       try {
@@ -190,6 +188,78 @@ function doPost(e) {
       });
     }
 
+    // AÇÃO DE VERIFICAÇÃO DE CREDENCIAIS OTIMIZADA PARA O LOGIN
+    if (action === 'verificarCredenciaisLogin') {
+      var usuarioLogin = data.usuario ? String(data.usuario).trim() : '';
+      var senhaHash = data.senhaHash ? String(data.senhaHash).trim() : '';
+
+      var usuarios = lerAba('usuarios');
+      var usuarioEncontrado = null;
+
+      for (var i = 0; i < usuarios.length; i++) {
+        var u = usuarios[i];
+        var nomeUser = String(u.usuario || '').trim().toLowerCase();
+        var nomeCompleto = String(u.nome || '').trim().toLowerCase();
+        var busca = usuarioLogin.toLowerCase();
+
+        if (nomeUser === busca || nomeCompleto === busca) {
+          usuarioEncontrado = u;
+          break;
+        }
+      }
+
+      if (!usuarioEncontrado) {
+        return respostaJson({ status: 'erro', mensagem: 'Usuário não encontrado.' });
+      }
+
+      if (usuarioEncontrado.ativo === false || usuarioEncontrado.ativo === 'FALSE') {
+        return respostaJson({ status: 'erro', mensagem: 'Este usuário está desativado.' });
+      }
+
+      // Se a chamada veio apenas para checar se o usuário existe (Passo 1 do login)
+      if (senhaHash === 'CHECK_APENAS_USUARIO') {
+        return respostaJson({
+          status: 'sucesso',
+          usuario: {
+            id: usuarioEncontrado.id,
+            nome: usuarioEncontrado.nome,
+            usuario: usuarioEncontrado.usuario,
+            fotoPerfil: usuarioEncontrado.fotoPerfil || ''
+          }
+        });
+      }
+
+      var senhaCadastrada = String(usuarioEncontrado.pin || usuarioEncontrado.senha || '').trim();
+
+      if (senhaCadastrada === '') {
+        return respostaJson({
+          status: 'sucesso',
+          primeiroAcesso: true,
+          usuario: {
+            id: usuarioEncontrado.id,
+            nome: usuarioEncontrado.nome,
+            usuario: usuarioEncontrado.usuario
+          }
+        });
+      }
+
+      if (senhaCadastrada !== senhaHash) {
+        return respostaJson({ status: 'erro', mensagem: 'Palavra-passe incorreta.' });
+      }
+
+      return respostaJson({
+        status: 'sucesso',
+        primeiroAcesso: false,
+        usuario: {
+          id: usuarioEncontrado.id,
+          nome: usuarioEncontrado.nome,
+          usuario: usuarioEncontrado.usuario,
+          fotoPerfil: usuarioEncontrado.fotoPerfil || '',
+          permissoes: usuarioEncontrado.permissoes || {}
+        }
+      });
+    }
+
     if (action !== 'salvarDados') {
       return respostaJson({
         status: 'erro',
@@ -244,8 +314,6 @@ function doPost(e) {
       var novaRevisao = revisaoServidor + 1;
       data.dados._revision = novaRevisao;
 
-      // O Sheets não oferece transação entre abas. Mantemos uma cópia para tentar
-      // restaurar o estado anterior caso alguma escrita falhe no meio do processo.
       var dadosAnteriores = {};
       Object.keys(SCHEMA).forEach(function(nomeAba) {
         dadosAnteriores[nomeAba] = lerAba(nomeAba);
@@ -254,7 +322,6 @@ function doPost(e) {
       try {
         atualizarTabelas(data.dados);
         SpreadsheetApp.flush();
-        // Só avança a revisão depois que as gravações e o flush terminarem.
         definirRevisaoDados(novaRevisao);
       } catch (erroGravacao) {
         var erroRollback = null;
@@ -373,7 +440,6 @@ function normalizarValorLido(header, val) {
       try {
         return JSON.parse(texto);
       } catch (_) {
-        // Uma célula JSON antiga/corrompida não deve quebrar a leitura de todas as abas.
         return header === 'preferenciasNotificacao' ? {} : {};
       }
     }

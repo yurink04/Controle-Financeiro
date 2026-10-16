@@ -63,8 +63,9 @@
                     </select>
                 </div>
                 
+                <!-- Escopo liberado para entradas e saídas -->
                 <div id="blocoEditEscopo" class="form-group" style="margin-top:12px;">
-                    <label for="editEscopo">Escopo do gasto</label>
+                    <label for="editEscopo">Escopo do lançamento</label>
                     <select id="editEscopo">
                         <option value="casal">Casal / Casa</option>
                         <option value="individual">Individual</option>
@@ -93,7 +94,7 @@
         </section>
     </main>
 
-   <script src="script.js"></script>
+    <script src="script.js"></script>
     <script>
         const urlParams = new URLSearchParams(window.location.search);
         const lancamentoId = urlParams.get('id') || '';
@@ -205,8 +206,11 @@
             const entrada = tipo === 'entrada';
             const blocoServ = document.getElementById('blocoServicoEssencial');
             if (blocoServ) blocoServ.style.display = entrada ? 'none' : 'block';
+            
+            // Escopo mantido visível para ambos (entrada e saída)
             const blocoEsc = document.getElementById('blocoEditEscopo');
-            if (blocoEsc) blocoEsc.style.display = entrada ? 'none' : 'block';
+            if (blocoEsc) blocoEsc.style.display = 'block';
+
             if (entrada) document.getElementById('blocoEditCartao').style.display = 'none';
             else tratarMudancaFormaEdicao();
         }
@@ -221,7 +225,6 @@
         async function salvarEdicaoLancamento(event) {
             event.preventDefault();
             const dados = obterDados();
-            // Rebusca a versão atual antes de salvar; não usa uma referência capturada antes da autenticação/sync.
             const lanc = (dados.lancamentos || []).find(l => String(l.id) === String(lancamentoId));
             if (!lanc || !usuarioPodeAlterarLancamento(lanc, dados)) {
                 await mostrarAlertaModal('O lançamento não existe mais ou você não tem permissão para editá-lo.');
@@ -261,7 +264,7 @@
                 observacao: document.getElementById('editObservacao')?.value?.trim() || '',
                 vencimento,
                 servicoEssencial: tipo === 'saida' ? (document.getElementById('editServicoEssencial')?.value || 'nao') : 'nao',
-                escopo: tipo === 'saida' ? (document.getElementById('editEscopo')?.value || 'casal') : 'casal',
+                escopo: document.getElementById('editEscopo')?.value || 'casal',
                 cartaoId,
                 dataCompra: lanc.dataCompra || null,
                 bemId: tipo === 'saida' ? (lanc.bemId || null) : null

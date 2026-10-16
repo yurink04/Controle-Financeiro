@@ -9,7 +9,7 @@ async function gerarHash(texto) {
 
 const DB_KEY = 'sistemaFinanceiroCompartilhado';
 const BACKUP_TESTE_KEY = 'sistemaFinanceiroBackupTeste';
-const API_URL = "https://script.google.com/macros/s/AKfycbyjtYfRtc7nSQmromU5mQaOupBVRrigugKgRt6qbCBRdbblodPNJa7aAkOeiOcuAMR_/exec";
+const API_URL = "https://script.google.com/macros/s/AKfycbyUNIdoSXh75ngKOoZ1CP68hVru0iltCOIOOxuDubqrC3qT0yC2yih0pK0gwJy9PBom/exec";
 const TOKEN_API = "PLANOF1NALPRAS4AIRD@MERDA";
 const SCHEMA_VERSION = 3;
 const SYNC_DEBOUNCE_MS = 1500;
@@ -35,73 +35,131 @@ let chartServicosEssenciaisInstance = null;
 let chartServicosEssenciaisRelInstance = null; 
 
 function injetarHeader() {
-    const headerHTML = `
-    <style>
-        @keyframes pulsoSuave {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0.4; }
-        }
-    </style>
-    <header class="app-header">
-        <div class="header-inner">
-            <div class="header-left">
-                <div class="brand">
-                    <span class="brand-title">Controle Financeiro</span>
-                    <span class="brand-subtitle">Gestão Inteligente</span>
-                </div>
-                <div class="header-perfil-sync">
-                    <span id="usuarioLogadoNome" class="user-chip"></span>
-                    <span id="syncStatusIcon" title="Sincronizado" style="cursor: pointer; display: flex; align-items: center;">
-                        <img src="imagens/sincronizar.png" alt="Sync" style="width: 22px; height: 22px; object-fit: contain;">
-                    </span>
-                    <span id="headerLoadingText" style="display: none; font-size: 0.85rem; font-weight: 700; color: var(--primary); margin-left: 12px; animation: pulsoSuave 1.5s infinite ease-in-out;"></span>
-                </div>
-            </div>
-            <nav class="app-nav-center" aria-label="Navegação principal">
-                <a href="dashboard.html">Início</a>
-                <div class="nav-dropdown" style="position: relative;">
-                    <a href="#" onclick="event.preventDefault();" style="cursor: pointer;">Cadastros ▾</a>
-                    <div class="nav-dropdown-content" style="position: absolute; top: 100%; left: 0;">
-                        <a href="cartoes.html">Cartões</a>
-                        <a href="categorias.html">Categorias</a>
-                        <a href="bens.html">Bens</a>
-                        <a href="financiamentos.html">Financiamentos</a>
-                    </div>
-                </div>
-                <a href="lancamentos.html">Lançamentos</a>
-                <a href="central-pagamentos.html">Central de Pagamentos</a>
-                <a href="relatorios.html">Relatórios</a>
-            </nav>
-            <div class="header-right">
-                <div class="header-tools">
-                    <button type="button" onclick="alternarPrivacidade()" title="Ocultar/Mostrar Valores" id="btnPrivacidade">
-                        <img src="imagens/esconder.png" alt="Privacidade" id="imgPrivacidade">
-                    </button>
-                    <button type="button" onclick="alternarTemaVisual(event)" title="Alternar tema">
-                        <img src="imagens/modo_escuro.jpg" alt="Tema">
-                    </button>
-                    <a href="configuracoes.html" title="Configurações">
-                        <img src="imagens/config.png" alt="Configurações">
-                    </a>
-                    <button type="button" title="Notificações" id="btnNotificacoesHeader">
-                        <img src="imagens/notificacao.png" alt="Notificações" onerror="this.style.display='none'">
-                    </button>
-                </div>
-                <div class="header-tools" style="border-left: 1px solid var(--border-color, #e5e7eb); padding-left: 18px;">
-                    <a href="index.html" onclick="event.preventDefault(); deslogarSistema()" class="btn-sair-extremo" title="Sair do sistema">
-                        <img src="imagens/exit.png" alt="Sair">
-                    </a>
-                </div>
-            </div>
+    const sidebarHTML = `
+    <button class="mobile-menu-btn" onclick="document.body.classList.toggle('sidebar-open')" title="Abrir menu">☰</button>
+    <div class="mobile-overlay" onclick="document.body.classList.remove('sidebar-open')"></div>
+
+    <aside class="app-sidebar">
+        <div class="sidebar-profile" style="margin-top: 20px;">
+            <div id="usuarioLogadoNome" onclick="window.location.href='perfil.html'" title="Aceder ao Meu Perfil" style="display: flex; flex-direction: column; align-items: center; gap: 8px; cursor: pointer;"></div>
+            <span id="headerLoadingText" style="display: none; font-size: 0.75rem; font-weight: 700; color: var(--primary); margin-top: 10px;"></span>
         </div>
-    </header>
+
+        <nav class="sidebar-nav app-nav-center" aria-label="Navegação principal">
+            <div style="display: flex; align-items: center; justify-content: space-between; padding: 4px 8px; margin-bottom: 6px; border-radius: 12px; border: 1px solid var(--border);">
+                <a href="dashboard.html" title="Início" style="flex: 1; display: flex; align-items: center; justify-content: center; padding: 10px; text-decoration: none; border-radius: 8px; transition: background 0.2s;" onmouseover="this.style.background='var(--primary-soft)'" onmouseout="this.style.background='transparent'">
+                    <img src="imagens/casa.png" alt="Início" style="width: 20px; height: 20px; object-fit: contain;">
+                </a>
+                <div style="width: 1px; height: 18px; background: var(--border);"></div>
+                <a href="configuracoes.html" title="Configurações" style="flex: 1; display: flex; align-items: center; justify-content: center; padding: 10px; text-decoration: none; border-radius: 8px; transition: background 0.2s;" onmouseover="this.style.background='var(--primary-soft)'" onmouseout="this.style.background='transparent'">
+                    <img src="imagens/config.png" alt="Configurações" style="width: 20px; height: 20px; object-fit: contain;">
+                </a>
+            </div>
+
+            <div class="nav-dropdown">
+                <a href="#" onclick="event.preventDefault(); this.parentElement.classList.toggle('active');">Cadastros ▾</a>
+                <div class="nav-dropdown-content">
+                    <a href="cartoes.html">Cartões</a>
+                    <a href="categorias.html">Categorias</a>
+                    <a href="bens.html">Bens</a>
+                    <a href="financiamentos.html">Financiamentos</a>
+                </div>
+            </div>
+            <a href="lancamentos.html">Lançamentos</a>
+            <a href="central-pagamentos.html">Central de Pagamentos</a>
+            <a href="relatorios.html">Relatórios</a>
+        </nav>
+
+        <div class="sidebar-footer">
+            <a href="index.html" onclick="event.preventDefault(); deslogarSistema()" class="btn-sair-sidebar" title="Sair do sistema">
+                <img src="imagens/exit.png" alt="Sair">
+                <span>Sair</span>
+            </a>
+        </div>
+    </aside>
     `;
-    if (!document.querySelector('.app-header')) {
-        document.body.insertAdjacentHTML('afterbegin', headerHTML);
+
+    if (!document.querySelector('.app-sidebar')) {
+        const oldHeader = document.querySelector('.app-header');
+        if (oldHeader) oldHeader.remove();
+        document.body.insertAdjacentHTML('afterbegin', sidebarHTML);
     }
+    
+    // Descobre a página atual e define o subtítulo dinâmico
+    const arquivoAtual = String(window.location.pathname || '').split('/').pop().toLowerCase();
+    let subtituloDinamico = 'Gestão Inteligente';
+    
+    if (arquivoAtual.includes('lancamento')) subtituloDinamico = 'Lançamentos';
+    else if (arquivoAtual.includes('central-pagamentos')) subtituloDinamico = 'Central de Pagamentos';
+    else if (arquivoAtual.includes('relatorios')) subtituloDinamico = 'Relatórios';
+    else if (arquivoAtual.includes('cartoes')) subtituloDinamico = 'Cartões';
+    else if (arquivoAtual.includes('categorias')) subtituloDinamico = 'Categorias';
+    else if (arquivoAtual.includes('bens')) subtituloDinamico = 'Bens';
+    else if (arquivoAtual.includes('financiamentos')) subtituloDinamico = 'Financiamentos';
+    else if (arquivoAtual.includes('configuracoes')) subtituloDinamico = 'Configurações';
+    else if (arquivoAtual.includes('perfil')) subtituloDinamico = 'Meu Perfil';
+
+    const containerPrincipal = document.querySelector('.container');
+    if (containerPrincipal && !document.querySelector('.app-top-island')) {
+        const islandHtml = `
+        <div class="app-top-island" style="display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 20px; background: var(--surface); padding: 18px 28px; border: 1px solid var(--border); border-radius: 22px; box-shadow: var(--shadow); margin-bottom: 24px; width: 100%;">
+            <!-- Esquerda: Título e Sino de Notificações colado ao lado -->
+            <div style="display: flex; align-items: center; gap: 14px;">
+                <div class="app-page-brand" onclick="window.location.href='dashboard.html'" style="cursor: pointer; display: flex; flex-direction: column;" title="Voltar para a página principal">
+                    <h1 style="font-size: 1.5rem; font-weight: 900; color: var(--text-main); letter-spacing: -0.035em; line-height: 1.1;">Controle Financeiro</h1>
+                    <span style="font-size: 0.8rem; color: var(--text-muted); font-weight: 600; margin-top: 2px;">${escaparHTML(subtituloDinamico)}</span>
+                </div>
+                <div style="width: 1px; height: 24px; background: var(--border);"></div>
+                <button type="button" id="btnNotificacoesHeader" title="Central de Notificações" style="background: transparent; border: none; cursor: pointer; padding: 6px; display: flex; align-items: center; justify-content: center; border-radius: 99px; transition: background 0.2s;">
+                    <img src="imagens/notificacao.png" alt="Notificações" style="width: 22px; height: 22px; object-fit: contain;">
+                </button>
+            </div>
+
+            <!-- Centro: Tema e Privacidade centralizados -->
+            <div style="display: flex; align-items: center; justify-content: center; gap: 12px;">
+                <button type="button" onclick="alternarPrivacidade()" title="Ocultar/Mostrar Valores" id="btnPrivacidade" style="background: transparent; border: none; cursor: pointer; padding: 8px 12px; display: flex; align-items: center; gap: 6px; color: var(--text-main); font-size: 0.82rem; font-weight: 700; border-radius: 99px; transition: background 0.2s;">
+                    <img src="imagens/esconder.png" alt="Privacidade" id="imgPrivacidade" style="width: 18px; height: 18px; object-fit: contain;">
+                    <span class="toolbar-label">Privacidade</span>
+                </button>
+                <div style="width: 1px; height: 18px; background: var(--border);"></div>
+                <button type="button" onclick="alternarTemaVisual(event)" title="Alternar tema" style="background: transparent; border: none; cursor: pointer; padding: 8px 12px; display: flex; align-items: center; gap: 6px; color: var(--text-main); font-size: 0.82rem; font-weight: 700; border-radius: 99px; transition: background 0.2s;">
+                    <img src="imagens/modo_escuro.jpg" alt="Tema" style="width: 18px; height: 18px; object-fit: contain; border-radius: 50%;">
+                    <span class="toolbar-label">Tema</span>
+                </button>
+            </div>
+
+            <!-- Direita: Sincronização na extrema direita -->
+            <div style="display: flex; align-items: center; justify-content: flex-end;">
+                <span id="syncStatusIcon" title="Sincronizado" style="cursor: pointer; display: flex; align-items: center; justify-content: center; padding: 6px; border-radius: 99px; transition: background 0.2s;">
+                    <img src="imagens/sincronizar.png" alt="Sync" style="width: 18px; height: 18px; object-fit: contain;">
+                </span>
+            </div>
+        </div>`;
+        containerPrincipal.insertAdjacentHTML('afterbegin', islandHtml);
+    }
+
     criarIndicadorSincronizacaoUi();
     atualizarIconePrivacidade();
     atualizarHeaderUsuario();
+}
+
+function atualizarHeaderUsuario() {
+    const usuario = obterUsuarioAtual();
+    if (usuario) aplicarPermissoesNavegacao(usuario);
+    
+    const spanNome = document.getElementById('usuarioLogadoNome');
+    if (spanNome && usuario) {
+        // Avatar padrão caso não tenha foto
+        const avatarSrc = usuario.fotoPerfil || 'data:image/svg+xml;charset=UTF-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22%23a89586%22%3E%3Cpath%20d%3D%22M12%2012c2.21%200%204-1.79%204-4s-1.79-4-4-4-4%201.79-4%204%201.79%204%204%204zm0%202c-2.67%200-8%201.34-8%204v2h16v-2c0-2.66-5.33-4-8-4z%22%2F%3E%3C%2Fsvg%3E';
+        
+        // Estilização vertical bonita para a sidebar
+        spanNome.innerHTML = `
+            <img src="${avatarSrc}" alt="Perfil" style="width: 72px; height: 72px; border-radius: 50%; object-fit: cover; border: 3px solid var(--primary); padding: 2px; background: var(--surface-2); box-shadow: 0 4px 14px rgba(0,0,0,0.08);">
+            <span style="margin-top: 12px; display: block; font-size: 1.1rem; color: var(--text-main);">Olá, <span style="color: var(--primary); font-weight: 800;">${escaparHTML(usuario.nome.split(' ')[0])}</span></span>
+        `;
+    }
+    
+    if (typeof renderizarSinoNotificacoes === 'function') renderizarSinoNotificacoes();
 }
 
 function filtrarDadosPorPermissao(lista, dadosGlobais, escopoFiltro = 'casal') {
@@ -171,6 +229,7 @@ async function selecionarUsuario(id) {
 
     const senhaAtual = String(usuario.pin || usuario.senha || "").trim();
     
+    // Se o usuário ainda não tem senha cadastrada (Primeiro Acesso)
     if (!senhaAtual) {
         let novaSenha = null;
         let senhaValida = false;
@@ -207,43 +266,15 @@ async function selecionarUsuario(id) {
             }
         }
         await mostrarAlertaModal("Palavra-passe cadastrada com sucesso!");
-    } else {
-        const senhaDigitada = await mostrarPromptSenha(
-            "Verificação de Palavra-passe",
-            `Digite a palavra-passe de acesso para ${usuario.nome}:`,
-            false
-        );
-        
-        if (senhaDigitada === null) return false;
-
-        const hashDigitado = await gerarHash(senhaDigitada);
-        
-        if (hashDigitado !== senhaAtual && senhaDigitada !== senhaAtual) {
-            await mostrarAlertaModal("Palavra-passe incorreta.");
-            return false;
-        }
-
-        if (senhaDigitada === senhaAtual && hashDigitado !== senhaAtual) {
-            usuario.pin = hashDigitado;
-            usuario.senha = hashDigitado;
-            await salvarDados(dados);
-            if (ehUsuarioTeste) {
-                if (syncTimer) clearTimeout(syncTimer);
-                syncTimer = null;
-                await sincronizarComServidor();
-                if (localStorage.getItem('syncPendente') === 'true' || localStorage.getItem(SYNC_CONFLICT_KEY)) {
-                    await mostrarAlertaModal('Não foi possível confirmar a atualização da senha no servidor. Resolva a pendência antes de entrar no perfil de teste.');
-                    return false;
-                }
-            }
-        }
     }
 
+    // Se já chegou aqui, a senha já foi validada com sucesso no formulário de login (index_8.html).
+    // Apenas efetuamos a entrada no sistema sem reabrir popups de senha.
     mostrarLoading("A entrar no sistema...");
     localStorage.setItem('usuarioLogado', String(usuario.id));
     localStorage.setItem('privacidadeAtiva', 'true');
 
-    if (normalizarTexto(usuario.nome) === 'teste') {
+    if (ehUsuarioTeste) {
         localStorage.setItem(BACKUP_TESTE_KEY, JSON.stringify(dados));
     }
 
@@ -738,12 +769,15 @@ function criarIndicadorSincronizacaoUi() {
 
     chip.title = "Status: Sincronizado. Clique para atualizar do banco de dados.";
     chip.style.cssText = `
-        display: inline-flex; align-items: center; justify-content: center;
-        padding: 4px 8px; height: 34px; border-radius: 9px;
+        display: inline-flex; align-items: center; gap: 8px;
+        padding: 6px 12px; height: 36px; border-radius: 99px;
         background: var(--success-soft); border: 1px solid color-mix(in srgb, var(--success) 26%, var(--border));
-        cursor: pointer; margin-left: 8px; transition: var(--transition-fast);
+        cursor: pointer; transition: var(--transition-fast);
     `;
-    chip.innerHTML = `<img src="imagens/sincronizar.png" alt="Sync" style="width: 20px; height: 20px; object-fit: contain;">`;
+    chip.innerHTML = `
+        <img src="imagens/sincronizar.png" alt="Sync" style="width: 18px; height: 18px; object-fit: contain;">
+        <span id="syncTextLabel" style="font-size: 0.82rem; font-weight: 700; color: var(--success);">Dados sincronizados</span>
+    `;
 
     chip.onclick = async () => {
         chip.style.transform = 'scale(0.9)';
@@ -764,39 +798,45 @@ function criarIndicadorSincronizacaoUi() {
             localStorage.removeItem('syncPendente');
             localStorage.removeItem(SYNC_CONFLICT_KEY);
             atualizarIndicadorSyncUI('success');
-            await mostrarAlertaModal('Dados atualizados do servidor com sucesso.');
+            // Popup removido conforme solicitado, feedback agora é direto no texto lateral
         } catch (e) {
             atualizarIndicadorSyncUI('error');
             await mostrarAlertaModal('Erro ao atualizar do servidor: ' + e.message);
             return;
         }
-        window.location.reload();
     };
 }
 
 function atualizarIndicadorSyncUI(status) {
     const chip = document.getElementById('syncStatusIcon');
     if (!chip) return;
+
     if (status === 'pending') {
-        chip.style.backgroundColor = 'var(--warning-soft)';
+        chip.style.background = 'var(--warning-soft)';
         chip.style.borderColor = 'color-mix(in srgb, var(--warning) 26%, var(--border))';
-        chip.title = "Status: Sincronizando...";
-        chip.innerHTML = `<img src="imagens/sincronizar.gif" alt="Sincronizando" style="width: 20px; height: 20px; object-fit: contain;">`;
+        chip.title = "Status: Sincronizando com nuvem...";
+        chip.innerHTML = `
+            <img src="imagens/sincronizar.gif" alt="Sincronizando" style="width: 18px; height: 18px; object-fit: contain;">
+            <span id="syncTextLabel" style="font-size: 0.82rem; font-weight: 700; color: var(--warning);">Sincronizando com nuvem...</span>
+        `;
     } else if (status === 'success') {
-        chip.style.backgroundColor = 'var(--success-soft)';
+        chip.style.background = 'var(--success-soft)';
         chip.style.borderColor = 'color-mix(in srgb, var(--success) 26%, var(--border))';
         chip.title = "Status: Sincronizado com sucesso";
-        chip.innerHTML = `<img src="imagens/sincronizar.png" alt="Sincronizado" style="width: 20px; height: 20px; object-fit: contain;">`;
+        chip.innerHTML = `
+            <img src="imagens/sincronizar.png" alt="Sincronizado" style="width: 18px; height: 18px; object-fit: contain;">
+            <span id="syncTextLabel" style="font-size: 0.82rem; font-weight: 700; color: var(--success);">Dados sincronizados</span>
+        `;
     } else if (status === 'error') {
-        chip.style.backgroundColor = 'var(--danger-soft)';
+        chip.style.background = 'var(--danger-soft)';
         chip.style.borderColor = 'color-mix(in srgb, var(--danger) 26%, var(--border))';
         const conflito = lerJSONLocal(SYNC_CONFLICT_KEY, null);
         const resumo = conflito?.mensagem || 'Falha temporária; as alterações locais continuam salvas.';
-        const campos = Array.isArray(conflito?.campos) && conflito.campos.length
-            ? ` Campos: ${conflito.campos.slice(0, 5).join(', ')}${conflito.campos.length > 5 ? '…' : ''}.`
-            : '';
-        chip.title = `Status: sincronização pendente. ${resumo}${campos} Clique para rever os dados.`;
-        chip.innerHTML = `<img src="imagens/sincronizar.png" alt="Sincronização pendente" style="width: 20px; height: 20px; object-fit: contain;">`;
+        chip.title = `Status: sincronização pendente. ${resumo} Clique para rever os dados.`;
+        chip.innerHTML = `
+            <img src="imagens/sincronizar.png" alt="Sincronização pendente" style="width: 18px; height: 18px; object-fit: contain;">
+            <span id="syncTextLabel" style="font-size: 0.82rem; font-weight: 700; color: var(--danger);">Erro na sync</span>
+        `;
     }
 }
 
@@ -1687,7 +1727,10 @@ function tratarMudancaTipoLancamento() {
     if (blocoHE) blocoHE.style.display = ehEntrada ? 'block' : 'none';
     if (blocoFormaPgto) blocoFormaPgto.style.display = ehEntrada ? 'none' : 'block';
     if (blocoEssencial) blocoEssencial.style.display = ehEntrada ? 'none' : 'block';
-    if (blocoEscopo) blocoEscopo.style.display = ehEntrada ? 'none' : 'block';
+    
+    // AGORA PERMITIDO PARA ENTRADA E SAÍDA: O usuário escolhe o escopo
+    if (blocoEscopo) blocoEscopo.style.display = 'block';
+
     if (blocoStatus) blocoStatus.style.display = ehEntrada ? 'none' : 'block';
     if (blocoBem) blocoBem.style.display = ehEntrada ? 'none' : 'block';
 
@@ -1700,10 +1743,10 @@ function tratarMudancaTipoLancamento() {
         tratarMudancaFormaPagamento();
     }
 
-    // Centraliza a atualização de categoria/salário/hora extra após trocar o tipo.
     if (typeof tratarMudancaCategoria === 'function') tratarMudancaCategoria();
     else verificarCategoriaSalario();
 }
+
 function tratarMudancaFormaPagamento() {
     const selectForma = document.getElementById('formaPagamento');
     if (!selectForma) return;
@@ -3097,14 +3140,14 @@ function renderizarSinoNotificacoes() {
     const dados = obterDados();
     const usuarioId = localStorage.getItem('usuarioLogado');
     const naoLidas = (dados.notificacoes || []).filter(n => Number(n.usuarioDestinoId) === Number(usuarioId) && !n.lida).length;
-    const imagemIcone = naoLidas > 0 ? 'imagens/notific1.png' : 'imagens/notific.png';
+    const imagemIcone = naoLidas > 0 ? 'imagens/notificacao1.png' : 'imagens/notificacao.png';
 
     sinoBtn.title = naoLidas > 0 ? `Você tem ${naoLidas} nova(s) notificação(ões)` : 'Central de Notificações';
     sinoBtn.style.position = 'relative';
 
     sinoBtn.innerHTML = `
-        <img src="${imagemIcone}" alt="Notificações" style="width: 22px; height: 22px; object-fit: contain;" onerror="this.style.display='none'">
-        ${naoLidas > 0 ? `<span style="position: absolute; top: 2px; right: 2px; background: var(--danger); color: #fff; font-size: 0.6rem; padding: 1px 4px; border-radius: 50%; font-weight: bold;">${naoLidas}</span>` : ''}
+        <img src="${imagemIcone}" alt="Notificações" style="width: 24px; height: 24px; object-fit: contain;" onerror="this.style.display='none'">
+        ${naoLidas > 0 ? `<span style="position: absolute; top: 0; right: 0; background: var(--danger); color: #fff; font-size: 0.6rem; padding: 1px 4px; border-radius: 50%; font-weight: bold;">${naoLidas}</span>` : ''}
     `;
 
     sinoBtn.onclick = () => abrirCentralNotificacoes();
@@ -3114,13 +3157,6 @@ async function abrirCentralNotificacoes() {
     const dados = obterDados();
     const usuarioId = localStorage.getItem('usuarioLogado');
     const notificacoes = (dados.notificacoes || []).filter(n => Number(n.usuarioDestinoId) === Number(usuarioId));
-
-    const haviaNaoLidas = notificacoes.some(n => !n.lida);
-    if (haviaNaoLidas) {
-        notificacoes.forEach(n => { n.lida = true; });
-        // O estado de leitura faz parte dos dados compartilhados e precisa chegar ao servidor.
-        await salvarDados(dados);
-    }
 
     let itensHtml = '';
     if (notificacoes.length === 0) {
@@ -3140,9 +3176,15 @@ async function abrirCentralNotificacoes() {
                 acoesHtml = `<p style="font-size: 0.78rem; font-weight: bold; margin-top: 4px; color: ${n.statusAprovacao === 'aprovado' ? 'var(--success)' : 'var(--danger)'};">Status: ${n.statusAprovacao.toUpperCase()}</p>`;
             }
 
+            const lidaEstilo = n.lida ? 'opacity: 0.7;' : 'border-left: 4px solid var(--primary); font-weight: 500;';
+            const idNotifSeguro = String(n.id || '');
+
             itensHtml += `
-                <div style="background: var(--surface-2); padding: 12px; border-radius: 8px; margin-bottom: 8px; text-align: left; border-left: 4px solid var(--primary);">
-                    <strong style="font-size: 0.9rem; color: var(--text-main);">${escaparHTML(n.titulo || '')}</strong>
+                <div onclick="marcarNotificacaoComoLida('${idNotifSeguro}')" style="background: var(--surface-2); padding: 12px; border-radius: 8px; margin-bottom: 8px; text-align: left; cursor: pointer; transition: opacity 0.2s; ${lidaEstilo}">
+                    <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+                        <strong style="font-size: 0.9rem; color: var(--text-main);">${escaparHTML(n.titulo || '')}</strong>
+                        ${!n.lida ? '<span style="font-size: 0.7rem; background: var(--primary); color: #fff; padding: 2px 6px; border-radius: 99px;">Nova</span>' : ''}
+                    </div>
                     <p style="font-size: 0.85rem; margin-top: 4px; color: var(--text-muted);">${escaparHTML(n.mensagem || '')}</p>
                     <small style="font-size: 0.7rem; color: var(--text-muted);">${n.createdAt ? escaparHTML(new Date(n.createdAt).toLocaleString('pt-BR')) : ''}</small>
                     ${acoesHtml}
@@ -3156,11 +3198,30 @@ async function abrirCentralNotificacoes() {
     overlay.innerHTML = `
         <div class="modal-box" style="max-width: 500px; width: 95%;">
             <h3>Central de Notificações</h3>
-            <div style="max-height: 350px; overflow-y: auto; margin: 16px 0; padding-right: 4px;">${itensHtml}</div>
+            <p style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 10px;">Clique na notificação para marcá-la como lida.</p>
+            <div style="max-height: 350px; overflow-y: auto; margin: 10px 0; padding-right: 4px;">${itensHtml}</div>
             <button onclick="this.closest('.modal-overlay').remove(); window.location.reload();" style="width: 100%; background-color: var(--primary);">Fechar</button>
         </div>
     `;
     document.body.appendChild(overlay);
+}
+
+async function marcarNotificacaoComoLida(notificacaoId) {
+    if (!notificacaoId) return;
+    const dados = obterDados();
+    const notif = (dados.notificacoes || []).find(n => String(n.id) === String(notificacaoId));
+    if (notif && !notif.lida) {
+        notif.lida = true;
+        await salvarDados(dados);
+        renderizarSinoNotificacoes();
+        
+        // Efeito visual imediato no card clicado sem precisar fechar o modal
+        if (event && event.currentTarget) {
+            event.currentTarget.style.opacity = '0.7';
+            const badgeNova = event.currentTarget.querySelector('span[style*="background: var(--primary)"]');
+            if (badgeNova) badgeNova.remove();
+        }
+    }
 }
 
 async function responderSolicitacaoParceiro(notificacaoId, aprovado) {
@@ -3184,7 +3245,10 @@ async function responderSolicitacaoParceiro(notificacaoId, aprovado) {
     }
 
     registrarLogInterno(dados, "PARCEIRO", `Solicitação de parceiro ${aprovado ? 'aprovada' : 'negada'} entre usuários.`);
+    
+    // CORREÇÃO: Aguarda o salvamento enviar os dados para o Sheets antes de prosseguir
     await salvarDados(dados);
+
     await mostrarAlertaModal(aprovado ? "Parceiro atrelado com sucesso!" : "Solicitação negada.");
     document.querySelector('.modal-overlay')?.remove();
     abrirCentralNotificacoes();
@@ -3367,8 +3431,21 @@ function renderizarCategorias() {
 function atualizarHeaderUsuario() {
     const usuario = obterUsuarioAtual();
     if (usuario) aplicarPermissoesNavegacao(usuario);
+    
     const spanNome = document.getElementById('usuarioLogadoNome');
-    if (spanNome && usuario) spanNome.textContent = `Olá, ${usuario.nome}`;
+    if (spanNome && usuario) {
+        // Usa a foto do usuário ou o avatar cinza padrão se ele não tiver foto
+        const avatarSrc = usuario.fotoPerfil || 'data:image/svg+xml;charset=UTF-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22%23a89586%22%3E%3Cpath%20d%3D%22M12%2012c2.21%200%204-1.79%204-4s-1.79-4-4-4-4%201.79-4%204%201.79%204%204%204zm0%202c-2.67%200-8%201.34-8%204v2h16v-2c0-2.66-5.33-4-8-4z%22%2F%3E%3C%2Fsvg%3E';
+        
+        spanNome.style.display = 'inline-flex';
+        spanNome.style.alignItems = 'center';
+        
+        spanNome.innerHTML = `
+            <img src="${avatarSrc}" alt="Perfil" style="width: 26px; height: 26px; border-radius: 50%; object-fit: cover; margin-right: 8px; border: 1.5px solid var(--primary-soft); background: var(--surface-2);">
+            Olá, ${escaparHTML(usuario.nome.split(' ')[0])}
+        `;
+    }
+    
     if (typeof renderizarSinoNotificacoes === 'function') renderizarSinoNotificacoes();
 }
 

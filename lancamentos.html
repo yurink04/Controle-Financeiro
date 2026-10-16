@@ -8,8 +8,19 @@
 </head>
 <body>
 
-    <main class="container">
-        <div class="page-heading"><div><h2>Lançamentos</h2><p>Cadastre receitas, despesas, compras parceladas e contas recorrentes.</p></div></div>
+   <main class="container">
+        <div class="page-heading">
+            <div>
+                <h2>Lançamentos</h2>
+                <p>Cadastre receitas, despesas, compras parceladas e contas recorrentes.</p>
+            </div>
+            
+            <div class="toolbar-actions">
+                <a href="central-pagamentos.html" class="btn-acao-principal" style="text-decoration: none; display: inline-flex; align-items: center; gap: 8px;">
+                    <span>Central de Pagamentos</span>
+                </a>
+            </div>
+        </div>
 
         <section class="form-card">
             <div class="section-title"><div><h2>Novo lançamento</h2><p>O sistema gera parcelas e calcula o vencimento do cartão automaticamente[cite: 42].</p></div></div>
@@ -272,18 +283,20 @@
         }
 
 
-        async function salvarLancamentoForm(event) {
+ async function salvarLancamentoForm(event) {
             event.preventDefault();
             const descricao = document.getElementById('descricaoLancamento')?.value?.trim() || '';
             const tipo = document.getElementById('tipoLancamento')?.value || 'saida';
             const categoriaId = document.getElementById('categoriaLancamento')?.value || '';
             const bemId = tipo === 'saida' ? (document.getElementById('bemLancamento')?.value || null) : null;
             const formaOriginal = tipo === 'entrada' ? 'DINHEIRO' : (document.getElementById('formaPagamento')?.value || 'BOLETO');
-            // Correção: Uso de numeroSeguro
             const valorTotal = numeroSeguro(document.getElementById('valorTotalLancamento')?.value);
             const horaExtra = (tipo === 'entrada' && document.getElementById('blocoHoraExtra')?.style.display !== 'none') ? numeroSeguro(document.getElementById('valorHoraExtra')?.value) : 0;
             const servicoEssencial = tipo === 'saida' ? (document.getElementById('servicoEssencial')?.value || 'nao') : 'nao';
-            const escopo = tipo === 'saida' ? (document.getElementById('escopoLancamento')?.value || 'casal') : 'casal';
+            
+            // CORRIGIDO: Agora lê o escopo escolhido pelo usuário para qualquer tipo (entrada ou saída)
+            const escopo = document.getElementById('escopoLancamento')?.value || 'casal';
+            
             const observacao = document.getElementById('observacaoLancamento')?.value?.trim() || '';
             const statusInicial = tipo === 'entrada' ? 'pago' : (document.getElementById('statusPagamento')?.value || 'pendente');
             let vencimento = document.getElementById('vencimentoLancamento')?.value || dataLocalYYYYMMDD();
@@ -338,7 +351,7 @@
             if (qtdParcEl) qtdParcEl.value = '1';
             tratarMudancaTipoLancamento();
         }
-
+        
         async function salvarContaLoteForm(event) {
             event.preventDefault();
             const descricao = document.getElementById('descricaoLote')?.value?.trim() || '';
