@@ -95,7 +95,6 @@
             } else if (lancamentoIdUrl) {
                 const referencia = lancamentos.find(l => String(l.id) === String(lancamentoIdUrl));
                 if (!referencia) return [];
-                // Sem ID de grupo não há forma segura de distinguir compras com a mesma descrição.
                 grupo = referencia.parcelamentoId
                     ? lancamentos.filter(l => String(l.parcelamentoId) === String(referencia.parcelamentoId))
                     : [referencia];
@@ -227,7 +226,6 @@
         async function editarValorParcelaGrupo(lancamentoId) {
             const valorStr = await mostrarPromptModal('Editar valor da parcela', 'Digite o novo valor (R$):');
             if (valorStr === null) return;
-            // Correção: Uso de numeroSeguro com conversão de vírgula
             const novoValor = numeroSeguro(String(valorStr).replace(',', '.'));
             if (novoValor <= 0) {
                 await mostrarAlertaModal('Valor inválido.'); 
@@ -242,7 +240,7 @@
             }
             lanc.valor = Number(novoValor.toFixed(2));
             lanc.updatedAt = new Date().toISOString();
-            registrarLogInterno(dados, 'EDIÇÃO VALOR PARCELA', `Parcela ID ${lancamentoId} alterada para ${formatarMoeda(novoValor)}`);
+            registrarLog(dados, 'EDIÇÃO VALOR PARCELA', `Parcela ID ${lancamentoId} alterada para ${formatarMoeda(novoValor)}`);
             await salvarDados(dados);
             await mostrarAlertaModal('Valor atualizado com sucesso.');
             carregarDetalhesParceladaPagina();

@@ -100,7 +100,7 @@
         const lancamentoId = urlParams.get('id') || '';
         const returnUrlInformada = urlParams.get('returnUrl') || '';
         const destinosRetornoPermitidos = new Set([
-            'dashboard.html', 'central-pagamentos.html', 'lancamentos.html', 'relatorios.html', 'cartoes.html', 'financiamentos.html'
+    'dashboard.html', 'central-pagamentos.html', 'lancamentos.html', 'relatorios.html', 'cartoes.html', 'financiamentos.html', 'grafico.html'
         ]);
         const returnUrl = destinosRetornoPermitidos.has(returnUrlInformada) ? returnUrlInformada : '';
         let lancamentoAtualEdicao = null;
@@ -123,7 +123,7 @@
         function popularSelectCartoesEdicao(dados) {
             const selectCartao = document.getElementById('editCartao');
             if (!selectCartao) return;
-            const usuarioAtualId = Number(obterUsuarioAtualId(dados));
+            const usuarioAtualId = Number(obterUsuarioAtualId());
             const cartoesUsuario = filtrarDadosPorPermissao(dados.cartoes || [], dados, 'casal')
                 .filter(c => c.ativo !== false && !c.isBeneficio && Number(c.usuarioId) === usuarioAtualId);
 
@@ -197,23 +197,22 @@
         }
 
         function tratarMudancaTipoEdicao(atualizarCategorias = true) {
-            const tipoEl = document.getElementById('editTipo');
-            const tipo = tipoEl?.value === 'entrada' ? 'entrada' : 'saida';
-            if (atualizarCategorias) {
-                const categoriaAtual = document.getElementById('editCategoria')?.value;
-                popularCategoriasEdicao(tipo, categoriaAtual);
-            }
-            const entrada = tipo === 'entrada';
-            const blocoServ = document.getElementById('blocoServicoEssencial');
-            if (blocoServ) blocoServ.style.display = entrada ? 'none' : 'block';
-            
-            // Escopo mantido visível para ambos (entrada e saída)
-            const blocoEsc = document.getElementById('blocoEditEscopo');
-            if (blocoEsc) blocoEsc.style.display = 'block';
+    const tipoEl = document.getElementById('editTipo');
+    const tipo = tipoEl?.value === 'entrada' ? 'entrada' : 'saida';
+    if (atualizarCategorias) {
+        const categoriaAtual = document.getElementById('editCategoria')?.value;
+        popularCategoriasEdicao(tipo, categoriaAtual);
+    }
+    const entrada = tipo === 'entrada';
+    const blocoServ = document.getElementById('blocoServicoEssencial');
+    if (blocoServ) blocoServ.style.display = entrada ? 'none' : 'block';
 
-            if (entrada) document.getElementById('blocoEditCartao').style.display = 'none';
-            else tratarMudancaFormaEdicao();
-        }
+    const blocoEsc = document.getElementById('blocoEditEscopo');
+    if (blocoEsc) blocoEsc.style.display = entrada ? 'none' : 'block';
+
+    if (entrada) document.getElementById('blocoEditCartao').style.display = 'none';
+    else tratarMudancaFormaEdicao();
+}
 
         function tratarMudancaFormaEdicao() {
             const forma = document.getElementById('editFormaPagamento')?.value || 'BOLETO';
@@ -246,7 +245,7 @@
                 return;
             }
             if (tipo === 'saida' && formaPagamento === 'CARTAO') {
-                const cartao = (dados.cartoes || []).find(c => String(c.id) === String(cartaoId) && c.ativo !== false && !c.isBeneficio && Number(c.usuarioId) === Number(obterUsuarioAtualId(dados)));
+                const cartao = (dados.cartoes || []).find(c => String(c.id) === String(cartaoId) && c.ativo !== false && !c.isBeneficio && Number(c.usuarioId) === Number(obterUsuarioAtualId()));
                 if (!cartao) {
                     await mostrarAlertaModal('Selecione um cartão de crédito ativo e autorizado.');
                     return;

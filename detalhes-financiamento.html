@@ -194,7 +194,6 @@
             const fin = (dados.financiamentos || []).find(f => String(f.id) === String(financiamentoId));
             if (!fin) return;
             const novoNome = document.getElementById('editNomeFin')?.value?.trim() || '';
-            // Correção: Uso de inteiroSeguro
             const novoTotal = inteiroSeguro(document.getElementById('editTotalMesesFin')?.value, 1);
             if (!novoNome || novoTotal < 1 || novoTotal > 360) {
                 await mostrarAlertaModal('Informe um nome e uma quantidade válida de meses.'); return;
@@ -233,7 +232,7 @@
                     const dataVenc = adicionarMesesClamped(dataBase, offsetMeses);
                     dados.lancamentos.push({
                         id: proximaIdLanc++,
-                        usuarioId: ultima ? ultima.usuarioId : obterUsuarioAtualId(dados),
+                        usuarioId: ultima ? ultima.usuarioId : obterUsuarioAtualId(),
                         descricao: `Financiamento: ${novoNome} (${i}/${novoTotal})`,
                         valor: Number(fin.valorParcela || (ultima ? ultima.valor : 0)),
                         tipo: 'saida',
@@ -263,7 +262,7 @@
                 if (lanc) lanc.totalParcelas = novoTotal;
             });
 
-            registrarLogInterno(dados, 'EDIÇÃO FINANCIAMENTO', `Contrato ID ${financiamentoId} atualizado para: ${novoNome} (${novoTotal} meses)`);
+            registrarLog(dados, 'EDIÇÃO FINANCIAMENTO', `Contrato ID ${financiamentoId} atualizado para: ${novoNome} (${novoTotal} meses)`);
             await salvarDados(dados);
             await mostrarAlertaModal('Financiamento atualizado com sucesso.');
             carregarDetalhesFinanciamentoPagina();
@@ -272,7 +271,6 @@
         async function editarValorParcelaFinanciamento(lancamentoId) {
             const valorStr = await mostrarPromptModal('Editar valor da parcela', 'Digite o novo valor (R$):');
             if (valorStr === null) return;
-            // Correção: Uso de numeroSeguro com conversão de vírgula
             const novoValor = numeroSeguro(String(valorStr).replace(',', '.'));
             if (novoValor <= 0) {
                 await mostrarAlertaModal('Valor inválido.'); return;
@@ -282,7 +280,7 @@
             if (!lanc) return;
             lanc.valor = Number(novoValor.toFixed(2));
             lanc.updatedAt = new Date().toISOString();
-            registrarLogInterno(dados, 'EDIÇÃO PARCELA FINANCIAMENTO', `Parcela ID ${lancamentoId} alterada para ${formatarMoeda(novoValor)}`);
+            registrarLog(dados, 'EDIÇÃO PARCELA FINANCIAMENTO', `Parcela ID ${lancamentoId} alterada para ${formatarMoeda(novoValor)}`);
             await salvarDados(dados);
             await mostrarAlertaModal('Valor da parcela atualizado com sucesso.');
             carregarDetalhesFinanciamentoPagina();

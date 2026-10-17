@@ -3,7 +3,6 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="theme-color" content="#2563eb">
     <title>Dashboard | Controle Financeiro</title>
     <link rel="stylesheet" href="style.css">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
@@ -190,26 +189,33 @@
         </section>
     </main>
 
+    <script>
+    // Mês/ano atual definido já na leitura da página (antes de qualquer requisição)
+    (function () {
+        const el = document.getElementById('filtroMesAno');
+        if (el && !el.value) { const h = new Date(); el.value = h.getFullYear() + '-' + String(h.getMonth() + 1).padStart(2, '0'); }
+    })();
+    </script>
     <script src="script.js"></script>
     <script>
     document.addEventListener('DOMContentLoaded', async () => {
         injetarHeader();
-        const autenticado = await verificarAutenticacao();
-        
-        if (autenticado) {
-            // Preenche o campo de mês/ano com a data atual
-            const filtroMesInput = document.getElementById('filtroMesAno');
-            if (filtroMesInput && !filtroMesInput.value) {
-                const hoje = new Date();
-                const anoAtual = hoje.getFullYear();
-                const mesAtual = String(hoje.getMonth() + 1).padStart(2, '0');
-                filtroMesInput.value = `${anoAtual}-${mesAtual}`;
-            }
 
-            // Carrega os dados da tela
-            carregarDashboard();
+        // Menu "Novo Lançamento": abre por clique (funciona no celular) e fecha ao clicar fora
+        const dd = document.querySelector('.dropdown-acao');
+        if (dd) {
+            dd.querySelector('.btn-acao-principal').addEventListener('click', e => { e.stopPropagation(); dd.classList.toggle('aberto'); });
+            document.addEventListener('click', () => dd.classList.remove('aberto'));
         }
+
+        // Desenha na hora com o último snapshot local, sem esperar a rede
+        if (localStorage.getItem('usuarioLogado') && localStorage.getItem(DB_KEY)) {
+            try { carregarDashboard(); } catch (e) { console.warn(e); }
+        }
+
+        // Valida a sessão (e só rebaixa o banco se o snapshot estiver velho) e atualiza
+        if (await verificarAutenticacao()) carregarDashboard();
     });
-</script>
+    </script>
 </body>
 </html>

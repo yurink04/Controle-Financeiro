@@ -4,8 +4,6 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="theme-color" content="#8b5e3c">
-
     <title>Controle Financeiro | Acesso</title>
 
     <link rel="stylesheet" href="style.css">
@@ -29,7 +27,7 @@
             pointer-events: auto;
         }
         .loading-profile-img {
-            width: 300px; /* Ampliada 50% maior (era 200px) */
+            width: 300px;
             height: 300px;
             border-radius: 50%;
             object-fit: cover;
@@ -115,79 +113,47 @@
     <main class="login-screen">
 
         <section class="login-brand-panel">
-
             <div class="login-brand-content">
-
-                <div class="login-brand-logo">
-                    R$
-                </div>
-
-                <div class="login-brand-label">
-                    CONTROLE FINANCEIRO
-                </div>
-
-                <h1>
-                    Seu dinheiro.
-                    <br>
-                    <span>Sob controle.</span>
-                </h1>
-
-                <p class="login-brand-description">
-                    Organize suas receitas, despesas, cartões
-                    e financiamentos em um só lugar.
-                </p>
+                <div class="login-brand-logo">R$</div>
+                <div class="login-brand-label">CONTROLE FINANCEIRO</div>
+                <h1>Seu dinheiro.<br><span>Sob controle.</span></h1>
+                <p class="login-brand-description">Organize suas receitas, despesas, cartões e financiamentos em um só lugar.</p>
 
                 <!-- CARDS DECORATIVOS -->
                 <div class="login-finance-preview">
-
                     <div class="finance-preview-card">
                         <span>Receitas</span>
                         <strong class="finance-positive">R$ 4.850,00</strong>
                         <small>Este mês</small>
                     </div>
-
                     <div class="finance-preview-card">
                         <span>Despesas</span>
                         <strong class="finance-negative">R$ 2.730,00</strong>
                         <small>Este mês</small>
                     </div>
-
                     <div class="finance-preview-card finance-preview-highlight">
                         <span>Saldo disponível</span>
                         <strong>R$ 2.120,00</strong>
                         <small>Controle em dia</small>
                     </div>
-
                 </div>
 
                 <div class="login-brand-footer">
                     <span class="login-footer-dot"></span>
                     Sistema de controle pessoal
                 </div>
-
             </div>
-
         </section>
 
         <!-- PAINEL DIREITO -->
         <section class="login-form-panel">
-
             <div class="login-form-wrapper">
-
-                <div class="login-mobile-logo">
-                    R$
-                </div>
+                <div class="login-mobile-logo">R$</div>
 
                 <div class="login-heading" id="loginHeadingContainer">
-                    <span class="login-eyebrow" id="loginEyebrowText">
-                        BEM-VINDO DE VOLTA
-                    </span>
-                    <h2 id="loginTitleText">
-                        Acesse sua conta
-                    </h2>
-                    <p id="loginSubtitleText">
-                        Digite o seu nome de usuário para continuar.
-                    </p>
+                    <span class="login-eyebrow" id="loginEyebrowText">BEM-VINDO DE VOLTA</span>
+                    <h2 id="loginTitleText">Acesse sua conta</h2>
+                    <p id="loginSubtitleText">Digite o seu nome de usuário para continuar.</p>
                 </div>
 
                 <form id="formLogin" onsubmit="realizarLogin(event)">
@@ -201,7 +167,7 @@
                                 type="text"
                                 id="inputUsuario"
                                 placeholder="Digite seu nome de usuário"
-                                autocomplete="off"
+                                autocomplete="username"
                                 required
                                 style="border: none; background: transparent; width: 100%; outline: none; font-size: 0.96rem; color: var(--text-main);"
                             >
@@ -217,7 +183,7 @@
                                 type="password"
                                 id="inputSenha"
                                 placeholder="Digite sua senha"
-                                autocomplete="off"
+                                autocomplete="current-password"
                                 style="border: none; background: transparent; width: 100%; outline: none; font-size: 0.96rem; color: var(--text-main);"
                             >
                         </div>
@@ -234,9 +200,7 @@
                 </form>
 
                 <div class="login-security" id="cardPrimeiroAcesso" style="cursor: pointer;" onclick="abrirModalPrimeiroAcesso()" title="Clique para cadastrar sua conta">
-                    <div class="login-security-icon">
-                        👤+
-                    </div>
+                    <div class="login-security-icon">👤+</div>
                     <div>
                         <strong>Primeiro acesso</strong>
                         <p>Clique aqui para cadastrar seu usuário, nome e senha.</p>
@@ -248,9 +212,7 @@
                     <span>•</span>
                     <span>Acesso seguro</span>
                 </div>
-
             </div>
-
         </section>
 
     </main>
@@ -260,6 +222,7 @@
     <script>
         let bancoInicializado = false;
         let usuarioSelecionadoParaLogin = null;
+        const AVATAR_PADRAO = 'data:image/svg+xml;charset=UTF-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22%23a89586%22%3E%3Cpath%20d%3D%22M12%2012c2.21%200%204-1.79%204-4s-1.79-4-4-4-4%201.79-4%204%201.79%204%204%204zm0%202c-2.67%200-8%201.34-8%204v2h16v-2c0-2.66-5.33-4-8-4z%22%2F%3E%3C%2Fsvg%3E';
 
         document.addEventListener("DOMContentLoaded", async () => {
             const botao = document.getElementById("loginSubmit");
@@ -310,7 +273,6 @@
                     const usuarioDigitado = inputUsuario.value.trim();
                     if (!usuarioDigitado) return;
 
-                    // Ativa o estado de carregamento com texto personalizado e o gif
                     if (botao) botao.classList.add("loading");
                     if (spanTextoBotao) spanTextoBotao.textContent = "Validando usuário...";
                     if (setaBotao) setaBotao.style.display = "none";
@@ -360,7 +322,7 @@
                     }
                     const avatarImg = document.createElement("img");
                     avatarImg.id = "avatarDinamicoInput";
-                    avatarImg.src = usuarioSelecionadoParaLogin.fotoPerfil || 'data:image/svg+xml;charset=UTF-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22%23a89586%22%3E%3Cpath%20d%3D%22M12%2012c2.21%200%204-1.79%204-4s-1.79-4-4-4-4%201.79-4%204%201.79%204%204%204zm0%202c-2.67%200-8%201.34-8%204v2h16v-2c0-2.66-5.33-4-8-4z%22%2F%3E%3C%2Fsvg%3E';
+                    avatarImg.src = usuarioSelecionadoParaLogin.fotoPerfil || AVATAR_PADRAO;
                     avatarImg.alt = "Avatar";
                     avatarImg.style.width = "34px";
                     avatarImg.style.height = "34px";
@@ -439,7 +401,7 @@
                 const barraPreenchimento = document.getElementById("loadingProgressBarFill");
 
                 if (avatarCarregamento) {
-                    avatarCarregamento.src = resultadoAuth.usuario.fotoPerfil || usuarioSelecionadoParaLogin.fotoPerfil || 'data:image/svg+xml;charset=UTF-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22%23a89586%22%3E%3Cpath%20d%3D%22M12%2012c2.21%200%204-1.79%204-4s-1.79-4-4-4-4%201.79-4%204%201.79%204%204%204zm0%202c-2.67%200-8%201.34-8%204v2h16v-2c0-2.66-5.33-4-8-4z%22%2F%3E%3C%2Fsvg%3E';
+                    avatarCarregamento.src = resultadoAuth.usuario.fotoPerfil || usuarioSelecionadoParaLogin.fotoPerfil || AVATAR_PADRAO;
                 }
                 if (textoBoasVindas) {
                     textoBoasVindas.textContent = `Olá, ${resultadoAuth.usuario.nome}!`;
@@ -464,7 +426,8 @@
 
                 // Execução paralela: Sincronização completa do banco + simulação fluida de progresso 1-100% (2.8 segundos)
                 let progressoAtual = 0;
-                const duracaoTotalMs = 2800;
+                let bancoPronto = false;
+                const duracaoTotalMs = 1200;
                 const intervaloMs = 30;
                 const incrementoPorPasso = (100 / (duracaoTotalMs / intervaloMs));
                 let ultimaMensagemStatus = "";
@@ -472,10 +435,11 @@
                 const promessaProgresso = new Promise((resolve) => {
                     const timer = setInterval(() => {
                         progressoAtual += incrementoPorPasso;
-                        if (progressoAtual >= 100) {
-                            progressoAtual = 100;
-                            clearInterval(timer);
-                            resolve();
+                        // Segura em 95% até o banco terminar de baixar de verdade
+                        const teto = bancoPronto ? 100 : 95;
+                        if (progressoAtual >= teto) {
+                            progressoAtual = teto;
+                            if (teto === 100) { clearInterval(timer); resolve(); }
                         }
 
                         const porcentagemInteira = Math.round(progressoAtual);
@@ -488,7 +452,7 @@
                             mensagemDesejada = "Estabelecendo conexão segura...";
                         } else if (porcentagemInteira < 65) {
                             mensagemDesejada = "Baixando base de dados financeira...";
-                        } else if (porcentagemInteira < 90) {
+                        } else if (porcentagemInteira < 96) {
                             mensagemDesejada = "Organizando dados e período atual...";
                         } else {
                             mensagemDesejada = "Tudo pronto! Entrando no sistema...";
@@ -508,7 +472,7 @@
                         if (dadosCarregados && typeof migrarDados === 'function') {
                             migrarDados(dadosCarregados);
                         }
-                    }),
+                    }).finally(() => { bancoPronto = true; }),
                     promessaProgresso
                 ]);
 
@@ -580,16 +544,6 @@
 
         document.addEventListener("DOMContentLoaded", () => {
             atualizarIconeTemaLogin();
-            
-            const inputUsuario = document.getElementById("inputUsuario");
-            if (inputUsuario) {
-                inputUsuario.addEventListener("keydown", (e) => {
-                    if (e.key === "Enter" && !usuarioSelecionadoParaLogin) {
-                        e.preventDefault();
-                        realizarLogin(new Event("submit"));
-                    }
-                });
-            }
         });
 
         const alternarTemaOriginal = window.alternarTemaVisual;

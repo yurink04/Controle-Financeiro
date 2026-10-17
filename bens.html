@@ -98,9 +98,7 @@
         document.addEventListener('DOMContentLoaded', async () => {
             injetarHeader();
             const autenticado = await verificarAutenticacao();
-            if (autenticado) {
-                carregarTabelaBensGeral();
-            }
+            if (autenticado) carregarTabelaBensGeral();
         });
 
         function abrirModalNovoBem() {
@@ -139,7 +137,6 @@
             event.preventDefault();
             const nome = document.getElementById('nomeBem').value.trim();
             const tipo = document.getElementById('tipoBem').value;
-            // Correção: Protegido contra 'NaN'
             const valor = numeroSeguro(document.getElementById('valorBem').value);
             const campoEspecifico = document.getElementById('campoEspecifico').value.trim();
             const statusBem = document.getElementById('statusBem').value;
@@ -157,7 +154,7 @@
 
             mostrarLoading("A salvar bem...");
             const dados = obterDados();
-            const usuarioId = Number(localStorage.getItem('usuarioLogado'));
+            const usuarioId = Number(obterUsuarioAtualId());
 
             const bemId = dados.bens.reduce((m, b) => Math.max(m, Number(b.id) || 0), 0) + 1;
             dados.bens.push({
@@ -173,7 +170,8 @@
                 createdAt: new Date().toISOString()
             });
 
-            registrarLogInterno(dados, "CADASTRO BEM", `Bem cadastrado: ${nome} (${tipo})`, { entidade: 'bem', entidadeId: bemId });
+            // Atualizado para a nova função unificada
+            registrarLog(dados, "CADASTRO BEM", `Bem cadastrado: ${nome} (${tipo})`, { entidade: 'bem', entidadeId: bemId });
             await salvarDados(dados);
 
             esconderLoading();
@@ -182,9 +180,7 @@
 
             if (statusBem === 'financiado') {
                 const criarFinanciamento = await mostrarConfirmacaoModal("Bem cadastrado! Como indicou que está financiado/parcelado, deseja criar o contrato de financiamento agora?");
-                if (criarFinanciamento) {
-                    window.location.href = 'financiamentos.html';
-                }
+                if (criarFinanciamento) window.location.href = 'financiamentos.html';
             } else {
                 await mostrarAlertaModal("Bem cadastrado com sucesso!");
             }
@@ -196,7 +192,7 @@
             if (!tbody) return;
             tbody.innerHTML = '';
 
-            const usuarioId = Number(localStorage.getItem('usuarioLogado'));
+            const usuarioId = Number(obterUsuarioAtualId());
             const usuario = dados.usuarios.find(u => Number(u.id) === usuarioId) || {};
 
             const bens = (dados.bens || []).filter(b => {
@@ -255,7 +251,10 @@
             mostrarLoading("A excluir...");
             const dados = obterDados();
             dados.bens = dados.bens.filter(b => String(b.id) !== String(id));
+            
+            registrarLog(dados, "EXCLUSÃO BEM", `Bem excluído (ID: ${id})`);
             await salvarDados(dados);
+            
             esconderLoading();
             carregarTabelaBensGeral();
         }

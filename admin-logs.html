@@ -30,14 +30,10 @@
 
     <script src="script.js"></script>
     <script>
-        // Correção da Condição de Corrida (Carregamento Seguro)
         document.addEventListener('DOMContentLoaded', async () => {
             injetarHeader();
             const autenticado = await verificarAutenticacao();
-            if (autenticado) {
-                // A autorização não é persistida em localStorage; o painel exige validação do servidor nesta página.
-                document.getElementById('divLoginAdmin').style.display = 'block';
-            }
+            if (autenticado) document.getElementById('divLoginAdmin').style.display = 'block';
         });
 
         async function autenticarPainelAdmin() {
@@ -47,7 +43,6 @@
             mostrarLoading("Verificando acesso...");
             
             try {
-                // Validação real conectada ao servidor (Code.gs) em vez de validar variável inexistente no front
                 const resposta = await fetch(API_URL, {
                     method: 'POST',
                     headers: { 'Content-Type': 'text/plain;charset=utf-8' },
@@ -60,7 +55,8 @@
                 if (resultado.status === 'sucesso' && resultado.autorizado === true) {
                     localStorage.removeItem('adminAutorizado');
                     const dados = obterDados();
-                    registrarLogInterno(dados, 'LOGIN ADMIN', 'Administrador acessou o painel de auditoria');
+                    // Atualizado para a nova função unificada
+                    registrarLog(dados, 'LOGIN ADMIN', 'Administrador acessou o painel de auditoria');
                     await salvarDados(dados);
                     liberarPainelAdmin();
                 } else {
@@ -107,7 +103,6 @@
         }
 
         async function limparLogsSistemaComSenha() {
-            // Reutiliza a verificação segura do script.js
             const autorizado = await verificarSenhaAdmin("limpeza de logs");
             if (!autorizado) return;
 
@@ -117,7 +112,8 @@
             mostrarLoading("Limpando logs...");
             const dados = obterDados();
             dados.logs = [];
-            adicionarAuditoriaAoObjeto(dados, 'LIMPEZA DE LOGS', 'Histórico de auditoria foi limpo pelo administrador');
+            // Atualizado para a nova função unificada
+            registrarLog(dados, 'LIMPEZA DE LOGS', 'Histórico de auditoria foi limpo pelo administrador');
             await salvarDados(dados);
             
             esconderLoading();

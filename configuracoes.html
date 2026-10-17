@@ -405,6 +405,7 @@
                     usuarioEditado.senha = '';
                 }
                 if (parceiroSelecionado) parceiroSelecionado.parceiroId = Number(usuarioEditado.id);
+                registrarLog(dados, "EDIÇÃO USUÁRIO", `Permissões/dados do usuário '${nome}' foram alterados.`);
             } else {
                 const novoId = dados.usuarios.reduce((m, u) => Math.max(m, Number(u.id) || 0), 0) + 1;
                 dados.usuarios.push({
@@ -418,6 +419,7 @@
                     permissoes
                 });
                 if (parceiroSelecionado) parceiroSelecionado.parceiroId = novoId;
+                registrarLog(dados, "NOVO USUÁRIO", `Usuário '${nome}' foi criado.`);
             }
 
             await salvarDados(dados);
@@ -444,6 +446,7 @@
                 );
                 if (confirmarDesativacao) {
                     u.ativo = false;
+                    registrarLog(dados, "DESATIVAÇÃO USUÁRIO", `Usuário '${u.nome}' foi desativado.`);
                     await salvarDados(dados);
                     renderizarTabelaUsuariosConfig();
                     await mostrarAlertaModal("Usuário desativado com sucesso!");
@@ -454,6 +457,7 @@
                 );
                 if (confirmarExclusao) {
                     dados.usuarios = dados.usuarios.filter(user => Number(user.id) !== Number(id));
+                    registrarLog(dados, "EXCLUSÃO USUÁRIO", `Usuário '${u.nome}' foi excluído permanentemente.`);
                     await salvarDados(dados);
                     renderizarTabelaUsuariosConfig();
                     await mostrarAlertaModal("Usuário excluído com sucesso!");
@@ -506,7 +510,6 @@
                 const normalizados = migrarDados(dadosImportados).dados;
                 normalizados._revision = Number(dadosNuvem._revision) || 0;
 
-                // Cancela a fila antiga e faz a base de três vias coincidir com a revisão atual do servidor.
                 if (syncTimer) clearTimeout(syncTimer);
                 syncTimer = null;
                 syncPendingData = null;

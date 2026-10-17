@@ -23,7 +23,7 @@
         </div>
 
         <section class="form-card">
-            <div class="section-title"><div><h2>Novo lançamento</h2><p>O sistema gera parcelas e calcula o vencimento do cartão automaticamente[cite: 42].</p></div></div>
+            <div class="section-title"><div><h2>Novo lançamento</h2><p>O sistema gera parcelas e calcula o vencimento do cartão automaticamente.</p></div></div>
             <form id="formLancamento" onsubmit="salvarLancamentoForm(event)" novalidate>
                 <div class="form-grid-3">
                     <div class="form-group"><label for="tipoLancamento">Tipo</label><select id="tipoLancamento"><option value="saida">Saída</option><option value="entrada">Entrada</option></select></div>
@@ -44,7 +44,6 @@
                     </div>
                 </div>
 
-                <!-- Campo de Vínculo com Bem Patrimonial (Visível apenas para Saída) -->
                 <div id="blocoBemLancamento" class="form-group" style="margin-top: 12px;">
                     <label for="bemLancamento">Vincular a Bem Patrimonial (Opcional)</label>
                     <select id="bemLancamento">
@@ -55,7 +54,7 @@
                 <div id="blocoFormaPagamentoContainer" class="form-group" style="margin-top: 12px;"><label for="formaPagamento">Forma de pagamento</label><select id="formaPagamento"><option value="DINHEIRO">Dinheiro / Pix / Débito</option><option value="BOLETO">Boleto / Conta</option><option value="FIXO">Conta fixa / mensal</option><option value="CARTAO">Cartão de crédito</option></select></div>
 
                 <div id="blocoCartao" class="form-card nested-card" style="display:none; margin-top:14px; margin-bottom:0; background:var(--surface-2); box-shadow:none;">
-                    <div class="section-title"><div><h3>Compra no cartão</h3><p>O vencimento da primeira fatura será calculado pelo fechamento[cite: 42].</p></div></div>
+                    <div class="section-title"><div><h3>Compra no cartão</h3><p>O vencimento da primeira fatura será calculado pelo fechamento.</p></div></div>
                     <div class="form-grid-3">
                         <div class="form-group"><label for="cartaoLancamento">Cartão</label><select id="cartaoLancamento"></select></div>
                         <div class="form-group"><label for="dataCompraCartao">Data da compra</label><input type="date" id="dataCompraCartao"></div>
@@ -88,7 +87,7 @@
         </section>
 
         <section class="form-card">
-            <div class="section-title"><div><h2>Contas em lote</h2><p>Gera uma conta por mês entre as datas informadas. Meses passados ficam como atrasados, não como pagos[cite: 42].</p></div></div>
+            <div class="section-title"><div><h2>Contas em lote</h2><p>Gera uma conta por mês entre as datas informadas. Meses passados ficam como atrasados, não como pagos.</p></div></div>
             <form id="formContaLote" onsubmit="salvarContaLoteForm(event)">
                 <div class="form-grid-2">
                     <div class="form-group"><label for="descricaoLote">Descrição</label><input type="text" id="descricaoLote" maxlength="120" placeholder="Ex.: Seguro do carro" required></div>
@@ -190,7 +189,7 @@
 
         function popularSelectsBens() {
             const dados = obterDados();
-            const usuario = obterUsuarioAtual(dados);
+            const usuario = obterUsuarioAtual();
             const usuarioId = String(usuario?.id ?? '');
             const parceiroId = String(usuario?.parceiroId ?? '');
             const bensAtivos = (dados.bens || []).filter(b => b.ativo !== false && (b.usuarioId == null || String(b.usuarioId) === usuarioId || (b.compartilhado === true && String(b.usuarioId) === parceiroId)));
@@ -210,7 +209,7 @@
 
         function popularSelectsCartoesLote() {
             const dados = obterDados();
-            const usuarioAtualId = Number(obterUsuarioAtualId(dados));
+            const usuarioAtualId = Number(obterUsuarioAtualId());
             const cartoesUsuario = (dados.cartoes || []).filter(c => c.ativo !== false && !c.isBeneficio && Number(c.usuarioId) === usuarioAtualId);
             const select = document.getElementById('cartaoLote');
             if (!select) return;
@@ -234,7 +233,6 @@
             const blocoCartao = document.getElementById('blocoCartaoLote');
             if (blocoCartao) blocoCartao.style.display = usaCartao ? 'block' : 'none';
 
-            // No lote de cartão, o intervalo representa compras; o vencimento é calculado pelo ciclo do cartão.
             const labelInicio = document.getElementById('labelInicioLote');
             const labelFim = document.getElementById('labelFimLote');
             if (labelInicio) labelInicio.textContent = usaCartao ? 'Data da primeira compra' : 'Primeiro vencimento';
@@ -242,34 +240,31 @@
         }
 
         function tratarMudancaCategoria() {
-    // 1. Chama a função original do script.js para lidar com o Adiantamento
-    if (typeof verificarCategoriaSalario === 'function') {
-        verificarCategoriaSalario();
-    }
+            if (typeof verificarCategoriaSalario === 'function') {
+                verificarCategoriaSalario();
+            }
 
-    // 2. Executa a lógica visual de mostrar/ocultar a Hora Extra
-    const tipoEl = document.getElementById('tipoLancamento');
-    const tipo = tipoEl ? tipoEl.value : 'saida';
-    const selectCat = document.getElementById('categoriaLancamento');
-    const blocoHoraExtra = document.getElementById('blocoHoraExtra');
-    
-    if (tipo === 'entrada' && selectCat && blocoHoraExtra) {
-        const dados = obterDados();
-        const catSelecionada = (dados.categorias || []).find(c => String(c.id) === String(selectCat.value));
-        const nomeCat = catSelecionada ? catSelecionada.nome.toLowerCase() : '';
-        
-        if (nomeCat.includes('salário') || nomeCat.includes('salario')) {
-            blocoHoraExtra.style.display = 'block';
-        } else {
-            blocoHoraExtra.style.display = 'none';
-            const elHoraExtra = document.getElementById('valorHoraExtra');
-            if (elHoraExtra) elHoraExtra.value = '0';
+            const tipoEl = document.getElementById('tipoLancamento');
+            const tipo = tipoEl ? tipoEl.value : 'saida';
+            const selectCat = document.getElementById('categoriaLancamento');
+            const blocoHoraExtra = document.getElementById('blocoHoraExtra');
+            
+            if (tipo === 'entrada' && selectCat && blocoHoraExtra) {
+                const dados = obterDados();
+                const catSelecionada = (dados.categorias || []).find(c => String(c.id) === String(selectCat.value));
+                const nomeCat = catSelecionada ? catSelecionada.nome.toLowerCase() : '';
+                
+                if (nomeCat.includes('salário') || nomeCat.includes('salario')) {
+                    blocoHoraExtra.style.display = 'block';
+                } else {
+                    blocoHoraExtra.style.display = 'none';
+                    const elHoraExtra = document.getElementById('valorHoraExtra');
+                    if (elHoraExtra) elHoraExtra.value = '0';
+                }
+            } else if (blocoHoraExtra) {
+                blocoHoraExtra.style.display = 'none';
+            }
         }
-    } else if (blocoHoraExtra) {
-        blocoHoraExtra.style.display = 'none';
-    }
-}
-
 
         function popularSelectCategoriaLote() {
             const dados = obterDados();
@@ -282,8 +277,7 @@
             if (!select.options.length) select.innerHTML = '<option value="">Cadastre uma categoria de saída primeiro</option>';
         }
 
-
- async function salvarLancamentoForm(event) {
+        async function salvarLancamentoForm(event) {
             event.preventDefault();
             const descricao = document.getElementById('descricaoLancamento')?.value?.trim() || '';
             const tipo = document.getElementById('tipoLancamento')?.value || 'saida';
@@ -294,7 +288,6 @@
             const horaExtra = (tipo === 'entrada' && document.getElementById('blocoHoraExtra')?.style.display !== 'none') ? numeroSeguro(document.getElementById('valorHoraExtra')?.value) : 0;
             const servicoEssencial = tipo === 'saida' ? (document.getElementById('servicoEssencial')?.value || 'nao') : 'nao';
             
-            // CORRIGIDO: Agora lê o escopo escolhido pelo usuário para qualquer tipo (entrada ou saída)
             const escopo = document.getElementById('escopoLancamento')?.value || 'casal';
             
             const observacao = document.getElementById('observacaoLancamento')?.value?.trim() || '';
@@ -355,7 +348,6 @@
         async function salvarContaLoteForm(event) {
             event.preventDefault();
             const descricao = document.getElementById('descricaoLote')?.value?.trim() || '';
-            // Correção: Uso de numeroSeguro
             const valor = numeroSeguro(document.getElementById('valorParcelaLote')?.value);
             const categoriaId = document.getElementById('categoriaLote')?.value || '';
             const formaPagamento = document.getElementById('formaPagamentoLote')?.value || 'BOLETO';
@@ -392,8 +384,6 @@
             popularSelectsBens();
             popularSelectsCartoesLote();
         }
-
-
 
     </script>
 </body>

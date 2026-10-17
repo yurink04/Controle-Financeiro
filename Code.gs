@@ -26,6 +26,7 @@ var SCHEMA = {
     'parcelaAtual', 'totalParcelas', 'observacao', 'horaExtra',
     'servicoEssencial', 'pago', 'status', 'dataCompra', 'dataPagamento',
     'usuarioPagamentoId', 'financiamentoId', 'parcelamentoId', 'bemId', 'escopo',
+    'faturaId', // Novo campo adicionado para o controlo relacional das faturas
     'createdAt', 'updatedAt'
   ],
 
@@ -59,6 +60,11 @@ var SCHEMA = {
     'id', 'dataHora', 'usuario', 'usuarioId', 'lancamentoId',
     'descricaoAntiga', 'descricaoNova', 'valorAntigo', 'valorNovo',
     'motivo'
+  ],
+
+  fatura_cartao: [
+    'id', 'cartaoId', 'mesReferencia', 'valorTotal', 'valorPago',
+    'status', 'dataVencimento', 'createdAt', 'updatedAt'
   ]
 };
 
@@ -66,7 +72,8 @@ var CAMPOS_DATA = {
   vencimento: true,
   dataCompra: true,
   dataPagamento: true,
-  primeiroVencimento: true
+  primeiroVencimento: true,
+  dataVencimento: true
 };
 
 var CAMPOS_JSON = {
@@ -188,7 +195,6 @@ function doPost(e) {
       });
     }
 
-    // AÇÃO DE VERIFICAÇÃO DE CREDENCIAIS OTIMIZADA PARA O LOGIN
     if (action === 'verificarCredenciaisLogin') {
       var usuarioLogin = data.usuario ? String(data.usuario).trim() : '';
       var senhaHash = data.senhaHash ? String(data.senhaHash).trim() : '';
@@ -216,7 +222,6 @@ function doPost(e) {
         return respostaJson({ status: 'erro', mensagem: 'Este usuário está desativado.' });
       }
 
-      // Se a chamada veio apenas para checar se o usuário existe (Passo 1 do login)
       if (senhaHash === 'CHECK_APENAS_USUARIO') {
         return respostaJson({
           status: 'sucesso',
@@ -372,7 +377,8 @@ function retornarDadosCompletos() {
     notificacoes: lerAba('notificacoes'),
     logs: lerAba('logs'),
     exclusao_movimento: lerAba('exclusao_movimento'),
-    edicao_movimento: lerAba('edicao_movimento')
+    edicao_movimento: lerAba('edicao_movimento'),
+    fatura_cartao: lerAba('fatura_cartao')
   };
 
   return respostaJson(dados);
