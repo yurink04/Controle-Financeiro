@@ -368,8 +368,8 @@
                             <img src="imagens/editar.png" alt="Editar">
                         </button>
                         ${m.formaPagamento === 'CARTAO'
-    ? `<a href="grafico.html?tipo=cartao&cartaoId=${m.cartaoId}&mes=${String(m.vencimento).slice(0, 7)}" class="btn-acao-icone" title="Gerenciar Fatura" style="display:inline-flex; align-items:center; justify-content:center; text-decoration:none;"><span style="font-size:16px;">💳</span></a>`
-    : `<button type="button" onclick="marcarPagamento(${Number(m.id)})" class="btn-acao-icone" title="${m.pago ? 'Marcar como Pendente' : 'Marcar como Pago'}"><img src="imagens/${m.pago ? 'desfazer' : 'pagar'}.png" alt="${m.pago ? 'Pendente' : 'Pagar'}"></button>`}
+                            ? `<a href="grafico.html?tipo=cartao&cartaoId=${m.cartaoId}&mes=${String(m.vencimento).slice(0, 7)}" class="btn-acao-icone" title="Gerenciar Fatura" style="display:inline-flex; align-items:center; justify-content:center; text-decoration:none;"><span style="font-size:16px;">💳</span></a>`
+                            : `<button type="button" onclick="marcarPagamento(${Number(m.id)})" class="btn-acao-icone" title="${m.pago ? 'Marcar como Pendente' : 'Marcar como Pago'}"><img src="imagens/${m.pago ? 'desfazer' : 'pagar'}.png" alt="${m.pago ? 'Pendente' : 'Pagar'}"></button>`}
                     </div>
                 `;
 
@@ -393,7 +393,7 @@
                             <img src="imagens/editar.png" alt="Editar">
                         </button>
                         ${m.formaPagamento === 'CARTAO'
-                            ? '<button type="button" class="btn-acao-icone" disabled title="A quitação é controlada pela fatura do cartão">💳</button>'
+                            ? `<a href="grafico.html?tipo=cartao&cartaoId=${m.cartaoId}&mes=${String(m.vencimento).slice(0, 7)}" class="btn-acao-icone" title="Gerenciar Fatura" style="display:inline-flex; align-items:center; justify-content:center; text-decoration:none;"><span style="font-size:16px;">💳</span></a>`
                             : `<button type="button" onclick="marcarPagamento(${Number(m.id)})" class="btn-acao-icone" title="${m.pago ? 'Marcar como Pendente' : 'Marcar como Pago'}"><img src="imagens/${m.pago ? 'desfazer' : 'pagar'}.png" alt="${m.pago ? 'Pendente' : 'Pagar'}"></button>`}
                     </div>
                 `;
@@ -423,7 +423,6 @@
                 const nomeCartao = cObj.nome;
                 const diaVenc = cObj.vencimento;
                 
-                // Redirecionamento direto para a tela gráfica filtrada
                 const btnVerFatura = `
                     <button type="button" onclick="window.location.href='grafico.html?tipo=cartao&cartaoId=${Number(cartaoId)}&mes=${mesSelecionado}'" class="btn-acao-icone" title="Gerenciar Fatura">
                         <img src="imagens/ver.png" alt="Ver Fatura" style="width: 20px; height: 20px; object-fit: contain;">
@@ -516,7 +515,6 @@
 
         function exportarPDF() { window.print(); }
         
-        // A função global carregarRelatorios despacha para esta tela sem ser sobrescrita.
     </script>
 </body>
 </html>

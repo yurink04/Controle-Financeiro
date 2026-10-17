@@ -3,7 +3,7 @@
 // ============================================================================
 const DB_KEY = 'sistemaFinanceiroCompartilhado';
 const BACKUP_TESTE_KEY = 'sistemaFinanceiroBackupTeste';
-const API_URL = "https://script.google.com/macros/s/AKfycbzDLDlM0UXJcho6OCHotxtP8hOjRjfJCyLzRZR3LMfHvqzsRtSqDhl4EWs8jwXoEPz6/exec";
+const API_URL = "https://script.google.com/macros/s/AKfycbzqWVQwjd-7H3inOf1ot-Sz4LZMF1po6KsW7hXxBAmybqRXVI9tpOtjD85mw7m2am2-/exec";
 const TOKEN_API = "PLANOF1NALPRAS4AIRD@MERDA";
 const SCHEMA_VERSION = 3;
 const SYNC_DEBOUNCE_MS = 1500;
@@ -15,6 +15,7 @@ let syncTimer = null;
 let syncPendingData = null;
 let syncInFlight = false;
 let processandoAcaoModal = false;
+let processandoSaidaSistema = false;
 let memoriaSistema = null;
 let verificacaoAutenticacaoPromise = null;
 
@@ -50,11 +51,68 @@ async function gerarHash(texto) {
 // ============================================================================
 // 3. UTILITÁRIOS DE DATA E PARCELAMENTO
 // ============================================================================
+function normalizarDataISO(dataValor) {
+    if (dataValor == null || dataValor === '') return null;
+
+    if (dataValor instanceof Date) {
+        if (!Number.isFinite(dataValor.getTime())) return null;
+        return `${dataValor.getFullYear()}-${String(dataValor.getMonth() + 1).padStart(2, '0')}-${String(dataValor.getDate()).padStart(2, '0')}`;
+    }
+
+    const texto = String(dataValor).trim();
+    if (!texto) return null;
+
+    // Datas ISO, inclusive timestamps: preserva a data escrita sem aplicar conversão UTC.
+    let partes = texto.match(/^(\d{4})-(\d{1,2})-(\d{1,2})(?:$|[T\s])/);
+    let ano, mes, dia;
+
+    if (partes) {
+        ano = Number(partes[1]); mes = Number(partes[2]); dia = Number(partes[3]);
+    } else {
+        // Compatibilidade com dados antigos em PT-BR, com ou sem horário.
+        partes = texto.match(/^(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{4})(?:$|[\s,])/);
+        if (!partes) return null;
+        dia = Number(partes[1]); mes = Number(partes[2]); ano = Number(partes[3]);
+    }
+
+    if (!ano || mes < 1 || mes > 12 || dia < 1 || dia > 31) return null;
+    const teste = new Date(ano, mes - 1, dia);
+    if (teste.getFullYear() !== ano || teste.getMonth() !== mes - 1 || teste.getDate() !== dia) return null;
+
+    return `${String(ano).padStart(4, '0')}-${String(mes).padStart(2, '0')}-${String(dia).padStart(2, '0')}`;
+}
+
 function formatarDataBR(dataStr) {
-    if (!dataStr) return '-';
-    const limpa = String(dataStr).trim().split('T')[0];
-    const p = limpa.split('-');
-    return p.length === 3 ? `${p[2]}/${p[1]}/${p[0]}` : String(dataStr);
+    if (dataStr == null || dataStr === '') return '-';
+
+    const iso = normalizarDataISO(dataStr);
+    if (iso) {
+        const [ano, mes, dia] = iso.split('-');
+        return `${dia}/${mes}/${ano}`;
+    }
+
+    const texto = String(dataStr).trim();
+    // Não deixa o JavaScript transformar datas impossíveis (ex.: 2026-02-30) em outro dia.
+    if (/^(?:\d{4}-\d{1,2}-\d{1,2}|\d{1,2}[\/.-]\d{1,2}[\/.-]\d{4})(?:$|[T\s,])/.test(texto)) return texto || '-';
+    // Última tentativa para formatos textuais/timestamps incomuns, sempre sem exibir hora.
+    const data = new Date(texto);
+    if (Number.isFinite(data.getTime())) return data.toLocaleDateString('pt-BR');
+    return texto || '-';
+}
+
+function formatarDataSemHora(dataValor) {
+    if (dataValor == null || dataValor === '') return '-';
+    if (dataValor instanceof Date) {
+        return Number.isFinite(dataValor.getTime()) ? dataValor.toLocaleDateString('pt-BR') : '-';
+    }
+
+    const texto = String(dataValor).trim();
+    // Campos de auditoria são timestamps; neste caso, respeitamos o fuso local do navegador.
+    if (/^\d{4}-\d{2}-\d{2}T/.test(texto)) {
+        const data = new Date(texto);
+        if (Number.isFinite(data.getTime())) return data.toLocaleDateString('pt-BR');
+    }
+    return formatarDataBR(texto);
 }
 
 function dataLocalYYYYMMDD(data = new Date()) {
@@ -64,9 +122,9 @@ function dataLocalYYYYMMDD(data = new Date()) {
 function dataParaString(data) { return dataLocalYYYYMMDD(data); }
 
 function criarDataLocal(dataStr) {
-    if (!dataStr) return null;
-    const p = String(dataStr).trim().split('-').map(Number);
-    if (p.length !== 3 || !p[0] || p[1] < 1 || p[1] > 12 || p[2] < 1 || p[2] > 31) return null;
+    const iso = normalizarDataISO(dataStr);
+    if (!iso) return null;
+    const p = iso.split('-').map(Number);
     const d = new Date(p[0], p[1] - 1, p[2]);
     return (d.getFullYear() === p[0] && d.getMonth() === p[1] - 1 && d.getDate() === p[2]) ? d : null;
 }
@@ -246,20 +304,91 @@ async function selecionarUsuario(id) {
     return true;
 }
 
-function deslogarSistema() {
-    const uId = localStorage.getItem('usuarioLogado');
-    if (uId) {
-        const dados = obterDados();
-        const u = dados.usuarios.find(user => Number(user.id) === Number(uId));
-        if (u && normalizarTexto(u.nome) === 'teste') {
-            const bkp = localStorage.getItem(BACKUP_TESTE_KEY);
-            if (bkp) { localStorage.setItem(DB_KEY, bkp); localStorage.removeItem(BACKUP_TESTE_KEY); }
+async function deslogarSistema(solicitadoPeloUsuario = true) {
+    if (processandoSaidaSistema) return false;
+    processandoSaidaSistema = true;
+    let loadingSaidaAtivo = false;
+
+    try {
+        const temPendencias = localStorage.getItem('syncPendente') === 'true';
+        const temConflito = localStorage.getItem(SYNC_CONFLICT_KEY) !== null;
+
+        // A confirmação só aparece quando a saída é solicitada pelo botão "Sair do sistema".
+        // Navegar normalmente entre páginas não fica bloqueado pela sincronização em segundo plano.
+        if (solicitadoPeloUsuario && (temPendencias || temConflito)) {
+            const aguardar = await mostrarConfirmacaoModal(
+                temConflito
+                    ? 'Existe um conflito de sincronização pendente. Deseja tentar resolver/enviar os dados antes de sair?'
+                    : 'Há alterações sendo sincronizadas em segundo plano. Deseja aguardar a sincronização antes de sair?'
+            );
+            if (!aguardar) return false;
+
+            mostrarLoading('Aguardando sincronização...');
+            loadingSaidaAtivo = true;
+            const sincronizado = await aguardarSincronizacaoPendente(30000);
+            esconderLoading();
+            loadingSaidaAtivo = false;
+
+            if (!sincronizado) {
+                const sairMesmoAssim = await mostrarConfirmacaoModal(
+                    'Não foi possível concluir a sincronização agora. As alterações continuam salvas neste navegador e poderão ser sincronizadas quando você voltar. Deseja sair mesmo assim?'
+                );
+                if (!sairMesmoAssim) return false;
+            }
         }
+
+        const uId = localStorage.getItem('usuarioLogado');
+        if (uId) {
+            const dados = obterDados();
+            const u = dados.usuarios.find(user => Number(user.id) === Number(uId));
+            if (u && normalizarTexto(u.nome) === 'teste') {
+                const bkp = localStorage.getItem(BACKUP_TESTE_KEY);
+                if (bkp) { localStorage.setItem(DB_KEY, bkp); localStorage.removeItem(BACKUP_TESTE_KEY); }
+            }
+        }
+
+        localStorage.removeItem('usuarioLogado');
+        localStorage.removeItem('adminAutorizado');
+        localStorage.removeItem('adminLogado');
+        window.location.href = 'index.html';
+        return true;
+    } finally {
+        processandoSaidaSistema = false;
+        if (loadingSaidaAtivo) esconderLoading();
     }
-    localStorage.removeItem('usuarioLogado');
-    localStorage.removeItem('adminAutorizado');
-    localStorage.removeItem('adminLogado');
-    window.location.href = 'index.html';
+}
+
+async function aguardarSincronizacaoPendente(tempoLimiteMs = 30000) {
+    // Reconstitui a fila a partir do armazenamento local se esta página acabou de ser aberta.
+    if (!syncPendingData && localStorage.getItem('syncPendente') === 'true') {
+        const local = lerJSONLocal(DB_KEY, null);
+        if (local) syncPendingData = clonarDados(local);
+    }
+
+    if (!syncInFlight && syncPendingData && !syncTimer && !localStorage.getItem(SYNC_CONFLICT_KEY)) {
+        agendarSincronizacaoSilenciosa();
+    }
+
+    const prazoFinal = Date.now() + Math.max(1000, Number(tempoLimiteMs) || 30000);
+    while (Date.now() < prazoFinal) {
+        const pendente = localStorage.getItem('syncPendente') === 'true';
+        const conflito = localStorage.getItem(SYNC_CONFLICT_KEY) !== null;
+
+        if (conflito) return false;
+        if (!pendente && !syncInFlight && !syncPendingData) return true;
+
+        // Se não houver tentativa agendada, inicia uma sem bloquear a navegação normal do sistema.
+        if (pendente && !syncInFlight && syncPendingData && !syncTimer) {
+            agendarSincronizacaoSilenciosa();
+        }
+
+        await new Promise(resolve => setTimeout(resolve, 200));
+    }
+
+    return localStorage.getItem('syncPendente') !== 'true'
+        && localStorage.getItem(SYNC_CONFLICT_KEY) === null
+        && !syncInFlight
+        && !syncPendingData;
 }
 
 function verificarAutenticacao() {
@@ -290,7 +419,7 @@ function verificarAutenticacao() {
             }
             const d = obterDados();
             const u = (d.usuarios || []).find(user => String(user.id) === String(uId));
-            if (!u || u.ativo === false) { deslogarSistema(); return false; }
+            if (!u || u.ativo === false) { deslogarSistema(false); return false; }
             if (!usuarioPodeAcessarPagina(u, permissaoPaginaAtual())) {
                 await mostrarAlertaModal('Acesso restrito.');
                 window.location.href = 'dashboard.html'; return false;
@@ -354,7 +483,8 @@ async function salvarDados(dados, opcoes = {}) {
 function registrarLog(dados, acao, detalhes, extras = {}) {
     if (!Array.isArray(dados.logs)) dados.logs = [];
     const u = obterUsuarioAtual(dados);
-    dados.logs.push({ id: gerarId('log'), dataHora: new Date().toISOString(), dataHoraFormatada: new Date().toLocaleString('pt-BR'), usuario: u?.nome || 'Sistema', usuarioId: u?.id || null, acao, detalhes, ...extras });
+    const agora = new Date();
+    dados.logs.push({ id: gerarId('log'), dataHora: agora.toISOString(), dataHoraFormatada: formatarDataSemHora(agora), usuario: u?.nome || 'Sistema', usuarioId: u?.id || null, acao, detalhes, ...extras });
 }
 
 function serializarEstavel(v) {
@@ -434,7 +564,10 @@ function marcarConflitoSincronizacao(dadosLocais, campos, mensagem) {
 
 function agendarSincronizacaoSilenciosa() {
     clearTimeout(syncTimer);
-    syncTimer = setTimeout(sincronizarComServidor, SYNC_DEBOUNCE_MS);
+    syncTimer = setTimeout(() => {
+        syncTimer = null;
+        sincronizarComServidor();
+    }, SYNC_DEBOUNCE_MS);
 }
 
 async function buscarDadosServidor() {
@@ -495,8 +628,12 @@ async function inicializarBanco() {
         memoriaSistema = migrarDados(local).dados;
         syncPendingData = clonarDados(memoriaSistema);
         if (!localStorage.getItem(SYNC_CONFLICT_KEY)) {
-            if (!lerJSONLocal(SYNC_BASELINE_KEY, null)) marcarConflitoSincronizacao(memoriaSistema, [], 'Sem snapshot.');
-            else await sincronizarComServidor();
+            if (!lerJSONLocal(SYNC_BASELINE_KEY, null)) {
+                marcarConflitoSincronizacao(memoriaSistema, [], 'Sem snapshot.');
+            } else {
+                // A interface abre com os dados locais; a rede sincroniza em segundo plano.
+                agendarSincronizacaoSilenciosa();
+            }
         }
         return memoriaSistema;
     }
@@ -517,6 +654,40 @@ function migrarDados(dados) {
     let alterou = false; if (!dados || typeof dados !== 'object') dados = {};
     const d = { usuarios: [], categorias: [], cartoes: [], lancamentos: [], financiamentos: [], bens: [], notificacoes: [], logs: [], exclusao_movimento: [], edicao_movimento: [], fatura_cartao: [] };
     Object.keys(d).forEach(k => { if (!Array.isArray(dados[k])) { dados[k] = d[k]; alterou = true; } });
+
+    // Mantém datas de negócio no padrão interno ISO (yyyy-MM-dd), aceitando dados legados PT-BR.
+    const camposDataPorColecao = {
+        lancamentos: ['vencimento', 'dataCompra', 'dataPagamento'],
+        financiamentos: ['primeiroVencimento'],
+        fatura_cartao: ['dataVencimento']
+    };
+    Object.entries(camposDataPorColecao).forEach(([colecao, campos]) => {
+        (dados[colecao] || []).forEach(registro => {
+            campos.forEach(campo => {
+                const original = registro?.[campo];
+                if (original == null || original === '') return;
+                const iso = normalizarDataISO(original);
+                if (iso && String(original) !== iso) { registro[campo] = iso; alterou = true; }
+            });
+        });
+    });
+
+    // Datas que aparecem nos históricos/auditoria ficam sem horário na camada de exibição.
+    (dados.logs || []).forEach(registro => {
+        if (!registro) return;
+        const referencia = registro.dataHora || registro.dataHoraFormatada;
+        if (referencia) {
+            const dataExibicao = formatarDataSemHora(referencia);
+            if (registro.dataHoraFormatada !== dataExibicao) { registro.dataHoraFormatada = dataExibicao; alterou = true; }
+        }
+    });
+    ['exclusao_movimento', 'edicao_movimento'].forEach(colecao => {
+        (dados[colecao] || []).forEach(registro => {
+            if (!registro || !registro.dataHora) return;
+            const dataExibicao = formatarDataSemHora(registro.dataHora);
+            if (registro.dataHora !== dataExibicao) { registro.dataHora = dataExibicao; alterou = true; }
+        });
+    });
     
     dados.cartoes.forEach(c => {
         if (c.ativo === undefined) { c.ativo = true; alterou = true; }
@@ -557,7 +728,6 @@ function migrarDados(dados) {
         if (!l.observacao) l.observacao = '';
         if (!l.cartaoId && l.formaPagamento !== 'CARTAO') l.cartaoId = null;
         
-        // MIGRAR FATURA ID NAS COMPRAS DE CARTÃO LEGADAS
         if (l.formaPagamento === 'CARTAO' && l.cartaoId && l.vencimento && !l.faturaId) {
             l.faturaId = `fat_${l.cartaoId}_${String(l.vencimento).slice(0, 7)}`;
             alterou = true;
@@ -582,9 +752,6 @@ function migrarDados(dados) {
         }
     });
 
-    // ----------------------------------------------------------------------
-    // AUTO-SINCRONIZADOR REATIVO DA TABELA DE FATURAS
-    // ----------------------------------------------------------------------
     const faturasAtivas = new Set();
     dados.lancamentos.forEach(l => {
         if (l.faturaId && l.formaPagamento === 'CARTAO') {
@@ -602,7 +769,6 @@ function migrarDados(dados) {
         }
     });
 
-    // Recalcula totais (garante integridade de pagamentos parciais vs totais)
     dados.fatura_cartao.forEach(fat => {
         const itens = dados.lancamentos.filter(l => String(l.faturaId) === String(fat.id));
         const vTot = Number(itens.reduce((a, b) => a + Number(b.valor || 0), 0).toFixed(2));
@@ -616,11 +782,9 @@ function migrarDados(dados) {
         }
     });
     
-    // Limpar faturas órfãs (se apagares as compras todas de um mês)
     const antesOrfas = dados.fatura_cartao.length;
     dados.fatura_cartao = dados.fatura_cartao.filter(f => faturasAtivas.has(f.id));
     if (dados.fatura_cartao.length !== antesOrfas) alterou = true;
-    // ----------------------------------------------------------------------
 
     if (dados._schemaVersion !== SCHEMA_VERSION) { dados._schemaVersion = SCHEMA_VERSION; alterou = true; }
     return { dados, alterou };
@@ -739,20 +903,42 @@ async function verificarSenhaAdmin(nomeSecao = 'esta seção') {
     } catch { await mostrarAlertaModal('Falha na conexão.'); return false; }
 }
 
-function mostrarLoading(mensagem = "Processando...") {
+function mostrarLoading(mensagem = "Processando...", usarGif = false) {
     const span = document.getElementById('headerLoadingText');
     const spanVisivel = span && span.offsetParent !== null && document.body.classList.contains('sidebar-open');
     if (span) { span.textContent = mensagem; span.style.display = 'inline-block'; }
+
     const antigo = document.getElementById('loadingOverlay');
     if (antigo) antigo.remove();
-    if (!spanVisivel) {
+
+    // Quando solicitado, usa o GIF do próprio projeto. Para os outros processos,
+    // mantém o indicador CSS leve já utilizado pelo sistema.
+    if (!spanVisivel || usarGif) {
         const ov = document.createElement('div');
         ov.id = 'loadingOverlay';
         ov.setAttribute('role', 'status');
         ov.setAttribute('aria-live', 'polite');
-        ov.style.cssText = 'position:fixed;top:20px;left:50%;transform:translateX(-50%);z-index:900;background:var(--surface);color:var(--text-main);padding:10px 20px;border-radius:12px;box-shadow:var(--shadow-lg);border:1px solid var(--border);display:flex;align-items:center;gap:10px;font-weight:700;font-size:0.85rem;pointer-events:none;';
-        ov.innerHTML = '<div style="width:18px;height:18px;border:2px solid var(--border);border-top-color:var(--primary);border-radius:50%;animation:spin .8s linear infinite;"></div><span></span>';
-        ov.querySelector('span').textContent = mensagem;
+        ov.style.cssText = 'position:fixed;top:20px;left:50%;transform:translateX(-50%);z-index:900;background:var(--surface);color:var(--text-main);padding:14px 20px;border-radius:14px;box-shadow:var(--shadow-lg);border:1px solid var(--border);display:flex;align-items:center;gap:12px;font-weight:700;font-size:0.85rem;pointer-events:none;';
+
+        let indicador;
+        if (usarGif) {
+            indicador = document.createElement('img');
+            indicador.src = 'imagens/loading1.gif';
+            indicador.alt = '';
+            indicador.style.cssText = 'width:64px;height:64px;object-fit:contain;flex-shrink:0;';
+            indicador.onerror = () => {
+                const fallback = document.createElement('div');
+                fallback.style.cssText = 'width:22px;height:22px;border:2px solid var(--border);border-top-color:var(--primary);border-radius:50%;animation:spin .8s linear infinite;flex-shrink:0;';
+                indicador.replaceWith(fallback);
+            };
+        } else {
+            indicador = document.createElement('div');
+            indicador.style.cssText = 'width:18px;height:18px;border:2px solid var(--border);border-top-color:var(--primary);border-radius:50%;animation:spin .8s linear infinite;flex-shrink:0;';
+        }
+
+        const texto = document.createElement('span');
+        texto.textContent = mensagem;
+        ov.append(indicador, texto);
         document.body.appendChild(ov);
     }
 }
@@ -787,7 +973,7 @@ function injetarHeader() {
             </div>
             <a href="lancamentos.html">Lançamentos</a><a href="central-pagamentos.html">Central de pagamentos</a><a href="relatorios.html">Relatórios</a>
         </nav>
-        <div class="sidebar-footer"><a href="#" onclick="deslogarSistema()" class="btn-sair-sidebar"><img src="imagens/exit.png" alt="Sair"><span>Sair do sistema</span></a></div>
+        <div class="sidebar-footer"><a href="#" onclick="event.preventDefault(); deslogarSistema(true)" class="btn-sair-sidebar"><img src="imagens/exit.png" alt="Sair"><span>Sair do sistema</span></a></div>
     </aside>`);
 
     const p = String(window.location.pathname).split('/').pop().toLowerCase();
@@ -873,12 +1059,82 @@ function criarIndicadorSincronizacaoUi() {
     const c = document.getElementById('syncStatusIcon'); if (!c || c.dataset.syncWired) return;
     c.dataset.syncWired = 'true'; c.innerHTML = `<img src="imagens/sincronizar.png" style="width:18px;" alt="Sync"><span id="syncTextLabel" style="font-size:0.82rem; font-weight:700;">Sincronizado</span>`;
     c.style.cssText = 'display:inline-flex; align-items:center; gap:8px; padding:6px 12px; border-radius:99px; background:var(--success-soft); border:1px solid var(--success); cursor:pointer;';
+    
     c.onclick = async () => {
-        if (localStorage.getItem('syncPendente') === 'true' && !await mostrarConfirmacaoModal('Descartar alterações locais e atualizar?')) return;
+        const pendente = localStorage.getItem('syncPendente') === 'true';
+        const temConflito = localStorage.getItem(SYNC_CONFLICT_KEY) !== null;
+
+        if (pendente || temConflito) {
+            const forcar = await mostrarConfirmacaoModal('Atenção! Existem dados locais não enviados ou em conflito. Deseja forçar um novo envio agora (baixando um backup de segurança antes)?');
+            
+            if (forcar) {
+                await forcarEnvioComBackup();
+            } else {
+                if (await mostrarConfirmacaoModal('Aviso: Tem certeza que deseja descartar suas alterações locais e baixar os dados limpos do servidor?')) {
+                    atualizarIndicadorSyncUI('pending');
+                    try { 
+                        const j = await buscarDadosServidor(); 
+                        gravarSnapshotLocal(migrarDados(j).dados, true); 
+                        syncPendingData = null; 
+                        localStorage.removeItem('syncPendente'); 
+                        localStorage.removeItem(SYNC_CONFLICT_KEY); 
+                        atualizarIndicadorSyncUI('success'); 
+                    } catch (e) { 
+                        atualizarIndicadorSyncUI('error'); 
+                        await mostrarAlertaModal('Erro: ' + e.message); 
+                    }
+                }
+            }
+            return;
+        }
+
         atualizarIndicadorSyncUI('pending');
         try { const j = await buscarDadosServidor(); gravarSnapshotLocal(migrarDados(j).dados, true); syncPendingData = null; localStorage.removeItem('syncPendente'); localStorage.removeItem(SYNC_CONFLICT_KEY); atualizarIndicadorSyncUI('success'); }
         catch (e) { atualizarIndicadorSyncUI('error'); await mostrarAlertaModal('Erro: ' + e.message); }
     };
+}
+
+async function forcarEnvioComBackup() {
+    mostrarLoading("Criando backup e forçando envio...", true);
+    try {
+        const dbLocalStr = localStorage.getItem(DB_KEY);
+        if (!dbLocalStr) throw new Error("Sem dados locais para enviar.");
+        const dbLocal = JSON.parse(dbLocalStr);
+
+        const blob = new Blob([dbLocalStr], { type: 'text/plain' });
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = `backup_emergencia_${new Date().toISOString().replace(/[:.]/g, '-')}.txt`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+
+        const reqGet = await fetch(`${API_URL}?action=obterDados&token=${encodeURIComponent(TOKEN_API)}`);
+        const resGet = await reqGet.json();
+
+        dbLocal._revision = resGet._revision;
+        const reqPost = await fetch(API_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+            body: JSON.stringify({ action: 'salvarDados', token: TOKEN_API, dados: dbLocal })
+        });
+        const resPost = await reqPost.json();
+
+        if (resPost.status === 'sucesso') {
+            localStorage.removeItem(SYNC_CONFLICT_KEY);
+            localStorage.removeItem('syncPendente');
+            localStorage.setItem(SYNC_BASELINE_KEY, JSON.stringify(dbLocal));
+            localStorage.setItem('ultimoSyncMs', Date.now().toString());
+            await mostrarAlertaModal('Sucesso! O backup foi baixado e seus lançamentos foram forçados para o servidor.');
+            location.reload();
+        } else {
+            await mostrarAlertaModal('Erro do servidor: ' + resPost.mensagem);
+        }
+    } catch (e) {
+        await mostrarAlertaModal('Erro na execução: ' + e.message);
+    } finally {
+        esconderLoading();
+    }
 }
 
 function atualizarIndicadorSyncUI(status) {
@@ -998,7 +1254,6 @@ async function alternarStatusPagamento(id) {
         const d = obterDados(), l = d.lancamentos.find(x => String(x.id) === String(id));
         if (!l || !usuarioPodeAlterarLancamento(l, d)) throw new Error('Sem permissão.');
         
-        // Bloqueio relacional forte
         if (l.faturaId || l.formaPagamento === 'CARTAO') throw new Error('A quitação de compras de crédito é controlada globalmente pela fatura do cartão.');
         
         l.pago = !l.pago; l.status = l.pago ? 'pago' : (l.vencimento < dataLocalYYYYMMDD() ? 'atrasado' : 'pendente');
@@ -1015,7 +1270,6 @@ async function alternarStatusFaturaConsolidada(faturaId, statusPago) {
     try {
         const d = obterDados(), uId = Number(obterUsuarioAtualId(d));
         
-        // O poder do faturaId - atinge exclusivamente as compras daquela competência
         const itens = d.lancamentos.filter(l => String(l.faturaId) === String(faturaId));
         if (!itens.length) throw new Error('Nenhum lançamento foi encontrado para esta fatura.');
         
@@ -1042,7 +1296,7 @@ async function removerLancamentoInteligente(id) {
     if (pId || fId) { esc = await mostrarOpcaoEscopoModal('Excluir apenas esta ou todas?'); if (!esc) return false; }
     const mt = await mostrarPromptTextoModal("Justificativa", "Motivo:"); if (!mt) return false;
     mostrarLoading("Excluindo...");
-    const uId = Number(obterUsuarioAtualId(d)), nU = obterUsuarioAtual(d)?.nome || 'User', dh = new Date().toLocaleString('pt-BR');
+    const uId = Number(obterUsuarioAtualId(d)), nU = obterUsuarioAtual(d)?.nome || 'User', dh = formatarDataSemHora(new Date());
     if (esc === 'esta') {
         d.exclusao_movimento.push({ id: gerarId('exc'), dataHora: dh, usuario: nU, usuarioId: uId, lancamentoId: id, descricao: l.descricao, valor: l.valor, motivo: mt });
         d.lancamentos = d.lancamentos.filter(x => String(x.id) !== String(id));
@@ -1086,7 +1340,7 @@ async function atualizarLancamentoNoBanco(id, novosDados) {
     const uId = localStorage.getItem('usuarioLogado');
     const u = dados.usuarios.find(user => Number(user.id) === Number(uId));
     const nomeUsuario = u ? u.nome : "Desconhecido";
-    const dataHoraAtual = new Date().toLocaleString('pt-BR');
+    const dataHoraAtual = formatarDataSemHora(new Date());
 
     if (aplicarParaTodas) {
         const relacionados = finId
@@ -1134,7 +1388,6 @@ async function atualizarLancamentoNoBanco(id, novosDados) {
                 }
             }
             
-            // Recálculo do Fatura ID
             l.faturaId = (l.formaPagamento === 'CARTAO' && l.cartaoId && l.vencimento) ? `fat_${l.cartaoId}_${String(l.vencimento).slice(0, 7)}` : null;
             
             l.updatedAt = new Date().toISOString();
@@ -1156,7 +1409,6 @@ async function atualizarLancamentoNoBanco(id, novosDados) {
             lancamento.dataCompra = novosDados.dataCompra || lancamento.dataCompra || null;
         } else { lancamento.cartaoId = null; lancamento.dataCompra = null; }
         
-        // Recálculo do Fatura ID
         lancamento.faturaId = (lancamento.formaPagamento === 'CARTAO' && lancamento.cartaoId && lancamento.vencimento) ? `fat_${lancamento.cartaoId}_${String(lancamento.vencimento).slice(0, 7)}` : null;
 
         lancamento.servicoEssencial = novosDados.tipo === 'saida' ? (novosDados.servicoEssencial || 'nao') : 'nao';
@@ -1237,7 +1489,7 @@ async function excluirFinanciamento(id) {
         const parcelas = dados.lancamentos.filter(l => pertenceAoFinanciamento(l, fin, dados));
         parcelas.forEach(l => {
             const u = obterUsuarioAtual(dados);
-            dados.exclusao_movimento.push({ id: gerarId('exc'), dataHora: new Date().toLocaleString('pt-BR'), usuario: u ? u.nome : 'Desconhecido', usuarioId: u ? Number(u.id) : null, lancamentoId: l.id, descricao: l.descricao, valor: l.valor, motivo: '[FINANCIAMENTO] Exclusão do contrato' });
+            dados.exclusao_movimento.push({ id: gerarId('exc'), dataHora: formatarDataSemHora(new Date()), usuario: u ? u.nome : 'Desconhecido', usuarioId: u ? Number(u.id) : null, lancamentoId: l.id, descricao: l.descricao, valor: l.valor, motivo: '[FINANCIAMENTO] Exclusão do contrato' });
         });
         dados.financiamentos = dados.financiamentos.filter(f => String(f.id) !== String(id));
         dados.lancamentos = dados.lancamentos.filter(l => !parcelas.some(p => String(p.id) === String(l.id)));
@@ -1626,7 +1878,6 @@ function renderizarTabelaUltimosLancamentos(lns, d, nomeCat) {
         const fId = l.faturaId || (l.formaPagamento === 'CARTAO' && l.cartaoId && l.vencimento ? `fat_${l.cartaoId}_${String(l.vencimento).slice(0, 7)}` : null);
         const podeAlternar = !fId && l.formaPagamento !== 'CARTAO';
         
-        // NOVO CÓDIGO DA AÇÃO
         const acao = podeAlternar 
             ? `<button class="btn-acao-icone ${l.pago ? 'desfazer' : 'pagar'}" title="${l.pago ? 'Desfazer pagamento' : 'Marcar como pago'}" onclick="alternarStatusPagamento('${escaparHTML(l.id)}')"><img src="imagens/${l.pago ? 'desfazer' : 'pagar'}.png" style="width:20px;" alt="Ação"></button>` 
             : `<a href="grafico.html?tipo=cartao&cartaoId=${l.cartaoId}&mes=${String(l.vencimento).slice(0, 7)}" class="btn-acao-icone" title="Gerenciar Fatura" style="display:inline-flex; align-items:center; justify-content:center; text-decoration:none;"><span style="font-size:16px;">💳</span></a>`;
@@ -1684,7 +1935,6 @@ function renderizarCentralLembretes(lns, dados, mes) {
     if (cnt) { const pnd = fin.filter(x => !x.pago).length; cnt.style.display = pnd ? 'inline-flex' : 'none'; cnt.textContent = pnd; }
     
     lst.innerHTML = fin.length ? fin.map(i => {
-        // NOVO REDIRECIONAMENTO NA CENTRAL
         const btnAcao = i.isFat 
             ? `<a href="grafico.html?tipo=cartao&cartaoId=${i.cartaoId}&mes=${i.m}" class="btn-acao-icone" title="Gerenciar Fatura" style="display:inline-flex; align-items:center; justify-content:center; text-decoration:none;"><span style="font-size:16px;">💳</span></a>`
             : `<button class="btn-acao-icone ${i.pago ? 'desfazer' : 'pagar'}" onclick="alternarStatusPagamento('${escaparHTML(i.id)}')"><img src="imagens/${i.pago ? 'desfazer' : 'pagar'}.png" style="width:20px;" alt="Ação"></button>`;
@@ -1941,7 +2191,7 @@ async function abrirModalNotificacoes() {
                 <div style="background: var(--surface-2); padding:12px; border-radius:8px; margin-bottom:8px; text-align:left; border-left:4px solid var(--primary);">
                     <strong style="font-size:.9rem; color:var(--text-main);">${escaparHTML(n.titulo || '')}</strong>
                     <p style="font-size:.85rem; margin-top:4px; color:var(--text-muted);">${escaparHTML(n.mensagem || '')}</p>
-                    <small style="font-size:.7rem; color:var(--text-muted);">${n.createdAt ? escaparHTML(new Date(n.createdAt).toLocaleString('pt-BR')) : ''}</small>
+                    <small style="font-size:.7rem; color:var(--text-muted);">${n.createdAt ? escaparHTML(formatarDataSemHora(n.createdAt)) : ''}</small>
                     ${acoesHtml}
                 </div>
             `;
@@ -2084,7 +2334,7 @@ async function abrirModalPrimeiroAcesso() {
 document.addEventListener("DOMContentLoaded", async () => {
     inicializarTemaVisual();
     inicializarPrivacidade();
-    criarIndicadorSincronizacaoUi();
+    injetarHeader();
 
     document.addEventListener('click', (e) => {
         const dd = document.querySelector('.nav-dropdown');

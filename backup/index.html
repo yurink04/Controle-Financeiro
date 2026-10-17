@@ -4,380 +4,541 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="theme-color" content="#8b5e3c">
-
     <title>Controle Financeiro | Acesso</title>
 
     <link rel="stylesheet" href="style.css">
+    <style>
+        /* Tela de carregamento imersiva pós-login */
+        #loginLoadingScreen {
+            position: fixed;
+            inset: 0;
+            background: var(--bg-primary);
+            z-index: 9999;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.5s ease;
+        }
+        #loginLoadingScreen.ativo {
+            opacity: 1;
+            pointer-events: auto;
+        }
+        .loading-profile-img {
+            width: 300px;
+            height: 300px;
+            border-radius: 50%;
+            object-fit: cover;
+            border: 6px solid var(--primary);
+            box-shadow: 0 25px 60px rgba(0,0,0,0.35);
+            animation: pulseProfile 1.8s infinite ease-in-out;
+            background: var(--surface-2);
+        }
+        @keyframes pulseProfile {
+            0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(139, 94, 60, 0.4); }
+            70% { transform: scale(1.05); box-shadow: 0 0 0 32px rgba(139, 94, 60, 0); }
+            100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(139, 94, 60, 0); }
+        }
+        .btn-voltar-usuario {
+            background: none;
+            border: none;
+            color: var(--primary);
+            font-size: 0.85rem;
+            font-weight: 600;
+            cursor: pointer;
+            padding: 0;
+            margin-top: 4px;
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            text-decoration: underline;
+            transition: opacity 0.2s;
+        }
+        .btn-voltar-usuario:hover {
+            opacity: 0.8;
+        }
+        /* Transição de esmaecimento para os textos dinâmicos */
+        .loading-fade-text {
+            transition: opacity 0.35s ease-in-out;
+            opacity: 1;
+        }
+        .loading-fade-text.esmaecendo {
+            opacity: 0;
+        }
+        /* Barra de progresso da tela de carregamento */
+        .loading-progress-bar-container {
+            width: 280px;
+            height: 8px;
+            background: var(--surface-2);
+            border-radius: 99px;
+            overflow: hidden;
+            border: 1px solid var(--border);
+            margin-top: 18px;
+        }
+        .loading-progress-bar-fill {
+            height: 100%;
+            width: 0%;
+            background: var(--primary);
+            border-radius: 99px;
+            transition: width 0.1s linear;
+        }
+        /* Remove completamente qualquer indicador estático legado do botão */
+        .login-submit.loading::after {
+            display: none !important;
+        }
+    </style>
 </head>
 
 <body class="login-page">
 
-    <!-- =========================================================
-         BOTÃO DE TEMA (ATUALIZADO COM IMAGEM)
-         ========================================================= -->
+    <!-- TELA DE CARREGAMENTO COM FOTO 50% MAIOR E TEXTOS COM ESMAECIMENTO -->
+    <div id="loginLoadingScreen">
+        <div style="display: flex; flex-direction: column; align-items: center; text-align: center; max-width: 520px; padding: 24px;">
+            <img id="loadingUserAvatar" src="" alt="Perfil" class="loading-profile-img" style="margin-bottom: 26px;">
+            <h3 id="loadingWelcomeText" class="loading-fade-text" style="font-size: 1.65rem; color: var(--text-main); margin-bottom: 8px; font-weight: 850; line-height: 1.3;">Bem-vindo!</h3>
+            <p id="loadingSubtext" class="loading-fade-text" style="font-size: 1rem; color: var(--text-muted); margin-bottom: 6px; line-height: 1.6; min-height: 32px; display: flex; align-items: center; justify-content: center;">Iniciando sessão...</p>
+            <div id="loadingPercentageText" class="loading-fade-text" style="font-size: 0.9rem; font-weight: 700; color: var(--primary);">0%</div>
+            <div class="loading-progress-bar-container">
+                <div id="loadingProgressBarFill" class="loading-progress-bar-fill"></div>
+            </div>
+        </div>
+    </div>
 
-    <button
-        type="button"
-        class="login-theme-toggle"
-        id="loginThemeToggle"
-        onclick="alternarTemaVisual()"
-        aria-label="Alternar modo escuro"
-        title="Alternar tema"
-    >
-        <img src="imagens/modo_escuro.jpg" alt="Tema" id="themeImage" style="width: 22px; height: 22px; object-fit: contain;">
+    <button type="button" class="login-theme-toggle" onclick="alternarTemaVisual(event)" title="Alternar tema">
+        <img id="themeImage" class="theme-icon" src="imagens/modo_escuro.jpg" alt="Tema" style="width: 22px; height: 22px; border-radius: 50%; object-fit: contain;">
     </button>
-
-
-    <!-- =========================================================
-         TELA DE LOGIN
-         ========================================================= -->
 
     <main class="login-screen">
 
-        <!-- =====================================================
-             PAINEL ESQUERDO
-             ===================================================== -->
-
         <section class="login-brand-panel">
-
             <div class="login-brand-content">
+                <div class="login-brand-logo">R$</div>
+                <div class="login-brand-label">CONTROLE FINANCEIRO</div>
+                <h1>Seu dinheiro.<br><span>Sob controle.</span></h1>
+                <p class="login-brand-description">Organize suas receitas, despesas, cartões e financiamentos em um só lugar.</p>
 
-                <div class="login-brand-logo">
-                    R$
-                </div>
-
-                <div class="login-brand-label">
-                    CONTROLE FINANCEIRO
-                </div>
-
-                <h1>
-                    Seu dinheiro.
-                    <br>
-                    <span>Sob controle.</span>
-                </h1>
-
-                <p class="login-brand-description">
-                    Organize suas receitas, despesas, cartões
-                    e financiamentos em um só lugar.
-                </p>
-
-
-                <!-- =================================================
-                     CARDS DECORATIVOS
-                     ================================================= -->
-
+                <!-- CARDS DECORATIVOS -->
                 <div class="login-finance-preview">
-
                     <div class="finance-preview-card">
-
-                        <span>
-                            Receitas
-                        </span>
-
-                        <strong class="finance-positive">
-                            R$ 4.850,00
-                        </strong>
-
-                        <small>
-                            Este mês
-                        </small>
-
+                        <span>Receitas</span>
+                        <strong class="finance-positive">R$ 4.850,00</strong>
+                        <small>Este mês</small>
                     </div>
-
-
                     <div class="finance-preview-card">
-
-                        <span>
-                            Despesas
-                        </span>
-
-                        <strong class="finance-negative">
-                            R$ 2.730,00
-                        </strong>
-
-                        <small>
-                            Este mês
-                        </small>
-
+                        <span>Despesas</span>
+                        <strong class="finance-negative">R$ 2.730,00</strong>
+                        <small>Este mês</small>
                     </div>
-
-
                     <div class="finance-preview-card finance-preview-highlight">
-
-                        <span>
-                            Saldo disponível
-                        </span>
-
-                        <strong>
-                            R$ 2.120,00
-                        </strong>
-
-                        <small>
-                            Controle em dia
-                        </small>
-
+                        <span>Saldo disponível</span>
+                        <strong>R$ 2.120,00</strong>
+                        <small>Controle em dia</small>
                     </div>
-
                 </div>
-
-
-                <!-- =================================================
-                     RODAPÉ DO PAINEL
-                     ================================================= -->
 
                 <div class="login-brand-footer">
-
                     <span class="login-footer-dot"></span>
-
                     Sistema de controle pessoal
-
                 </div>
-
             </div>
-
         </section>
 
-
-        <!-- =====================================================
-             PAINEL DIREITO
-             ===================================================== -->
-
+        <!-- PAINEL DIREITO -->
         <section class="login-form-panel">
-
             <div class="login-form-wrapper">
+                <div class="login-mobile-logo">R$</div>
 
-                <!-- Logo para telas menores -->
-
-                <div class="login-mobile-logo">
-                    R$
+                <div class="login-heading" id="loginHeadingContainer">
+                    <span class="login-eyebrow" id="loginEyebrowText">BEM-VINDO DE VOLTA</span>
+                    <h2 id="loginTitleText">Acesse sua conta</h2>
+                    <p id="loginSubtitleText">Digite o seu nome de usuário para continuar.</p>
                 </div>
 
+                <form id="formLogin" onsubmit="realizarLogin(event)">
 
-                <!-- =================================================
-                     CABEÇALHO
-                     ================================================= -->
-
-                <div class="login-heading">
-
-                    <span class="login-eyebrow">
-                        BEM-VINDO DE VOLTA
-                    </span>
-
-                    <h2>
-                        Acesse sua conta
-                    </h2>
-
-                    <p>
-                        Digite o seu nome de usuário para continuar.
-                    </p>
-
-                </div>
-
-
-                <!-- =================================================
-                     FORMULÁRIO
-                     ================================================= -->
-
-                <form
-                    id="formLogin"
-                    onsubmit="realizarLogin(event)"
-                >
-
-                    <!-- Campo usuário (Input de texto) -->
-
-                    <div class="login-field">
-
-                        <label for="inputUsuario">
-                            Usuário
-                        </label>
-
-                        <div class="login-select-wrapper" style="padding: 0 12px;">
-
-                            <span class="login-field-icon">
-                                👤
-                            </span>
-
+                    <!-- Campo usuário -->
+                    <div class="login-field" id="blocoUsuarioContainer">
+                        <label for="inputUsuario">Usuário</label>
+                        <div class="login-select-wrapper" id="wrapperInputUsuario" style="padding: 0 12px; display: flex; align-items: center; gap: 10px;">
+                            <span class="login-field-icon" id="iconeUsuarioPadrao">👤</span>
                             <input
                                 type="text"
                                 id="inputUsuario"
                                 placeholder="Digite seu nome de usuário"
-                                autocomplete="off"
+                                autocomplete="username"
                                 required
                                 style="border: none; background: transparent; width: 100%; outline: none; font-size: 0.96rem; color: var(--text-main);"
                             >
-
                         </div>
-
                     </div>
 
+                    <!-- Campo de senha oculto inicialmente -->
+                    <div class="login-field" id="blocoSenha" style="display: none; margin-top: 15px;">
+                        <label for="inputSenha">Palavra-passe</label>
+                        <div class="login-select-wrapper" style="padding: 0 12px;">
+                            <span class="login-field-icon">🔒</span>
+                            <input
+                                type="password"
+                                id="inputSenha"
+                                placeholder="Digite sua senha"
+                                autocomplete="current-password"
+                                style="border: none; background: transparent; width: 100%; outline: none; font-size: 0.96rem; color: var(--text-main);"
+                            >
+                        </div>
+                    </div>
 
-                    <!-- =================================================
-                         BOTÃO ENTRAR
-                         ================================================= -->
-
-                    <button
-                        type="submit"
-                        class="login-submit"
-                        id="loginSubmit"
-                    >
-
+                    <button type="submit" class="login-submit" id="loginSubmit">
                         <span class="login-submit-content">
-
-                            <span class="login-submit-text">
-                                Entrar no Sistema
-                            </span>
-
-                            <span class="login-submit-arrow">
-                                →
-                            </span>
-
+                            <span class="login-submit-text">Continuar</span>
+                            <span class="login-submit-arrow" id="loginSubmitArrow">→</span>
+                            <img id="loginSubmitLoadingGif" src="imagens/loading1.gif" alt="Carregando..." style="width: 20px; height: 20px; object-fit: contain; display: none; margin-left: 8px; vertical-align: middle;">
                         </span>
-
                     </button>
 
                 </form>
 
-
-               <!-- =================================================
-     BOTÃO / CARD DE PRIMEIRO ACESSO
-     ================================================= -->
-
-<div class="login-security" style="cursor: pointer;" onclick="abrirModalPrimeiroAcesso()" title="Clique para cadastrar sua conta">
-
-    <div class="login-security-icon">
-        👤+
-    </div>
-
-    <div>
-
-        <strong>
-            Primeiro acesso
-        </strong>
-
-        <p>
-            Clique aqui para cadastrar seu usuário, nome e senha.
-        </p>
-
-    </div>
-
-</div>
-
-
-                <!-- =================================================
-                     RODAPÉ
-                     ================================================= -->
-
-                <div class="login-form-footer">
-
-                    <span>
-                        Controle Financeiro
-                    </span>
-
-                    <span>
-                        •
-                    </span>
-
-                    <span>
-                        Acesso seguro
-                    </span>
-
+                <div class="login-security" id="cardPrimeiroAcesso" style="cursor: pointer;" onclick="abrirModalPrimeiroAcesso()" title="Clique para cadastrar sua conta">
+                    <div class="login-security-icon">👤+</div>
+                    <div>
+                        <strong>Primeiro acesso</strong>
+                        <p>Clique aqui para cadastrar seu usuário, nome e senha.</p>
+                    </div>
                 </div>
 
+                <div class="login-form-footer">
+                    <span>Controle Financeiro</span>
+                    <span>•</span>
+                    <span>Acesso seguro</span>
+                </div>
             </div>
-
         </section>
 
     </main>
 
-
-    <!-- =========================================================
-         SCRIPT PRINCIPAL
-         ========================================================= -->
-
     <script src="script.js"></script>
 
-
-    <!-- =========================================================
-         SCRIPT DA PÁGINA DE LOGIN
-         ========================================================= -->
-
     <script>
+        let bancoInicializado = false;
+        let usuarioSelecionadoParaLogin = null;
+        const AVATAR_PADRAO = 'data:image/svg+xml;charset=UTF-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22%23a89586%22%3E%3Cpath%20d%3D%22M12%2012c2.21%200%204-1.79%204-4s-1.79-4-4-4-4%201.79-4%204%201.79%204%204%204zm0%202c-2.67%200-8%201.34-8%204v2h16v-2c0-2.66-5.33-4-8-4z%22%2F%3E%3C%2Fsvg%3E';
 
-        document.addEventListener(
-            "DOMContentLoaded",
-            async () => {
-                try {
-                    await inicializarBanco();
-                } catch (erro) {
-                    console.error("Erro ao inicializar banco:", erro);
+        document.addEventListener("DOMContentLoaded", async () => {
+            const botao = document.getElementById("loginSubmit");
+            if (botao) botao.disabled = true;
+            try {
+                const resposta = await fetch(`${API_URL}?action=ping&token=${encodeURIComponent(TOKEN_API)}`, { cache: 'no-store' });
+                if (!resposta.ok) throw new Error("A API não está acessível.");
+                const json = await resposta.json();
+                if (json.status !== 'sucesso') throw new Error("Erro na resposta da API.");
+                bancoInicializado = true;
+            } catch (erro) {
+                console.warn("Aviso de conexão inicial:", erro);
+                bancoInicializado = Boolean(localStorage.getItem("sistemaFinanceiroCompartilhado"));
+                if (!bancoInicializado) {
+                    await mostrarAlertaModal("Não foi possível conectar com o servidor. Verifique a URL da API e a conexão com a internet.");
                 }
+            } finally {
+                if (botao) botao.disabled = !bancoInicializado;
             }
-        );
-
-        /* =========================================================
-           LOGIN POR DIGITAÇÃO E VERIFICAÇÃO DE UNICIDADE
-           ========================================================= */
+        });
 
         async function realizarLogin(event) {
-            event.preventDefault();
+            if (event) event.preventDefault();
 
             const inputUsuario = document.getElementById("inputUsuario");
+            const inputSenha = document.getElementById("inputSenha");
+            const blocoSenha = document.getElementById("blocoSenha");
             const botao = document.getElementById("loginSubmit");
+            const textoBotao = document.querySelector(".login-submit-text");
+            const spanTextoBotao = document.querySelector(".login-submit-text span:first-child") || textoBotao;
+            const setaBotao = document.getElementById("loginSubmitArrow");
+            const gifLoadingBotao = document.getElementById("loginSubmitLoadingGif");
+            const wrapperInputUsuario = document.getElementById("wrapperInputUsuario");
+            const iconeUsuarioPadrao = document.getElementById("iconeUsuarioPadrao");
+            const loginEyebrowText = document.getElementById("loginEyebrowText");
+            const loginTitleText = document.getElementById("loginTitleText");
+            const loginSubtitleText = document.getElementById("loginSubtitleText");
+            const cardPrimeiroAcesso = document.getElementById("cardPrimeiroAcesso");
 
-            if (!inputUsuario || !inputUsuario.value.trim()) {
+            if (!bancoInicializado) {
+                await mostrarAlertaModal("Aguarde a conexão com o servidor ser estabelecida.");
                 return;
             }
 
-            const usuarioDigitado = inputUsuario.value.trim();
-            const dados = obterDados();
-
-            if (botao) {
-                botao.classList.add("loading");
-            }
-
             try {
-                const usuariosEncontrados = (dados.usuarios || []).filter(
-                    u => normalizarTexto(u.usuario || u.nome) === normalizarTexto(usuarioDigitado)
-                );
+                // PASSO 1: IDENTIFICAR O USUÁRIO DIGITADO E BUSCAR APENAS OS DADOS DELE NO SERVIDOR
+                if (!usuarioSelecionadoParaLogin) {
+                    const usuarioDigitado = inputUsuario.value.trim();
+                    if (!usuarioDigitado) return;
 
-                if (usuariosEncontrados.length === 0) {
-                    await mostrarAlertaModal("Usuário não encontrado no sistema.");
+                    if (botao) botao.classList.add("loading");
+                    if (spanTextoBotao) spanTextoBotao.textContent = "Validando usuário...";
+                    if (setaBotao) setaBotao.style.display = "none";
+                    if (gifLoadingBotao) gifLoadingBotao.style.display = "inline-block";
+
+                    const respostaCheck = await fetch(API_URL, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                        body: JSON.stringify({
+                            action: 'verificarCredenciaisLogin',
+                            token: TOKEN_API,
+                            usuario: usuarioDigitado,
+                            senhaHash: 'CHECK_APENAS_USUARIO'
+                        })
+                    });
+
+                    if (!respostaCheck.ok) throw new Error("Erro de comunicação com o servidor.");
+                    const resultadoCheck = await respostaCheck.json();
+
+                    if (resultadoCheck.status === 'erro' && resultadoCheck.mensagem === 'Palavra-passe incorreta.') {
+                        // Usuário existe
+                    } else if (resultadoCheck.status !== 'sucesso' && !resultadoCheck.usuario) {
+                        await mostrarAlertaModal(resultadoCheck.mensagem || "Usuário não encontrado no sistema.");
+                        if (botao) botao.classList.remove("loading");
+                        if (spanTextoBotao) spanTextoBotao.textContent = "Continuar";
+                        if (setaBotao) setaBotao.style.display = "inline";
+                        if (gifLoadingBotao) gifLoadingBotao.style.display = "none";
+                        return;
+                    }
+
+                    const usuarioUnico = resultadoCheck.usuario;
+                    if (!usuarioUnico) {
+                        await mostrarAlertaModal("Usuário não encontrado no sistema.");
+                        if (botao) botao.classList.remove("loading");
+                        if (spanTextoBotao) spanTextoBotao.textContent = "Continuar";
+                        if (setaBotao) setaBotao.style.display = "inline";
+                        if (gifLoadingBotao) gifLoadingBotao.style.display = "none";
+                        return;
+                    }
+
+                    usuarioSelecionadoParaLogin = usuarioUnico;
+                    inputUsuario.readOnly = true;
+                    inputUsuario.style.opacity = '0.7';
+
+                    if (iconeUsuarioPadrao) {
+                        iconeUsuarioPadrao.remove();
+                    }
+                    const avatarImg = document.createElement("img");
+                    avatarImg.id = "avatarDinamicoInput";
+                    avatarImg.src = usuarioSelecionadoParaLogin.fotoPerfil || AVATAR_PADRAO;
+                    avatarImg.alt = "Avatar";
+                    avatarImg.style.width = "34px";
+                    avatarImg.style.height = "34px";
+                    avatarImg.style.borderRadius = "50%";
+                    avatarImg.style.objectFit = "cover";
+                    avatarImg.style.border = "1.5px solid var(--primary)";
+                    avatarImg.style.flexShrink = "0";
+                    avatarImg.style.background = "var(--surface-2)";
+                    wrapperInputUsuario.prepend(avatarImg);
+
+                    const primeiroNome = usuarioSelecionadoParaLogin.nome.split(' ')[0];
+                    if (loginEyebrowText) loginEyebrowText.textContent = "AUTENTICAÇÃO";
+                    if (loginTitleText) loginTitleText.textContent = `Bem-vindo, ${primeiroNome}!`;
+                    
+                    if (loginSubtitleText) {
+                        loginSubtitleText.innerHTML = `Digite a sua senha <br><button type="button" class="btn-voltar-usuario" onclick="voltarParaTrocarUsuario()">← Voltar / Trocar usuário</button>`;
+                    }
+
+                    if (cardPrimeiroAcesso) cardPrimeiroAcesso.style.display = 'none';
+
+                    blocoSenha.style.display = 'block';
                     if (botao) botao.classList.remove("loading");
+                    if (spanTextoBotao) spanTextoBotao.textContent = "Entrar no Sistema";
+                    if (setaBotao) setaBotao.style.display = "inline";
+                    if (gifLoadingBotao) gifLoadingBotao.style.display = "none";
+                    
+                    setTimeout(() => inputSenha.focus(), 50);
                     return;
                 }
 
-                if (usuariosEncontrados.length > 1) {
-                    await mostrarAlertaModal("Erro de segurança: Existe mais de um registro com este usuário exato. Contate o administrador.");
-                    if (botao) botao.classList.remove("loading");
+                // PASSO 2: VALIDAR A SENHA DE FORMA OTIMIZADA DIRETAMENTE NA NUVEM
+                const senhaDigitada = inputSenha.value.trim();
+                if (!senhaDigitada) {
+                    await mostrarAlertaModal("Por favor, digite a sua senha.");
                     return;
                 }
 
-                const usuarioUnico = usuariosEncontrados[0];
-                const sucesso = await selecionarUsuario(usuarioUnico.id);
+                if (botao) botao.classList.add("loading");
+                if (spanTextoBotao) spanTextoBotao.textContent = "Validando senha...";
+                if (setaBotao) setaBotao.style.display = "none";
+                if (gifLoadingBotao) gifLoadingBotao.style.display = "inline-block";
 
-                if (!sucesso && botao) {
-                    botao.classList.remove("loading");
+                const hashDigitado = await gerarHash(senhaDigitada);
+
+                const respostaAuth = await fetch(API_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                    body: JSON.stringify({
+                        action: 'verificarCredenciaisLogin',
+                        token: TOKEN_API,
+                        usuario: usuarioSelecionadoParaLogin.usuario || usuarioSelecionadoParaLogin.nome,
+                        senhaHash: hashDigitado
+                    })
+                });
+
+                if (!respostaAuth.ok) throw new Error("Erro de comunicação com o servidor.");
+                const resultadoAuth = await respostaAuth.json();
+
+                if (resultadoAuth.status !== 'sucesso') {
+                    await mostrarAlertaModal(resultadoAuth.mensagem || "Palavra-passe incorreta.");
+                    inputSenha.value = '';
+                    inputSenha.focus();
+                    if (botao) botao.classList.remove("loading");
+                    if (spanTextoBotao) spanTextoBotao.textContent = "Entrar no Sistema";
+                    if (setaBotao) setaBotao.style.display = "inline";
+                    if (gifLoadingBotao) gifLoadingBotao.style.display = "none";
+                    return;
                 }
+
+                // EXIBIR TELA DE CARREGAMENTO IMERSIVA COM FOTO AMPLIADA E PROGRESSO
+                const telaCarregamento = document.getElementById("loginLoadingScreen");
+                const avatarCarregamento = document.getElementById("loadingUserAvatar");
+                const textoBoasVindas = document.getElementById("loadingWelcomeText");
+                const subtextoCarregamento = document.getElementById("loadingSubtext");
+                const textoPorcentagem = document.getElementById("loadingPercentageText");
+                const barraPreenchimento = document.getElementById("loadingProgressBarFill");
+
+                if (avatarCarregamento) {
+                    avatarCarregamento.src = resultadoAuth.usuario.fotoPerfil || usuarioSelecionadoParaLogin.fotoPerfil || AVATAR_PADRAO;
+                }
+                if (textoBoasVindas) {
+                    textoBoasVindas.textContent = `Olá, ${resultadoAuth.usuario.nome}!`;
+                }
+                if (telaCarregamento) {
+                    telaCarregamento.classList.add("ativo");
+                }
+
+                // Grava a sessão localmente
+                localStorage.setItem('usuarioLogado', String(resultadoAuth.usuario.id));
+                localStorage.setItem('privacidadeAtiva', 'true');
+
+                // Função auxiliar para trocar o texto com transição de esmaecimento (fade)
+                function atualizarTextoComFade(elemento, novoTexto) {
+                    if (!elemento) return;
+                    elemento.classList.add("esmaecendo");
+                    setTimeout(() => {
+                        elemento.textContent = novoTexto;
+                        elemento.classList.remove("esmaecendo");
+                    }, 175);
+                }
+
+                // Execução paralela: Sincronização completa do banco + simulação fluida de progresso 1-100% (2.8 segundos)
+                let progressoAtual = 0;
+                let bancoPronto = false;
+                const duracaoTotalMs = 1200;
+                const intervaloMs = 30;
+                const incrementoPorPasso = (100 / (duracaoTotalMs / intervaloMs));
+                let ultimaMensagemStatus = "";
+
+                const promessaProgresso = new Promise((resolve) => {
+                    const timer = setInterval(() => {
+                        progressoAtual += incrementoPorPasso;
+                        // Segura em 95% até o banco terminar de baixar de verdade
+                        const teto = bancoPronto ? 100 : 95;
+                        if (progressoAtual >= teto) {
+                            progressoAtual = teto;
+                            if (teto === 100) { clearInterval(timer); resolve(); }
+                        }
+
+                        const porcentagemInteira = Math.round(progressoAtual);
+                        if (textoPorcentagem) textoPorcentagem.textContent = `${porcentagemInteira}%`;
+                        if (barraPreenchimento) barraPreenchimento.style.width = `${progressoAtual}%`;
+
+                        // Mensagens dinâmicas com fade
+                        let mensagemDesejada = "";
+                        if (porcentagemInteira < 30) {
+                            mensagemDesejada = "Estabelecendo conexão segura...";
+                        } else if (porcentagemInteira < 65) {
+                            mensagemDesejada = "Baixando base de dados financeira...";
+                        } else if (porcentagemInteira < 96) {
+                            mensagemDesejada = "Organizando dados e período atual...";
+                        } else {
+                            mensagemDesejada = "Tudo pronto! Entrando no sistema...";
+                        }
+
+                        if (subtextoCarregamento && mensagemDesejada !== ultimaMensagemStatus) {
+                            ultimaMensagemStatus = mensagemDesejada;
+                            atualizarTextoComFade(subtextoCarregamento, mensagemDesejada);
+                        }
+                    }, intervaloMs);
+                });
+
+                // Baixa o banco completo, inicializa o estado de memória E pré-carrega as variáveis do período
+                await Promise.all([
+                    inicializarBanco().then(() => {
+                        const dadosCarregados = obterDados();
+                        if (dadosCarregados && typeof migrarDados === 'function') {
+                            migrarDados(dadosCarregados);
+                        }
+                    }).finally(() => { bancoPronto = true; }),
+                    promessaProgresso
+                ]);
+
+                window.location.href = 'dashboard.html';
+                return true;
 
             } catch (erro) {
-                console.error("Erro ao realizar login:", erro);
-                if (botao) {
-                    botao.classList.remove("loading");
-                }
+                console.error("Erro no processo de login:", erro);
+                const telaCarregamento = document.getElementById("loginLoadingScreen");
+                if (telaCarregamento) telaCarregamento.classList.remove("ativo");
+                if (botao) botao.classList.remove("loading");
+                if (spanTextoBotao) spanTextoBotao.textContent = usuarioSelecionadoParaLogin ? "Entrar no Sistema" : "Continuar";
+                if (setaBotao) setaBotao.style.display = "inline";
+                if (gifLoadingBotao) gifLoadingBotao.style.display = "none";
             }
         }
 
+        function voltarParaTrocarUsuario() {
+            usuarioSelecionadoParaLogin = null;
+            
+            const inputUsuario = document.getElementById("inputUsuario");
+            const inputSenha = document.getElementById("inputSenha");
+            const blocoSenha = document.getElementById("blocoSenha");
+            const textoBotao = document.querySelector(".login-submit-text");
+            const spanTextoBotao = document.querySelector(".login-submit-text span:first-child") || textoBotao;
+            const setaBotao = document.getElementById("loginSubmitArrow");
+            const gifLoadingBotao = document.getElementById("loginSubmitLoadingGif");
+            const wrapperInputUsuario = document.getElementById("wrapperInputUsuario");
+            const avatarDinamicoInput = document.getElementById("avatarDinamicoInput");
+            const loginEyebrowText = document.getElementById("loginEyebrowText");
+            const loginTitleText = document.getElementById("loginTitleText");
+            const loginSubtitleText = document.getElementById("loginSubtitleText");
+            const cardPrimeiroAcesso = document.getElementById("cardPrimeiroAcesso");
 
-        /* =========================================================
-           ATUALIZAÇÃO DA IMAGEM DO TEMA
-           ========================================================= */
+            inputUsuario.readOnly = false;
+            inputUsuario.style.opacity = '1';
+            inputUsuario.value = '';
+
+            if (avatarDinamicoInput) {
+                avatarDinamicoInput.remove();
+            }
+            if (!document.getElementById("iconeUsuarioPadrao")) {
+                const iconePadrao = document.createElement("span");
+                iconePadrao.id = "iconeUsuarioPadrao";
+                iconePadrao.className = "login-field-icon";
+                iconePadrao.textContent = "👤";
+                wrapperInputUsuario.prepend(iconePadrao);
+            }
+
+            blocoSenha.style.display = 'none';
+            inputSenha.value = '';
+
+            if (spanTextoBotao) spanTextoBotao.textContent = "Continuar";
+            if (setaBotao) setaBotao.style.display = "inline";
+            if (gifLoadingBotao) gifLoadingBotao.style.display = "none";
+            if (loginEyebrowText) loginEyebrowText.textContent = "BEM-VINDO DE VOLTA";
+            if (loginTitleText) loginTitleText.textContent = "Acesse sua conta";
+            if (loginSubtitleText) loginSubtitleText.textContent = "Digite o seu nome de usuário para continuar.";
+            if (cardPrimeiroAcesso) cardPrimeiroAcesso.style.display = 'flex';
+
+            inputUsuario.focus();
+        }
 
         function atualizarIconeTemaLogin() {
             const img = document.getElementById("themeImage");
             if (!img) return;
-
-            // Mantém a mesma imagem padronizada do cabeçalho das outras telas
             img.src = "imagens/modo_escuro.jpg";
         }
 
@@ -386,17 +547,14 @@
         });
 
         const alternarTemaOriginal = window.alternarTemaVisual;
-
-        window.alternarTemaVisual = function () {
+        window.alternarTemaVisual = function (event) {
             if (typeof alternarTemaOriginal === "function") {
-                alternarTemaOriginal();
+                alternarTemaOriginal(event);
             }
-
             requestAnimationFrame(() => {
                 atualizarIconeTemaLogin();
             });
         };
-
     </script>
 
 </body>

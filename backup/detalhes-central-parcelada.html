@@ -7,58 +7,6 @@
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
-   <header class="app-header">
-    <div class="header-inner">
-        <div class="header-left">
-            <div class="brand">
-                <span class="brand-title">Controle Financeiro</span>
-                <span class="brand-subtitle">Gestão Inteligente</span>
-            </div>
-            <div class="header-perfil-sync">
-                <span id="usuarioLogadoNome" class="user-chip"></span>
-                <span id="syncStatusIcon" title="Sincronizado" style="cursor: pointer; display: flex; align-items: center;">
-                    <img src="imagens/nuvem.png" alt="Sync" style="width: 22px; height: 22px;">
-                </span>
-            </div>
-        </div>
-
-        <nav class="app-nav-center" aria-label="Navegação principal">
-            <a href="dashboard.html">Início</a>
-            <div class="nav-dropdown" style="position: relative;">
-                <a href="#" onclick="event.preventDefault();" style="cursor: pointer;">Cadastros ▾</a>
-                <div class="nav-dropdown-content" style="position: absolute; top: 100%; left: 0;">
-                    <a href="cartoes.html">Cartões</a>
-                    <a href="categorias.html">Categorias</a>
-                    <a href="bens.html">Bens</a>
-                    <a href="financiamentos.html">Financiamentos</a>
-                </div>
-            </div>
-            <a href="lancamentos.html">Lançamentos</a>
-            <a href="central-pagamentos.html">Central de Pagamentos</a>
-            <a href="relatorios.html">Relatórios</a>
-        </nav>
-        
-        <div class="header-right">
-            <div class="header-tools">
-                <button type="button" onclick="alternarTemaVisual()" title="Alternar tema">
-                    <img src="imagens/modo_escuro.jpg" alt="Tema">
-                </button>
-                <a href="configuracoes.html" title="Configurações">
-                    <img src="imagens/config.png" alt="Configurações">
-                </a>
-                <button type="button" title="Notificações" id="btnNotificacoesHeader">
-                    <img src="imagens/notificacao.png" alt="Notificações" onerror="this.style.display='none'">
-                </button>
-            </div>
-            
-            <div class="header-tools" style="border-left: 1px solid var(--border-color, #e5e7eb); padding-left: 18px;">
-                <a href="index.html" onclick="event.preventDefault(); deslogarSistema()" class="btn-sair-extremo" title="Sair do sistema">
-                    <img src="imagens/exit.png" alt="Sair">
-                </a>
-            </div>
-        </div>
-    </div>
-</header>
 
     <main class="container">
         <div class="page-heading">
@@ -121,32 +69,44 @@
 
     <script src="script.js"></script>
     <script>
-        verificarAutenticacao();
         const urlParams = new URLSearchParams(window.location.search);
         const lancamentoIdUrl = urlParams.get('id');
         const parcelamentoIdUrl = urlParams.get('parcelamentoId');
         let paginaAtualParcelas = 1;
         const itensPorPaginaParc = 30;
 
-        function obterParcelasDoGrupo(dados) {
-            const lancamentos = dados.lancamentos || [];
-            if (parcelamentoIdUrl) {
-                return lancamentos.filter(l => String(l.parcelamentoId) === String(parcelamentoIdUrl))
-                    .sort((a, b) => Number(a.parcelaAtual || 0) - Number(b.parcelaAtual || 0));
+        document.addEventListener('DOMContentLoaded', async () => {
+            injetarHeader();
+            const autenticado = await verificarAutenticacao();
+            if (autenticado) {
+                if (!lancamentoIdUrl && !parcelamentoIdUrl) {
+                    mostrarAlertaModal('Identificador do parcelamento não especificado.').then(() => window.location.href = 'central-pagamentos.html');
+                } else {
+                    carregarDetalhesParceladaPagina();
+                }
             }
-            if (lancamentoIdUrl) {
+        });
+
+        function obterParcelasDoGrupo(dados) {
+            const lancamentos = filtrarDadosPorPermissao(dados.lancamentos || [], dados, 'casal').filter(l => usuarioPodeAlterarLancamento(l, dados) || l.usuarioId == null);
+            let grupo = [];
+            if (parcelamentoIdUrl) {
+                grupo = lancamentos.filter(l => String(l.parcelamentoId || '') === String(parcelamentoIdUrl));
+            } else if (lancamentoIdUrl) {
                 const referencia = lancamentos.find(l => String(l.id) === String(lancamentoIdUrl));
                 if (!referencia) return [];
-                const chaveGrupo = referencia.parcelamentoId || descricaoBaseParcelamento(referencia.descricao || '');
-                return lancamentos.filter(l => 
-                    (referencia.parcelamentoId && l.parcelamentoId === referencia.parcelamentoId) ||
-                    (!referencia.parcelamentoId && descricaoBaseParcelamento(l.descricao || '') === chaveGrupo)
-                ).sort((a, b) => Number(a.parcelaAtual || 0) - Number(b.parcelaAtual || 0));
+                grupo = referencia.parcelamentoId
+                    ? lancamentos.filter(l => String(l.parcelamentoId) === String(referencia.parcelamentoId))
+                    : [referencia];
             }
-            return [];
+            return grupo.sort((a, b) => {
+                const parcelaA = Number(a.parcelaAtual || 0), parcelaB = Number(b.parcelaAtual || 0);
+                if (parcelaA !== parcelaB) return parcelaA - parcelaB;
+                return String(a.vencimento || '').localeCompare(String(b.vencimento || ''));
+            });
         }
 
-        function statusBadge(lancamento) {
+         function statusBadge(lancamento) {
             const status = lancamento.status || (lancamento.pago ? 'pago' : 'pendente');
             const texto = status === 'pago' ? 'Pago' : status === 'atrasado' ? 'Atrasado' : 'Pendente';
             const classe = status === 'pago' ? 'status-pago' : status === 'atrasado' ? 'status-atrasado' : 'status-pendente';
@@ -185,7 +145,7 @@
             if (elForma) elForma.value = infoForma;
 
             const totalCompra = parcelas.reduce((acc, p) => acc + Number(p.valor || 0), 0);
-            const pagas = parcelas.filter(p => p.pago).length;
+            const pagas = parcelas.filter(p => p.pago === true || p.status === 'pago').length;
             const totalQtd = parcelas.length;
 
             const elTotal = document.getElementById('infoValorTotalCompra');
@@ -255,7 +215,9 @@
                     <td>${statusBadge(l)}</td>
                     <td class="action-cell">
                         <button type="button" onclick="editarValorParcelaGrupo(${Number(l.id)})" class="btn-acao-icone editar" title="Editar valor">✎</button>
-                        <button type="button" onclick="alternarStatusPagamentoParcela(${Number(l.id)})" class="btn-acao-icone ${l.pago ? 'desfazer' : 'pagar'}" title="Alterar status">${l.pago ? '↩' : '✓'}</button>
+                        ${l.formaPagamento === 'CARTAO'
+                            ? `<a href="grafico.html?tipo=cartao&cartaoId=${l.cartaoId}&mes=${String(l.vencimento).slice(0, 7)}" class="btn-acao-icone" title="Gerenciar Fatura" style="display:inline-flex; align-items:center; justify-content:center; text-decoration:none;"><span style="font-size:16px;">💳</span></a>`
+                            : `<button type="button" onclick="alternarStatusPagamentoParcela(${Number(l.id)})" class="btn-acao-icone ${(l.pago === true || l.status === 'pago') ? 'desfazer' : 'pagar'}" title="Alterar status">${(l.pago === true || l.status === 'pago') ? '↩' : '✓'}</button>`}
                     </td>`;
                 tbody.appendChild(tr);
             });
@@ -264,17 +226,21 @@
         async function editarValorParcelaGrupo(lancamentoId) {
             const valorStr = await mostrarPromptModal('Editar valor da parcela', 'Digite o novo valor (R$):');
             if (valorStr === null) return;
-            const novoValor = Number(String(valorStr).replace(',', '.'));
-            if (!Number.isFinite(novoValor) || novoValor <= 0) {
+            const novoValor = numeroSeguro(String(valorStr).replace(',', '.'));
+            if (novoValor <= 0) {
                 await mostrarAlertaModal('Valor inválido.'); 
                 return;
             }
+            if (!await exigirPermissao('criarMovimento', 'editar valores de parcelas')) return;
             const dados = obterDados();
             const lanc = (dados.lancamentos || []).find(l => String(l.id) === String(lancamentoId));
-            if (!lanc) return;
+            if (!lanc || !usuarioPodeAlterarLancamento(lanc, dados)) {
+                await mostrarAlertaModal('Você não tem permissão para editar esta parcela.');
+                return;
+            }
             lanc.valor = Number(novoValor.toFixed(2));
             lanc.updatedAt = new Date().toISOString();
-            registrarLogInterno(dados, 'EDIÇÃO VALOR PARCELA', `Parcela ID ${lancamentoId} alterada para ${formatarMoeda(novoValor)}`);
+            registrarLog(dados, 'EDIÇÃO VALOR PARCELA', `Parcela ID ${lancamentoId} alterada para ${formatarMoeda(novoValor)}`);
             await salvarDados(dados);
             await mostrarAlertaModal('Valor atualizado com sucesso.');
             carregarDetalhesParceladaPagina();
@@ -285,11 +251,6 @@
             if (ok) carregarDetalhesParceladaPagina();
         }
 
-        if (!lancamentoIdUrl && !parcelamentoIdUrl) {
-            mostrarAlertaModal('Identificador do parcelamento não especificado.').then(() => window.location.href = 'central-pagamentos.html');
-        } else {
-            carregarDetalhesParceladaPagina();
-        }
     </script>
 </body>
 </html>

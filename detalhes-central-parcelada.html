@@ -216,7 +216,7 @@
                     <td class="action-cell">
                         <button type="button" onclick="editarValorParcelaGrupo(${Number(l.id)})" class="btn-acao-icone editar" title="Editar valor">✎</button>
                         ${l.formaPagamento === 'CARTAO'
-                            ? '<button type="button" class="btn-acao-icone" disabled title="A quitação é controlada pela fatura do cartão">💳</button>'
+                            ? `<a href="grafico.html?tipo=cartao&cartaoId=${l.cartaoId}&mes=${String(l.vencimento).slice(0, 7)}" class="btn-acao-icone" title="Gerenciar Fatura" style="display:inline-flex; align-items:center; justify-content:center; text-decoration:none;"><span style="font-size:16px;">💳</span></a>`
                             : `<button type="button" onclick="alternarStatusPagamentoParcela(${Number(l.id)})" class="btn-acao-icone ${(l.pago === true || l.status === 'pago') ? 'desfazer' : 'pagar'}" title="Alterar status">${(l.pago === true || l.status === 'pago') ? '↩' : '✓'}</button>`}
                     </td>`;
                 tbody.appendChild(tr);

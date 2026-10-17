@@ -5,151 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Relatórios e Fechamento | Controle Financeiro</title>
     <link rel="stylesheet" href="style.css">
-    <style>
-        .tabela-fluida table.tabela {
-            min-width: 100% !important;
-        }
-
-        .page-heading {
-            display: flex;
-            align-items: flex-start;
-            justify-content: space-between;
-            gap: 18px;
-            flex-wrap: wrap;
-        }
-
-        .relatorios-toolbar {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            gap: 12px;
-            margin-bottom: 18px;
-            width: 100%;
-            flex-wrap: wrap;
-        }
-
-        .menu-opcoes-container, .menu-personalizar-container {
-            position: relative;
-            display: inline-block;
-        }
-
-        .btn-toolbar-custom {
-            background: var(--surface-2);
-            color: var(--text-main);
-            border: 1px solid var(--border);
-            padding: 8px 14px;
-            border-radius: 10px;
-            cursor: pointer;
-            font-size: 0.9rem;
-            font-weight: 600;
-            display: inline-flex;
-            align-items: center;
-            gap: 6px;
-            transition: var(--transition-fast);
-        }
-
-        .btn-toolbar-custom:hover {
-            background: var(--surface);
-            border-color: var(--border-strong);
-        }
-
-        .dropdown-menu-personalizar {
-            display: none;
-            position: absolute;
-            right: 0;
-            top: calc(100% + 6px);
-            background: var(--surface);
-            border: 1px solid var(--border);
-            border-radius: 12px;
-            box-shadow: var(--shadow-lg);
-            z-index: 100;
-            min-width: 240px;
-            padding: 12px;
-            animation: pageIn 0.15s ease both;
-        }
-
-        .dropdown-menu-personalizar label {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            font-size: 0.85rem;
-            font-weight: 500;
-            cursor: pointer;
-            padding: 6px 0;
-            color: var(--text-main);
-        }
-
-        .dropdown-menu-personalizar input[type="checkbox"] {
-            width: 16px;
-            height: 16px;
-            accent-color: var(--primary);
-            cursor: pointer;
-        }
-
-        @media print {
-            body { background: #fff !important; color: #000 !important; }
-            header, .app-header, .relatorios-toolbar, .menu-opcoes-container, .menu-personalizar-container { display: none !important; }
-            .container { width: 100% !important; margin: 0 !important; padding: 0 !important; }
-            .form-card { box-shadow: none !important; border: 1px solid #ccc !important; break-inside: avoid; margin-bottom: 12px !important; }
-        }
-    </style>
 </head>
 <body>
-   <header class="app-header">
-    <div class="header-inner">
-        <div class="header-left">
-            <div class="brand">
-                <span class="brand-title">Controle Financeiro</span>
-                <span class="brand-subtitle">Gestão Inteligente</span>
-            </div>
-            <div class="header-perfil-sync">
-                <span id="usuarioLogadoNome" class="user-chip"></span>
-                <span id="syncStatusIcon" title="Sincronizado" style="cursor: pointer; display: flex; align-items: center;">
-                    <img src="imagens/nuvem.png" alt="Sync" style="width: 22px; height: 22px;">
-                </span>
-            </div>
-        </div>
-
-        <nav class="app-nav-center" aria-label="Navegação principal">
-            <a href="dashboard.html">Início</a>
-            <div class="nav-dropdown" style="position: relative;">
-                <a href="#" onclick="event.preventDefault();" style="cursor: pointer;">Cadastros ▾</a>
-                <div class="nav-dropdown-content" style="position: absolute; top: 100%; left: 0;">
-                    <a href="cartoes.html">Cartões</a>
-                    <a href="categorias.html">Categorias</a>
-                    <a href="bens.html">Bens</a>
-                    <a href="financiamentos.html">Financiamentos</a>
-                </div>
-            </div>
-            <a href="lancamentos.html">Lançamentos</a>
-            <a href="central-pagamentos.html">Central de Pagamentos</a>
-            <a href="relatorios.html">Relatórios</a>
-        </nav>
-
-        <div class="header-right">
-            <div class="header-tools">
-                <button type="button" onclick="alternarPrivacidade()" title="Ocultar/Mostrar Valores" id="btnPrivacidade">
-                    <img src="imagens/esconder.png" alt="Privacidade" id="imgPrivacidade">
-                </button>
-                <button type="button" onclick="alternarTemaVisual()" title="Alternar tema">
-                    <img src="imagens/modo_escuro.jpg" alt="Tema">
-                </button>
-                <a href="configuracoes.html" title="Configurações">
-                    <img src="imagens/config.png" alt="Configurações">
-                </a>
-                <button type="button" title="Notificações" id="btnNotificacoesHeader">
-                    <img src="imagens/notificacao.png" alt="Notificações" onerror="this.style.display='none'">
-                </button>
-            </div>
-            
-            <div class="header-tools" style="border-left: 1px solid var(--border-color, #e5e7eb); padding-left: 18px;">
-                <a href="index.html" onclick="event.preventDefault(); deslogarSistema()" class="btn-sair-extremo" title="Sair do sistema">
-                    <img src="imagens/exit.png" alt="Sair">
-                </a>
-            </div>
-        </div>
-    </div>
-</header>
 
     <main class="container">
         <div class="page-heading">
@@ -197,7 +54,7 @@
                 <div class="stat-value positivo" id="relTotalEntradas">R$ 0,00</div>
             </div>
             <div class="stat-box">
-                <span class="stat-label">Total Saídas Reais</span>
+                <span class="stat-label">Total Saídas no Período</span>
                 <div class="stat-value negativo" id="relTotalSaidas">R$ 0,00</div>
             </div>
             <div class="stat-box">
@@ -206,9 +63,9 @@
                 <div class="stat-detail">Sobra sobre as entradas</div>
             </div>
             <div class="stat-box">
-                <span class="stat-label">Comprometimento Fixo</span>
+                <span class="stat-label">Gastos Essenciais / Entradas</span>
                 <div class="stat-value warning" id="relComprometimento">0%</div>
-                <div class="stat-detail">Financiamentos / Essenciais</div>
+                <div class="stat-detail">Percentual das entradas destinado a despesas essenciais</div>
             </div>
         </div>
 
@@ -331,18 +188,22 @@
         </section>
     </main>
 
-    <script src="script.js"></script>
+   <script src="script.js"></script>
     <script>
-        verificarAutenticacao();
-        
-        const hoje = new Date();
-        const anoAtual = hoje.getFullYear();
-        const mesAtual = String(hoje.getMonth() + 1).padStart(2, '0');
-        const filtroMesRelatorioEl = document.getElementById('filtroMesRelatorio');
-        if (filtroMesRelatorioEl) filtroMesRelatorioEl.value = `${anoAtual}-${mesAtual}`;
+        document.addEventListener('DOMContentLoaded', async () => {
+            injetarHeader();
+            const autenticado = await verificarAutenticacao();
+            if (autenticado) {
+                const hoje = new Date();
+                const anoAtual = hoje.getFullYear();
+                const mesAtual = String(hoje.getMonth() + 1).padStart(2, '0');
+                const filtroMesRelatorioEl = document.getElementById('filtroMesRelatorio');
+                if (filtroMesRelatorioEl) filtroMesRelatorioEl.value = `${anoAtual}-${mesAtual}`;
 
-        carregarPreferenciasVisao();
-        carregarRelatorioMensal();
+                carregarPreferenciasVisao();
+                carregarRelatorioMensal();
+            }
+        });
 
         async function marcarPagamento(id) {
             const ok = await alternarStatusPagamento(id);
@@ -440,14 +301,12 @@
 
             const dados = obterDados();
             
-            // APLICAÇÃO DOS FILTROS DE PERMISSÃO / COMPARTILHAMENTO
             const lancamentosPermitidos = filtrarDadosPorPermissao(dados.lancamentos || [], dados, 'casal');
             const bensPermitidos = filtrarDadosPorPermissao(dados.bens || [], dados, 'casal');
             const cartoesPermitidos = filtrarDadosPorPermissao(dados.cartoes || [], dados, 'casal');
 
             const categorias = dados.categorias || [];
-
-            const movimentosMes = lancamentosPermitidos.filter(l => (l.vencimento || l.data || '').startsWith(mesSelecionado));
+            const movimentosMes = lancamentosPermitidos.filter(l => String(l.vencimento || l.data || l.dataCompra || l.createdAt || '').startsWith(mesSelecionado));
 
             let totalEntradas = 0;
             let totalSaidas = 0;
@@ -497,7 +356,7 @@
 
                     if (m.financiamentoId || (m.descricao && normalizarTexto(m.descricao).includes('financiamento'))) {
                         const trFin = document.createElement('tr');
-                        trFin.innerHTML = `<td>${m.descricao || ''}</td><td>${m.parcelaAtual && m.totalParcelas ? `${m.parcelaAtual}/${m.totalParcelas}` : 'Única'}</td><td class="negativo">R$ ${valor.toLocaleString('pt-BR', {minimumFractionDigits: 2})}</td>`;
+                        trFin.innerHTML = `<td>${escaparHTML(m.descricao || '')}</td><td>${m.parcelaAtual && m.totalParcelas ? `${escaparHTML(m.parcelaAtual)}/${escaparHTML(m.totalParcelas)}` : 'Única'}</td><td class="negativo">R$ ${valor.toLocaleString('pt-BR', {minimumFractionDigits: 2})}</td>`;
                         if (tbodyFin) tbodyFin.appendChild(trFin);
                         countFin++;
                     }
@@ -505,12 +364,12 @@
 
                 const btnAcoes = `
                     <div style="display:flex; gap:6px; justify-content: flex-start;">
-                        <button type="button" onclick="window.location.href='editar-lancamento.html?id=${m.id}'" class="btn-acao-icone editar" title="Editar">
+                        <button type="button" onclick="window.location.href='editar-lancamento.html?id=${encodeURIComponent(String(m.id))}'" class="btn-acao-icone editar" title="Editar">
                             <img src="imagens/editar.png" alt="Editar">
                         </button>
-                        <button type="button" onclick="marcarPagamento(${m.id})" class="btn-acao-icone" title="${m.pago ? 'Marcar como Pendente' : 'Marcar como Pago'}">
-                            <img src="imagens/${m.pago ? 'desfazer' : 'pagar'}.png" alt="${m.pago ? 'Pendente' : 'Pagar'}">
-                        </button>
+                        ${m.formaPagamento === 'CARTAO'
+                            ? `<a href="grafico.html?tipo=cartao&cartaoId=${m.cartaoId}&mes=${String(m.vencimento).slice(0, 7)}" class="btn-acao-icone" title="Gerenciar Fatura" style="display:inline-flex; align-items:center; justify-content:center; text-decoration:none;"><span style="font-size:16px;">💳</span></a>`
+                            : `<button type="button" onclick="marcarPagamento(${Number(m.id)})" class="btn-acao-icone" title="${m.pago ? 'Marcar como Pendente' : 'Marcar como Pago'}"><img src="imagens/${m.pago ? 'desfazer' : 'pagar'}.png" alt="${m.pago ? 'Pendente' : 'Pagar'}"></button>`}
                     </div>
                 `;
 
@@ -518,7 +377,7 @@
                 const seloReceita = tipo === 'entrada' ? '<span class="status-badge status-pago" style="margin-right:8px; font-size:0.6rem; padding: 2px 6px;">RECEITA</span>' : '';
 
                 const trConta = document.createElement('tr');
-                trConta.innerHTML = `<td>${seloReceita}${m.descricao || ''}</td><td>${m.vencimento ? m.vencimento.split('-').reverse().join('/') : '-'}</td><td class="${classeValor}">R$ ${valor.toLocaleString('pt-BR', {minimumFractionDigits: 2})}</td><td>${btnAcoes}</td>`;
+                trConta.innerHTML = `<td>${seloReceita}${escaparHTML(m.descricao || '')}</td><td>${escaparHTML(m.vencimento ? m.vencimento.split('-').reverse().join('/') : '-')}</td><td class="${classeValor}">${escaparHTML(formatarMoeda(valor))}</td><td>${btnAcoes}</td>`;
                 
                 if (m.pago) {
                     if (tbodyPagas) tbodyPagas.appendChild(trConta);
@@ -530,20 +389,20 @@
 
                 const btnAcoesExtrato = `
                     <div style="display:flex; gap:6px; justify-content: center;">
-                        <button type="button" onclick="window.location.href='editar-lancamento.html?id=${m.id}'" class="btn-acao-icone editar" title="Editar">
+                        <button type="button" onclick="window.location.href='editar-lancamento.html?id=${encodeURIComponent(String(m.id))}'" class="btn-acao-icone editar" title="Editar">
                             <img src="imagens/editar.png" alt="Editar">
                         </button>
-                        <button type="button" onclick="marcarPagamento(${m.id})" class="btn-acao-icone" title="${m.pago ? 'Marcar como Pendente' : 'Marcar como Pago'}">
-                            <img src="imagens/${m.pago ? 'desfazer' : 'pagar'}.png" alt="${m.pago ? 'Pendente' : 'Pagar'}">
-                        </button>
+                        ${m.formaPagamento === 'CARTAO'
+                            ? `<a href="grafico.html?tipo=cartao&cartaoId=${m.cartaoId}&mes=${String(m.vencimento).slice(0, 7)}" class="btn-acao-icone" title="Gerenciar Fatura" style="display:inline-flex; align-items:center; justify-content:center; text-decoration:none;"><span style="font-size:16px;">💳</span></a>`
+                            : `<button type="button" onclick="marcarPagamento(${Number(m.id)})" class="btn-acao-icone" title="${m.pago ? 'Marcar como Pendente' : 'Marcar como Pago'}"><img src="imagens/${m.pago ? 'desfazer' : 'pagar'}.png" alt="${m.pago ? 'Pendente' : 'Pagar'}"></button>`}
                     </div>
                 `;
 
                 const trExt = document.createElement('tr');
                 trExt.innerHTML = `
-                    <td>${m.vencimento ? m.vencimento.split('-').reverse().join('/') : '-'}</td>
-                    <td><strong>${m.descricao || ''}</strong></td>
-                    <td>${cat.nome || 'Geral'}</td>
+                    <td>${escaparHTML(m.vencimento ? m.vencimento.split('-').reverse().join('/') : '-')}</td>
+                    <td><strong>${escaparHTML(m.descricao || '')}</strong></td>
+                    <td>${escaparHTML(cat.nome || 'Geral')}</td>
                     <td><span class="status-badge ${tipo === 'entrada' ? 'status-pago' : 'status-pendente'}">${tipo.toUpperCase()}</span></td>
                     <td>${m.pago ? 'Pago' : 'Pendente'}</td>
                     <td class="${tipo === 'entrada' ? 'positivo' : 'negativo'}">R$ ${valor.toLocaleString('pt-BR', {minimumFractionDigits: 2})}</td>
@@ -565,15 +424,15 @@
                 const diaVenc = cObj.vencimento;
                 
                 const btnVerFatura = `
-                    <button type="button" onclick="abrirDetalhamentoFatura(${cartaoId}, '${mesSelecionado}')" class="btn-acao-icone" title="Ver Fatura">
+                    <button type="button" onclick="window.location.href='grafico.html?tipo=cartao&cartaoId=${Number(cartaoId)}&mes=${mesSelecionado}'" class="btn-acao-icone" title="Gerenciar Fatura">
                         <img src="imagens/ver.png" alt="Ver Fatura" style="width: 20px; height: 20px; object-fit: contain;">
                     </button>
                 `;
 
                 const trFat = document.createElement('tr');
                 trFat.innerHTML = `
-                    <td>${nomeCartao}</td>
-                    <td>Dia ${diaVenc}</td>
+                    <td>${escaparHTML(nomeCartao)}</td>
+                    <td>Dia ${escaparHTML(diaVenc)}</td>
                     <td class="negativo">R$ ${faturasMap[cartaoId].toLocaleString('pt-BR', {minimumFractionDigits: 2})}</td>
                     <td style="text-align: center;">${btnVerFatura}</td>
                 `;
@@ -586,10 +445,10 @@
                 const gastoBem = movimentosMes.filter(l => Number(l.bemId) === Number(b.id) && l.tipo === 'saida').reduce((acc, l) => acc + Number(l.valor || 0), 0);
                 const trBem = document.createElement('tr');
                 trBem.innerHTML = `
-                    <td><strong>${b.nome || ''}</strong></td>
-                    <td>${(b.tipo || '').toUpperCase()}</td>
-                    <td>R$ ${Number(b.valor || 0).toLocaleString('pt-BR', {minimumFractionDigits: 2})}</td>
-                    <td class="negativo">R$ ${gastoBem.toLocaleString('pt-BR', {minimumFractionDigits: 2})}</td>
+                    <td><strong>${escaparHTML(b.nome || '')}</strong></td>
+                    <td>${escaparHTML((b.tipo || '').toUpperCase())}</td>
+                    <td>${escaparHTML(formatarMoeda(b.valor || 0))}</td>
+                    <td class="negativo">${escaparHTML(formatarMoeda(gastoBem))}</td>
                 `;
                 if (tbodyBens) tbodyBens.appendChild(trBem);
                 countBens++;
@@ -623,32 +482,39 @@
             }
             if (elComprometimento) elComprometimento.textContent = `${comprometimento.toFixed(1)}%`;
 
-4           if (elTotCasal) elTotCasal.textContent = `R$ ${totCasal.toLocaleString('pt-BR', {minimumFractionDigits: 2})}`;
+            if (elTotCasal) elTotCasal.textContent = `R$ ${totCasal.toLocaleString('pt-BR', {minimumFractionDigits: 2})}`;
             if (elTotIndividual) elTotIndividual.textContent = `R$ ${totIndividual.toLocaleString('pt-BR', {minimumFractionDigits: 2})}`;
             if (elTotEssencial) elTotEssencial.textContent = `R$ ${totEssencial.toLocaleString('pt-BR', {minimumFractionDigits: 2})}`;
             if (elTotNaoEssencial) elTotNaoEssencial.textContent = `R$ ${totNaoEssencial.toLocaleString('pt-BR', {minimumFractionDigits: 2})}`;
         }
 
         function exportarCSV() {
-            const filtroMesEl = document.getElementById('filtroMesRelatorio');
-            const mesSelecionado = filtroMesEl ? filtroMesEl.value : '';
+            const mesSelecionado = document.getElementById('filtroMesRelatorio')?.value || '';
             const dados = obterDados();
             const lancamentosPermitidos = filtrarDadosPorPermissao(dados.lancamentos || [], dados, 'casal');
-            const lancamentos = lancamentosPermitidos.filter(l => (l.vencimento || l.data || '').startsWith(mesSelecionado));
-            if (lancamentos.length === 0) { mostrarAlertaModal("Não há dados para exportar."); return; }
+            const lancamentos = lancamentosPermitidos.filter(l => String(l.vencimento || l.data || l.dataCompra || l.createdAt || '').startsWith(mesSelecionado));
+            if (!lancamentos.length) { mostrarAlertaModal('Não há dados para exportar.'); return; }
 
-            let csv = "data:text/csv;charset=utf-8,Vencimento;Descricao;Tipo;Valor\n";
-            lancamentos.forEach(l => { csv += `${l.vencimento || ''};"${l.descricao || ''}";${l.tipo || ''};${l.valor || 0}\n`; });
-
-            const link = document.createElement("a");
-            link.setAttribute("href", encodeURI(csv));
-            link.setAttribute("download", `relatorio_gerencial_${mesSelecionado}.csv`);
+            const campoCSV = valor => {
+                let texto = valor == null ? '' : String(valor);
+                if (/^[\s\u0000-\u001f]*[=+\-@]/.test(texto)) texto = "'" + texto;
+                return `"${texto.replace(/"/g, '""').replace(/\r?\n/g, ' ')}"`;
+            };
+            const linhas = [['Vencimento', 'Descrição', 'Tipo', 'Valor']];
+            lancamentos.forEach(l => linhas.push([l.vencimento || '', l.descricao || '', l.tipo || '', Number(l.valor || 0).toFixed(2).replace('.', ',')]));
+            const csv = '\uFEFF' + linhas.map(linha => linha.map(campoCSV).join(';')).join('\r\n');
+            const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8;' }));
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = `relatorio_gerencial_${mesSelecionado || 'completo'}.csv`;
             document.body.appendChild(link);
             link.click();
             link.remove();
+            URL.revokeObjectURL(url);
         }
 
         function exportarPDF() { window.print(); }
+        
     </script>
 </body>
 </html>

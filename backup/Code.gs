@@ -1,24 +1,23 @@
 var ss = SpreadsheetApp.getActiveSpreadsheet();
 
-// Use Script Properties em produção. O fallback mantém compatibilidade imediata.
-var SENHA_MESTRA_API = PropertiesService.getScriptProperties().getProperty('SENHA_MESTRA_API') || 'PLANOF1NALPRAS4AIRD@MERDA';
+var SENHA_MESTRA_API = PropertiesService.getScriptProperties().getProperty('SENHA_MESTRA_API');
+var SENHA_ADMIN = PropertiesService.getScriptProperties().getProperty('SENHA_ADMIN');
 
-// IMPORTANTE: estas listas precisam refletir EXATAMENTE os campos que o
-// front-end (script.js / *.html) realmente grava em cada objeto. Um campo
-// usado no app mas ausente aqui é descartado silenciosamente ao sincronizar.
+if (!SENHA_MESTRA_API || !SENHA_ADMIN) {
+  throw new Error("ATENÇÃO: Propriedades do script (SENHA_MESTRA_API e/ou SENHA_ADMIN) não configuradas no Apps Script.");
+}
+
 var SCHEMA = {
   usuarios: [
     'id', 'usuario', 'nome', 'pin', 'rendaFixa', 'parceiroId', 'ativo',
-    'permissoes', 'preferenciasNotificacao'
+    'permissoes', 'preferenciasNotificacao', 'fotoPerfil'
   ],
 
   categorias: ['id', 'nome', 'tipo', 'classificacao', 'criadopor'],
-
-  // Campos alinhados com cartoes.html (fonte real dos dados de cartão):
-  // "limite" (não limiteTotal) e "isBeneficio" (booleano, não tipoCartao).
+  
   cartoes: [
     'id', 'usuarioId', 'nome', 'limite', 'fechamento', 'vencimento',
-    'isBeneficio', 'ativo', 'createdAt', 'updatedAt'
+    'isBeneficio', 'tipoCartao', 'ativo', 'createdAt', 'updatedAt'
   ],
 
   lancamentos: [
@@ -26,7 +25,8 @@ var SCHEMA = {
     'formaPagamento', 'cartaoId', 'vencimento', 'recorrencia',
     'parcelaAtual', 'totalParcelas', 'observacao', 'horaExtra',
     'servicoEssencial', 'pago', 'status', 'dataCompra', 'dataPagamento',
-    'usuarioPagamentoId', 'financiamentoId', 'parcelamentoId', 'bemId',
+    'usuarioPagamentoId', 'financiamentoId', 'parcelamentoId', 'bemId', 'escopo',
+    'faturaId', // Novo campo adicionado para o controlo relacional das faturas
     'createdAt', 'updatedAt'
   ],
 
@@ -36,14 +36,11 @@ var SCHEMA = {
     'createdAt', 'updatedAt'
   ],
 
-  // Antes ausente do schema: patrimônio nunca era gravado na planilha.
   bens: [
     'id', 'usuarioId', 'nome', 'tipo', 'valor', 'identificadorEspecifico',
     'statusBem', 'compartilhado', 'ativo', 'createdAt'
   ],
 
-  // Antes ausente do schema: notificações/atrelamento de parceiro nunca
-  // eram gravadas na planilha (perdidas ao restaurar de um backup).
   notificacoes: [
     'id', 'usuarioDestinoId', 'remetenteId', 'tipo', 'titulo', 'mensagem',
     'lida', 'statusAprovacao', 'createdAt'
@@ -55,14 +52,19 @@ var SCHEMA = {
   ],
 
   exclusao_movimento: [
-    'dataHora', 'usuario', 'usuarioId', 'lancamentoId',
+    'id', 'dataHora', 'usuario', 'usuarioId', 'lancamentoId',
     'descricao', 'valor', 'motivo'
   ],
 
   edicao_movimento: [
-    'dataHora', 'usuario', 'usuarioId', 'lancamentoId',
+    'id', 'dataHora', 'usuario', 'usuarioId', 'lancamentoId',
     'descricaoAntiga', 'descricaoNova', 'valorAntigo', 'valorNovo',
     'motivo'
+  ],
+
+  fatura_cartao: [
+    'id', 'cartaoId', 'mesReferencia', 'valorTotal', 'valorPago',
+    'status', 'dataVencimento', 'createdAt', 'updatedAt'
   ]
 };
 
@@ -70,7 +72,21 @@ var CAMPOS_DATA = {
   vencimento: true,
   dataCompra: true,
   dataPagamento: true,
-  primeiroVencimento: true
+  primeiroVencimento: true,
+  dataVencimento: true
+};
+
+var CAMPOS_JSON = {
+  permissoes: true,
+  preferenciasNotificacao: true
+};
+
+var CAMPOS_BOOLEAN = {
+  ativo: true,
+  isBeneficio: true,
+  compartilhado: true,
+  pago: true,
+  lida: true
 };
 
 function respostaJson(obj) {
@@ -81,6 +97,51 @@ function respostaJson(obj) {
 
 function tokenValido(token) {
   return token && String(token) === String(SENHA_MESTRA_API);
+}
+
+var CHAVE_REVISAO_DADOS = 'DADOS_REVISAO';
+
+function obterRevisaoDados() {
+  var valor = PropertiesService.getScriptProperties().getProperty(CHAVE_REVISAO_DADOS);
+  var revisao = Number(valor);
+  return Number.isFinite(revisao) && revisao >= 0 ? revisao : 0;
+}
+
+function definirRevisaoDados(revisao) {
+  PropertiesService.getScriptProperties().setProperty(CHAVE_REVISAO_DADOS, String(revisao));
+}
+
+function normalizarDataISO(val) {
+  if (val === null || val === undefined || val === '') return '';
+
+  if (val instanceof Date) {
+    if (isNaN(val.getTime())) return '';
+    return Utilities.formatDate(val, Session.getScriptTimeZone(), 'yyyy-MM-dd');
+  }
+
+  var texto = String(val).trim();
+  if (!texto) return '';
+
+  var partes = texto.match(/^(\d{4})-(\d{1,2})-(\d{1,2})(?:$|[T\s])/);
+  var ano, mes, dia;
+
+  if (partes) {
+    ano = Number(partes[1]); mes = Number(partes[2]); dia = Number(partes[3]);
+  } else {
+    partes = texto.match(/^(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{4})(?:$|[\s,])/);
+    if (!partes) return texto;
+    dia = Number(partes[1]); mes = Number(partes[2]); ano = Number(partes[3]);
+  }
+
+  if (!ano || mes < 1 || mes > 12 || dia < 1 || dia > 31) return texto;
+  var teste = new Date(ano, mes - 1, dia);
+  if (teste.getFullYear() !== ano || teste.getMonth() !== mes - 1 || teste.getDate() !== dia) return texto;
+
+  return String(ano).padStart(4, '0') + '-' + String(mes).padStart(2, '0') + '-' + String(dia).padStart(2, '0');
+}
+
+function formatarDataParaPlanilha(val) {
+  return normalizarDataISO(val);
 }
 
 function doGet(e) {
@@ -98,7 +159,13 @@ function doGet(e) {
     }
 
     if (action === 'obterDados') {
-      return retornarDadosCompletos();
+      var leituraLock = LockService.getScriptLock();
+      leituraLock.waitLock(15000);
+      try {
+        return retornarDadosCompletos();
+      } finally {
+        leituraLock.releaseLock();
+      }
     }
 
     if (action === 'ping') {
@@ -143,6 +210,85 @@ function doPost(e) {
       });
     }
 
+    if (action === 'verificarAdmin') {
+      var senhaInformada = data.senha == null ? '' : String(data.senha);
+      var autorizado = senhaInformada !== '' && senhaInformada === String(SENHA_ADMIN);
+      return respostaJson({
+        status: 'sucesso',
+        autorizado: autorizado
+      });
+    }
+
+    if (action === 'verificarCredenciaisLogin') {
+      var usuarioLogin = data.usuario ? String(data.usuario).trim() : '';
+      var senhaHash = data.senhaHash ? String(data.senhaHash).trim() : '';
+
+      var usuarios = lerAba('usuarios');
+      var usuarioEncontrado = null;
+
+      for (var i = 0; i < usuarios.length; i++) {
+        var u = usuarios[i];
+        var nomeUser = String(u.usuario || '').trim().toLowerCase();
+        var nomeCompleto = String(u.nome || '').trim().toLowerCase();
+        var busca = usuarioLogin.toLowerCase();
+
+        if (nomeUser === busca || nomeCompleto === busca) {
+          usuarioEncontrado = u;
+          break;
+        }
+      }
+
+      if (!usuarioEncontrado) {
+        return respostaJson({ status: 'erro', mensagem: 'Usuário não encontrado.' });
+      }
+
+      if (usuarioEncontrado.ativo === false || usuarioEncontrado.ativo === 'FALSE') {
+        return respostaJson({ status: 'erro', mensagem: 'Este usuário está desativado.' });
+      }
+
+      if (senhaHash === 'CHECK_APENAS_USUARIO') {
+        return respostaJson({
+          status: 'sucesso',
+          usuario: {
+            id: usuarioEncontrado.id,
+            nome: usuarioEncontrado.nome,
+            usuario: usuarioEncontrado.usuario,
+            fotoPerfil: usuarioEncontrado.fotoPerfil || ''
+          }
+        });
+      }
+
+      var senhaCadastrada = String(usuarioEncontrado.pin || usuarioEncontrado.senha || '').trim();
+
+      if (senhaCadastrada === '') {
+        return respostaJson({
+          status: 'sucesso',
+          primeiroAcesso: true,
+          usuario: {
+            id: usuarioEncontrado.id,
+            nome: usuarioEncontrado.nome,
+            usuario: usuarioEncontrado.usuario
+          }
+        });
+      }
+
+      if (senhaCadastrada !== senhaHash) {
+        return respostaJson({ status: 'erro', mensagem: 'Palavra-passe incorreta.' });
+      }
+
+      return respostaJson({
+        status: 'sucesso',
+        primeiroAcesso: false,
+        usuario: {
+          id: usuarioEncontrado.id,
+          nome: usuarioEncontrado.nome,
+          usuario: usuarioEncontrado.usuario,
+          fotoPerfil: usuarioEncontrado.fotoPerfil || '',
+          permissoes: usuarioEncontrado.permissoes || {}
+        }
+      });
+    }
+
     if (action !== 'salvarDados') {
       return respostaJson({
         status: 'erro',
@@ -150,27 +296,87 @@ function doPost(e) {
       });
     }
 
-    if (!data.dados || typeof data.dados !== 'object') {
+    if (!data.dados || typeof data.dados !== 'object' || Array.isArray(data.dados)) {
       return respostaJson({
         status: 'erro',
         mensagem: 'Objeto de dados inválido'
       });
     }
 
+    var estruturaValida = Object.keys(SCHEMA).every(function(nomeAba) {
+      return Array.isArray(data.dados[nomeAba]);
+    });
+    if (!estruturaValida) {
+      return respostaJson({
+        status: 'erro',
+        mensagem: 'Estrutura incompleta: todas as coleções devem ser arrays antes de salvar.'
+      });
+    }
+
+    var registrosValidos = Object.keys(SCHEMA).every(function(nomeAba) {
+      return data.dados[nomeAba].every(function(registro) {
+        return registro !== null && typeof registro === 'object' && !Array.isArray(registro);
+      });
+    });
+    if (!registrosValidos) {
+      return respostaJson({
+        status: 'erro',
+        mensagem: 'Estrutura inválida: cada registro deve ser um objeto.'
+      });
+    }
+
     lock.waitLock(15000);
 
     try {
-      atualizarTabelas(data.dados);
-      SpreadsheetApp.flush();
+      var revisaoServidor = obterRevisaoDados();
+      var revisaoCliente = Number(data.dados._revision);
+      if (!Number.isFinite(revisaoCliente)) revisaoCliente = 0;
+
+      if (revisaoCliente !== revisaoServidor) {
+        return respostaJson({
+          status: 'conflito',
+          mensagem: 'Os dados do servidor foram alterados por outro utilizador. Atualize os dados antes de salvar novamente.',
+          _revision: revisaoServidor
+        });
+      }
+
+      var novaRevisao = revisaoServidor + 1;
+      data.dados._revision = novaRevisao;
+
+      var dadosAnteriores = {};
+      Object.keys(SCHEMA).forEach(function(nomeAba) {
+        dadosAnteriores[nomeAba] = lerAba(nomeAba);
+      });
+
+      try {
+        atualizarTabelas(data.dados);
+        SpreadsheetApp.flush();
+        definirRevisaoDados(novaRevisao);
+      } catch (erroGravacao) {
+        var erroRollback = null;
+        try {
+          atualizarTabelas(dadosAnteriores);
+          SpreadsheetApp.flush();
+          definirRevisaoDados(revisaoServidor);
+        } catch (erroRestauracao) {
+          erroRollback = String(erroRestauracao);
+        }
+        throw new Error(
+          'Falha ao gravar os dados.' +
+          (erroRollback ? ' A restauração automática também falhou: ' + erroRollback : ' O estado anterior foi restaurado quando possível.') +
+          ' Detalhe: ' + String(erroGravacao)
+        );
+      }
+
+      return respostaJson({
+        status: 'sucesso',
+        mensagem: 'Dados salvos com sucesso',
+        _revision: novaRevisao,
+        dataHora: new Date().toISOString()
+      });
     } finally {
       lock.releaseLock();
     }
-
-    return respostaJson({
-      status: 'sucesso',
-      mensagem: 'Dados salvos com sucesso',
-      dataHora: new Date().toISOString()
-    });
   } catch (err) {
     try {
       lock.releaseLock();
@@ -185,6 +391,7 @@ function doPost(e) {
 
 function retornarDadosCompletos() {
   var dados = {
+    _revision: obterRevisaoDados(),
     usuarios: lerAba('usuarios'),
     categorias: lerAba('categorias'),
     cartoes: lerAba('cartoes'),
@@ -194,7 +401,8 @@ function retornarDadosCompletos() {
     notificacoes: lerAba('notificacoes'),
     logs: lerAba('logs'),
     exclusao_movimento: lerAba('exclusao_movimento'),
-    edicao_movimento: lerAba('edicao_movimento')
+    edicao_movimento: lerAba('edicao_movimento'),
+    fatura_cartao: lerAba('fatura_cartao')
   };
 
   return respostaJson(dados);
@@ -217,7 +425,6 @@ function lerAba(nomeAba) {
 
   for (var i = 1; i < rows.length; i++) {
     var row = rows[i];
-
     var possuiConteudo = row.some(function(val) {
       return val !== '' && val !== null;
     });
@@ -225,7 +432,6 @@ function lerAba(nomeAba) {
     if (!possuiConteudo) continue;
 
     var obj = {};
-
     for (var j = 0; j < headers.length; j++) {
       var header = headers[j];
       if (!header) continue;
@@ -241,7 +447,7 @@ function lerAba(nomeAba) {
 }
 
 function normalizarValorLido(header, val) {
-  if (val === null || val === '') return '';
+  if (val === null || val === '') return CAMPOS_JSON[header] ? {} : '';
 
   if (val instanceof Date) {
     if (CAMPOS_DATA[header]) {
@@ -259,8 +465,24 @@ function normalizarValorLido(header, val) {
 
   if (typeof val === 'string') {
     var texto = val.trim();
-    if (texto === 'TRUE') return true;
-    if (texto === 'FALSE') return false;
+
+    // Normaliza datas legadas em texto (dd/MM/yyyy) para o ISO usado pela aplicação.
+    if (CAMPOS_DATA[header]) {
+      return normalizarDataISO(texto);
+    }
+
+    if (CAMPOS_JSON[header]) {
+      try {
+        return JSON.parse(texto);
+      } catch (_) {
+        return header === 'preferenciasNotificacao' ? {} : {};
+      }
+    }
+
+    if (CAMPOS_BOOLEAN[header]) {
+      if (texto.toUpperCase() === 'TRUE') return true;
+      if (texto.toUpperCase() === 'FALSE') return false;
+    }
     return val;
   }
 
@@ -296,12 +518,14 @@ function escreverAba(nomeAba, dadosArray, headers) {
         var campo = headers[j];
         var val = registro[campo];
 
-        // Mantém células vazias como string vazia.
         if (val === undefined || val === null) {
           val = '';
         }
 
-        // Objetos/arrays extras não devem quebrar a escrita da planilha.
+        if (CAMPOS_DATA[campo] && val) {
+          val = formatarDataParaPlanilha(val);
+        }
+
         if (typeof val === 'object' && !(val instanceof Date)) {
           val = JSON.stringify(val);
         }
@@ -317,6 +541,5 @@ function escreverAba(nomeAba, dadosArray, headers) {
     .getRange(1, 1, matrizParaGravar.length, headers.length)
     .setValues(matrizParaGravar);
 
-  // Mantém os cabeçalhos sempre disponíveis para navegação na planilha.
   sheet.setFrozenRows(1);
 }

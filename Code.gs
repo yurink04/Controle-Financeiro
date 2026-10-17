@@ -111,13 +111,37 @@ function definirRevisaoDados(revisao) {
   PropertiesService.getScriptProperties().setProperty(CHAVE_REVISAO_DADOS, String(revisao));
 }
 
-function formatarDataParaPlanilha(val) {
-  if (!val) return '';
-  let str = String(val).trim();
-  if (str.includes('T')) {
-    str = str.split('T')[0];
+function normalizarDataISO(val) {
+  if (val === null || val === undefined || val === '') return '';
+
+  if (val instanceof Date) {
+    if (isNaN(val.getTime())) return '';
+    return Utilities.formatDate(val, Session.getScriptTimeZone(), 'yyyy-MM-dd');
   }
-  return str;
+
+  var texto = String(val).trim();
+  if (!texto) return '';
+
+  var partes = texto.match(/^(\d{4})-(\d{1,2})-(\d{1,2})(?:$|[T\s])/);
+  var ano, mes, dia;
+
+  if (partes) {
+    ano = Number(partes[1]); mes = Number(partes[2]); dia = Number(partes[3]);
+  } else {
+    partes = texto.match(/^(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{4})(?:$|[\s,])/);
+    if (!partes) return texto;
+    dia = Number(partes[1]); mes = Number(partes[2]); ano = Number(partes[3]);
+  }
+
+  if (!ano || mes < 1 || mes > 12 || dia < 1 || dia > 31) return texto;
+  var teste = new Date(ano, mes - 1, dia);
+  if (teste.getFullYear() !== ano || teste.getMonth() !== mes - 1 || teste.getDate() !== dia) return texto;
+
+  return String(ano).padStart(4, '0') + '-' + String(mes).padStart(2, '0') + '-' + String(dia).padStart(2, '0');
+}
+
+function formatarDataParaPlanilha(val) {
+  return normalizarDataISO(val);
 }
 
 function doGet(e) {
@@ -441,6 +465,11 @@ function normalizarValorLido(header, val) {
 
   if (typeof val === 'string') {
     var texto = val.trim();
+
+    // Normaliza datas legadas em texto (dd/MM/yyyy) para o ISO usado pela aplicação.
+    if (CAMPOS_DATA[header]) {
+      return normalizarDataISO(texto);
+    }
 
     if (CAMPOS_JSON[header]) {
       try {

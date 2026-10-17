@@ -15,7 +15,6 @@
                 <p>Gerencie suas contas por mês/competência, acompanhe o agrupamento de compras parceladas ou liste todos os lançamentos.</p>
             </div>
             
-            <!-- Botão de Opções da Central com o estilo marrom principal padronizado -->
             <div class="menu-opcoes-container" style="position: relative; display: inline-block;">
                 <button type="button" id="btnToggleOpcoesCentral" class="btn-acao-principal" onclick="toggleMenuOpcoesCentral()">
                     Opções da central <span id="iconeSetaOpcoes" style="transition: transform 0.2s;">▼</span>
@@ -42,20 +41,17 @@
                 </div>
                 
                 <div style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap;">
-                    <!-- Checkbox de Incluir Financiamento refinado -->
                     <label class="app-checkbox-label" style="background: var(--surface-2); padding: 8px 12px; border-radius: 10px; border: 1px solid var(--border);">
                         <input type="checkbox" id="checkIncluirFinanciamento" onchange="carregarCentralPagamentos()">
                         <span>Incluir financiamento</span>
                     </label>
 
-                    <!-- Filtro Mês / Competência -->
                     <div class="filter-group" id="blocoFiltroMesCompetencia" style="display: none; margin: 0;">
                         <label for="filtroMesCompetencia">Mês Ref.</label>
                         <input type="month" id="filtroMesCompetencia" onchange="carregarCentralPagamentos()" style="width: auto;">
                     </div>
                 </div>
 
-                <!-- Filtros da Listagem de Lançamentos -->
                 <div id="blocoFiltrosListagem" style="display: none; width: 100%; gap: 12px; align-items: flex-end; flex-wrap: wrap; margin-top: 10px;">
                     <div class="filter-group">
                         <label for="filtroDataInicio">Data Início</label>
@@ -324,8 +320,8 @@
                             <td><span class="status-badge ${statusClasse}">${statusTexto}</span></td>
                             <td>
                                 ${l.formaPagamento === 'CARTAO'
-    ? `<a href="grafico.html?tipo=cartao&cartaoId=${l.cartaoId}&mes=${String(l.vencimento).slice(0, 7)}" class="btn-acao-icone" title="Gerenciar Fatura" style="display:inline-flex; align-items:center; justify-content:center; text-decoration:none;"><span style="font-size:16px;">💳</span></a>`
-    : `<button type="button" onclick="alternarStatusPagamentoCentral(${Number(l.id)})" class="btn-acao-icone ${(l.pago === true || l.status === 'pago') ? 'desfazer' : 'pagar'}" title="Alterar status">${(l.pago === true || l.status === 'pago') ? '↩' : '✓'}</button>`}
+                                    ? `<a href="grafico.html?tipo=cartao&cartaoId=${l.cartaoId}&mes=${String(l.vencimento).slice(0, 7)}" class="btn-acao-icone" title="Gerenciar Fatura" style="display:inline-flex; align-items:center; justify-content:center; text-decoration:none;"><span style="font-size:16px;">💳</span></a>`
+                                    : `<button type="button" onclick="alternarStatusPagamentoCentral(${Number(l.id)})" class="btn-acao-icone ${(l.pago === true || l.status === 'pago') ? 'desfazer' : 'pagar'}" title="Alterar status">${(l.pago === true || l.status === 'pago') ? '↩' : '✓'}</button>`}
                             </td>
                         `;
                         tbody.appendChild(tr);
@@ -373,6 +369,7 @@
                     tbody.innerHTML = `<tr><td colspan="7" style="text-align: center;">Nenhum lançamento encontrado para os filtros selecionados.</td></tr>`;
                 } else {
                     filtradosListagem.forEach(l => {
+                        const valor = Number(l.valor || 0);
                         const jaPago = (l.pago === true || l.status === 'pago');
                         totalGeral += valor;
                         if (jaPago) totalPago += valor; else totalPendente += valor;
@@ -392,8 +389,8 @@
                             <td><span class="status-badge ${statusClasse}">${statusTexto}</span></td>
                             <td>
                                 ${!ehEntrada && l.formaPagamento === 'CARTAO'
-    ? `<a href="grafico.html?tipo=cartao&cartaoId=${l.cartaoId}&mes=${String(l.vencimento).slice(0, 7)}" class="btn-acao-icone" title="Gerenciar Fatura" style="display:inline-flex; align-items:center; justify-content:center; text-decoration:none;"><span style="font-size:16px;">💳</span></a>`
-    : `<button type="button" onclick="alternarStatusPagamentoListagem(${Number(l.id)})" class="btn-acao-icone ${(l.pago === true || l.status === 'pago') ? 'desfazer' : 'pagar'}" title="Alterar status">${(l.pago === true || l.status === 'pago') ? '↩' : '✓'}</button>`}
+                                    ? `<a href="grafico.html?tipo=cartao&cartaoId=${l.cartaoId}&mes=${String(l.vencimento).slice(0, 7)}" class="btn-acao-icone" title="Gerenciar Fatura" style="display:inline-flex; align-items:center; justify-content:center; text-decoration:none;"><span style="font-size:16px;">💳</span></a>`
+                                    : `<button type="button" onclick="alternarStatusPagamentoListagem(${Number(l.id)})" class="btn-acao-icone ${(l.pago === true || l.status === 'pago') ? 'desfazer' : 'pagar'}" title="Alterar status">${(l.pago === true || l.status === 'pago') ? '↩' : '✓'}</button>`}
                             </td>
                         `;
                         tbody.appendChild(tr);
