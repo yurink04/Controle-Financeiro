@@ -3,9 +3,9 @@
 // ============================================================================
 const DB_KEY = 'sistemaFinanceiroCompartilhado';
 const BACKUP_TESTE_KEY = 'sistemaFinanceiroBackupTeste';
-const API_URL = "https://script.google.com/macros/s/AKfycbzqWVQwjd-7H3inOf1ot-Sz4LZMF1po6KsW7hXxBAmybqRXVI9tpOtjD85mw7m2am2-/exec";
+const API_URL = "https://script.google.com/macros/s/AKfycbzEjNFP0Fbn_hYATL2OTfuoB8eW33O6PxsgGupkHz6uQ_vcUlIYp2KmMgJ3EeWZGLI4/exec";
 const TOKEN_API = "PLANOF1NALPRAS4AIRD@MERDA";
-const SCHEMA_VERSION = 3;
+const SCHEMA_VERSION = 5;
 const SYNC_DEBOUNCE_MS = 1500;
 const SYNC_BASELINE_KEY = 'sistemaFinanceiroSnapshotSincronizado';
 const SYNC_CONFLICT_KEY = 'sistemaFinanceiroConflitoSync';
@@ -164,8 +164,11 @@ function resolverParcelamentoId(lancamento) { return lancamento && lancamento.pa
 function resolverFinanciamentoIdPorLancamento(lancamento, dados = obterDados()) {
     if (lancamento && lancamento.financiamentoId != null && String(lancamento.financiamentoId).trim() !== '') return lancamento.financiamentoId;
     const descricao = normalizarTexto(descricaoBaseParcelamento(lancamento?.descricao || ''));
-    if (!descricao.startsWith('financiamento:')) return null;
-    const nome = descricao.slice(14).trim();
+    let nome;
+    if (descricao.startsWith('emprestimo recebido:')) nome = descricao.slice('emprestimo recebido:'.length).trim();
+    else if (descricao.startsWith('financiamento:')) nome = descricao.slice('financiamento:'.length).trim();
+    else if (descricao.startsWith('emprestimo:')) nome = descricao.slice('emprestimo:'.length).trim();
+    else return null;
     const cand = (dados.financiamentos || []).filter(f => normalizarTexto(f.nome) === nome);
     const candDono = lancamento?.usuarioId == null ? [] : cand.filter(f => String(f.usuarioId) === String(lancamento.usuarioId));
     const finais = candDono.length ? candDono : cand;
@@ -173,10 +176,14 @@ function resolverFinanciamentoIdPorLancamento(lancamento, dados = obterDados()) 
 }
 
 function pertenceAoFinanciamento(lancamento, financiamento, dados = obterDados()) {
-    if (!lancamento || !financiamento) return false;
-    if (lancamento.financiamentoId != null && String(lancamento.financiamentoId).trim() !== '') return String(lancamento.financiamentoId) === String(financiamento.id);
+    // A liberação de um empréstimo é uma entrada de caixa, nunca uma parcela de pagamento.
+    if (!lancamento || !financiamento || lancamento.tipo !== 'saida') return false;
+    if (lancamento.financiamentoId != null && String(lancamento.financiamentoId).trim() !== '') {
+        return String(lancamento.financiamentoId) === String(financiamento.id);
+    }
     const dBase = normalizarTexto(descricaoBaseParcelamento(lancamento.descricao || ''));
-    if (lancamento.tipo !== 'saida' || dBase !== normalizarTexto(`Financiamento: ${financiamento.nome}`)) return false;
+    const prefixo = financiamento.tipoContrato === 'emprestimo' ? 'Emprestimo:' : 'Financiamento:';
+    if (dBase !== normalizarTexto(`${prefixo} ${financiamento.nome}`)) return false;
     const cand = (dados.financiamentos || []).filter(f => normalizarTexto(f.nome) === normalizarTexto(financiamento.nome));
     const candDono = lancamento.usuarioId == null ? [] : cand.filter(f => String(f.usuarioId) === String(lancamento.usuarioId));
     const finais = candDono.length ? candDono : cand;
@@ -658,7 +665,7 @@ function migrarDados(dados) {
     // Mantém datas de negócio no padrão interno ISO (yyyy-MM-dd), aceitando dados legados PT-BR.
     const camposDataPorColecao = {
         lancamentos: ['vencimento', 'dataCompra', 'dataPagamento'],
-        financiamentos: ['primeiroVencimento'],
+        financiamentos: ['primeiroVencimento', 'dataLiberacao'],
         fatura_cartao: ['dataVencimento']
     };
     Object.entries(camposDataPorColecao).forEach(([colecao, campos]) => {
@@ -699,6 +706,21 @@ function migrarDados(dados) {
         if (f.ativo === undefined) { f.ativo = true; alterou = true; }
         if (f.totalMeses == null) { f.totalMeses = 0; alterou = true; }
         if (!f.valorParcela) { f.valorParcela = 0; alterou = true; }
+        // Contratos antigos continuam sendo tratados como financiamentos tradicionais.
+        if (!f.tipoContrato) { f.tipoContrato = 'financiamento'; alterou = true; }
+        if (f.valorLiberado == null) { f.valorLiberado = 0; alterou = true; }
+        if (f.categoriaEntradaId == null) { f.categoriaEntradaId = ''; alterou = true; }
+        if (f.dataLiberacao == null) { f.dataLiberacao = ''; alterou = true; }
+        if (!f.escopoContrato) { f.escopoContrato = 'individual'; alterou = true; }
+        // Dados de aquisição: contratos antigos permanecem sem preço informado até serem atualizados.
+        if (!Object.prototype.hasOwnProperty.call(f, 'valorCompra')) { f.valorCompra = null; alterou = true; }
+        if (f.valorEntrada == null) { f.valorEntrada = 0; alterou = true; }
+        if (!Object.prototype.hasOwnProperty.call(f, 'valorFinanciado')) {
+            f.valorFinanciado = Number(f.valorCompra) > 0
+                ? Number(Math.max(0, Number(f.valorCompra) - Number(f.valorEntrada || 0)).toFixed(2))
+                : null;
+            alterou = true;
+        }
     });
     
     const mat = dados.usuarios.some(u => u?.permissoes?.paginas && u?.permissoes?.acoes);
@@ -893,14 +915,45 @@ function mostrarOpcaoEscopoModal(mensagem) {
 }
 
 async function verificarSenhaAdmin(nomeSecao = 'esta seção') {
-    const s = await mostrarPromptSenha('Acesso restrito', `Informe a senha administrativa para ${nomeSecao}.`, false);
-    if (!s) return false;
+    const senhaInformada = await mostrarPromptSenha(
+        'Acesso restrito',
+        `Informe a senha administrativa para ${nomeSecao}.`,
+        false
+    );
+    if (senhaInformada === null || !String(senhaInformada).trim()) return false;
+
     try {
-        const r = await fetch(API_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ action: 'verificarAdmin', token: TOKEN_API, senha: s }) });
-        const j = await r.json();
-        if (j.status === 'sucesso' && j.autorizado) return true;
-        await mostrarAlertaModal('Senha incorreta.'); return false;
-    } catch { await mostrarAlertaModal('Falha na conexão.'); return false; }
+        const resposta = await fetch(API_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+            body: JSON.stringify({
+                action: 'verificarAdmin',
+                token: TOKEN_API,
+                senha: String(senhaInformada).trim()
+            })
+        });
+        const dadosResposta = await resposta.json();
+
+        if (dadosResposta.status === 'sucesso' && dadosResposta.autorizado === true) {
+            return true;
+        }
+
+        if (dadosResposta.status === 'sucesso') {
+            await mostrarAlertaModal(
+                'Senha administrativa incorreta. Confira a propriedade SENHA_ADMIN nas Propriedades do script do Apps Script. A senha de login do usuário é diferente.'
+            );
+        } else {
+            await mostrarAlertaModal(
+                `Falha na autenticação da API: ${dadosResposta.mensagem || 'o servidor recusou a requisição'}. Confira se TOKEN_API no script.js corresponde a SENHA_MESTRA_API nas Propriedades do script e se a URL da implantação está correta.`
+            );
+        }
+        return false;
+    } catch (erro) {
+        await mostrarAlertaModal(
+            'Não foi possível validar a senha com o servidor. Confira a URL da implantação do Apps Script, as permissões do Web App e tente novamente.'
+        );
+        return false;
+    }
 }
 
 function mostrarLoading(mensagem = "Processando...", usarGif = false) {
@@ -1253,7 +1306,10 @@ async function alternarStatusPagamento(id) {
     try {
         const d = obterDados(), l = d.lancamentos.find(x => String(x.id) === String(id));
         if (!l || !usuarioPodeAlterarLancamento(l, d)) throw new Error('Sem permissão.');
-        
+        const contratoVinculado = (d.financiamentos || []).find(f => String(f.id) === String(l.financiamentoId));
+        if (contratoVinculado?.tipoContrato === 'emprestimo' && l.tipo === 'entrada') {
+            throw new Error('Esta entrada representa o valor já recebido do empréstimo. Para evitar divergências, ela não pode ser marcada como pendente.');
+        }
         if (l.faturaId || l.formaPagamento === 'CARTAO') throw new Error('A quitação de compras de crédito é controlada globalmente pela fatura do cartão.');
         
         l.pago = !l.pago; l.status = l.pago ? 'pago' : (l.vencimento < dataLocalYYYYMMDD() ? 'atrasado' : 'pendente');
@@ -1291,6 +1347,11 @@ async function removerLancamentoInteligente(id) {
     if (!await exigirPermissao('excluirMovimento')) return false;
     const d = obterDados(), l = d.lancamentos.find(x => String(x.id) === String(id));
     if (!l || !usuarioPodeAlterarLancamento(l, d)) return mostrarAlertaModal('Sem permissão.');
+    const contratoVinculado = (d.financiamentos || []).find(f => String(f.id) === String(l.financiamentoId));
+    if (contratoVinculado?.tipoContrato === 'emprestimo' && l.tipo === 'entrada') {
+        await mostrarAlertaModal('Esta entrada é a liberação do empréstimo. Para evitar deixar o contrato inconsistente, exclua o contrato completo na tela de Financiamentos.');
+        return false;
+    }
     const pId = resolverParcelamentoId(l), fId = resolverFinanciamentoIdPorLancamento(l, d);
     let esc = 'esta';
     if (pId || fId) { esc = await mostrarOpcaoEscopoModal('Excluir apenas esta ou todas?'); if (!esc) return false; }
@@ -1301,7 +1362,11 @@ async function removerLancamentoInteligente(id) {
         d.exclusao_movimento.push({ id: gerarId('exc'), dataHora: dh, usuario: nU, usuarioId: uId, lancamentoId: id, descricao: l.descricao, valor: l.valor, motivo: mt });
         d.lancamentos = d.lancamentos.filter(x => String(x.id) !== String(id));
     } else {
-        const rel = pId ? d.lancamentos.filter(x => x.parcelamentoId === pId) : d.lancamentos.filter(x => resolverFinanciamentoIdPorLancamento(x, d) === fId);
+        const contratoGrupo = fId == null ? null : (d.financiamentos || []).find(f => String(f.id) === String(fId));
+        const rel = pId
+            ? d.lancamentos.filter(x => x.parcelamentoId === pId)
+            : d.lancamentos.filter(x => String(resolverFinanciamentoIdPorLancamento(x, d)) === String(fId)
+                && (contratoGrupo?.tipoContrato !== 'emprestimo' || x.tipo === 'saida'));
         rel.forEach(x => d.exclusao_movimento.push({ id: gerarId('exc'), dataHora: dh, usuario: nU, usuarioId: uId, lancamentoId: x.id, descricao: x.descricao, valor: x.valor, motivo: mt }));
         const rIds = new Set(rel.map(x => String(x.id)));
         d.lancamentos = d.lancamentos.filter(x => !rIds.has(String(x.id)));
@@ -1324,6 +1389,15 @@ async function atualizarLancamentoNoBanco(id, novosDados) {
 
     const grupoId = resolverParcelamentoId(lancamento);
     const finId = resolverFinanciamentoIdPorLancamento(lancamento, dados);
+    const contratoEditado = finId == null ? null : (dados.financiamentos || []).find(f => String(f.id) === String(finId));
+    if (contratoEditado?.tipoContrato === 'emprestimo' && lancamento.tipo === 'entrada') {
+        await mostrarAlertaModal('A entrada do valor liberado é controlada pelo contrato do empréstimo e não pode ser editada como uma parcela comum.');
+        return false;
+    }
+    if (finId != null && novosDados.tipo !== lancamento.tipo) {
+        await mostrarAlertaModal('Não é possível mudar o tipo de um lançamento vinculado a um contrato. Edite apenas valor, descrição ou vencimento.');
+        return false;
+    }
     const ehVinculado = Boolean(grupoId) || Boolean(finId);
 
     let aplicarParaTodas = false;
@@ -1344,7 +1418,7 @@ async function atualizarLancamentoNoBanco(id, novosDados) {
 
     if (aplicarParaTodas) {
         const relacionados = finId
-            ? dados.lancamentos.filter(l => String(resolverFinanciamentoIdPorLancamento(l, dados)) === String(finId))
+            ? dados.lancamentos.filter(l => String(resolverFinanciamentoIdPorLancamento(l, dados)) === String(finId) && l.tipo === lancamento.tipo)
             : dados.lancamentos.filter(l => String(l.parcelamentoId) === String(grupoId));
         if (!relacionados.length || relacionados.some(l => !usuarioPodeAlterarLancamento(l, dados))) {
             esconderLoading();
@@ -1353,7 +1427,7 @@ async function atualizarLancamentoNoBanco(id, novosDados) {
         const finEditado = finId == null ? null : (dados.financiamentos || []).find(f => String(f.id) === String(finId));
         if (finEditado) {
             const baseNova = String(novosDados.descricao || '').replace(/\s\(\d+\/\d+\)$/, '').trim();
-            finEditado.nome = baseNova.replace(/^Financiamento:\s*/i, '').trim() || finEditado.nome;
+            finEditado.nome = baseNova.replace(/^(?:Financiamento|Empréstimo|Emprestimo):\s*/i, '').trim() || finEditado.nome;
             finEditado.valorParcela = Number(valorNovo.toFixed(2));
             finEditado.categoriaId = novosDados.categoriaId;
             const dataRef = novosDados.vencimento ? criarDataLocal(novosDados.vencimento) : null;
@@ -1422,55 +1496,122 @@ async function atualizarLancamentoNoBanco(id, novosDados) {
     return true;
 }
 
-async function adicionarFinanciamentoComRecorrencia(nome, recorrente, valorParcela, qtdMeses, primeiroVencimento, categoriaId = null, bemId = null) {
-    if (!await exigirPermissao('financiamentos', 'criar financiamentos')) return false;
+async function adicionarFinanciamentoComRecorrencia(nome, recorrente, valorParcela, qtdMeses, primeiroVencimento, categoriaId = null, bemId = null, opcoes = {}) {
+    if (!await exigirPermissao('financiamentos', 'criar contratos')) return false;
     if (processandoAcaoModal) return false;
-    if (!await verificarSenhaAdmin("cadastrar contrato de financiamento")) return false;
-    processandoAcaoModal = true; mostrarLoading("Cadastrando financiamento...");
+    if (!await verificarSenhaAdmin(opcoes.tipoContrato === 'emprestimo' ? 'cadastrar contrato de empréstimo/consignado' : 'cadastrar contrato de financiamento')) return false;
+    processandoAcaoModal = true; mostrarLoading(opcoes.tipoContrato === 'emprestimo' ? 'Cadastrando empréstimo...' : 'Cadastrando financiamento...');
     try {
         const dados = obterDados();
         const usuarioId = Number(localStorage.getItem('usuarioLogado'));
         const nomeFinal = String(nome || '').trim();
+        const tipoContrato = opcoes.tipoContrato === 'emprestimo' ? 'emprestimo' : 'financiamento';
         const valorFinal = numeroSeguro(valorParcela);
         const meses = Math.min(360, Math.max(1, inteiroSeguro(qtdMeses, 1)));
         const dataBase = criarDataLocal(primeiroVencimento);
-        const catId = categoriaId || dados.categorias.find(c => normalizarTexto(c.nome).includes('financiamento'))?.id || dados.categorias.find(c => c.tipo === 'saida')?.id || null;
+        const catId = categoriaId || dados.categorias.find(c => c.tipo === 'saida' && normalizarTexto(c.nome).includes('financiamento'))?.id || dados.categorias.find(c => c.tipo === 'saida')?.id || null;
         const catFin = (dados.categorias || []).find(c => String(c.id) === String(catId) && c.tipo === 'saida');
         const dup = (dados.financiamentos || []).some(f => Number(f.usuarioId) === usuarioId && normalizarTexto(f.nome) === normalizarTexto(nomeFinal));
-        if (dup) throw new Error('Você já possui um financiamento com esse nome.');
-        if (!nomeFinal || !Number.isFinite(valorFinal) || valorFinal <= 0 || !dataBase || !Number.isFinite(dataBase.getTime()) || !catFin) throw new Error('Dados inválidos.');
-        const bem = bemId ? (dados.bens || []).find(b => String(b.id) === String(bemId) && b.ativo !== false) : null;
-        if (!bem) throw new Error('Selecione um bem patrimonial ativo.');
-        const propBem = Number(bem.usuarioId || 0);
-        const uAtual = (dados.usuarios || []).find(u => Number(u.id) === usuarioId);
-        const pAtual = Number(uAtual?.parceiroId || 0);
-        const bemDoParceiro = propBem !== 0 && propBem !== usuarioId && propBem === pAtual && bem.compartilhado === true;
-        if (propBem !== 0 && propBem !== usuarioId && !bemDoParceiro) throw new Error('Bem de outro usuário não compartilhado.');
-        let escopoFin = bem.compartilhado ? 'casal' : 'individual';
-        const finId = dados.financiamentos.reduce((m, f) => Math.max(m, Number(f.id) || 0), 0) + 1;
-        const parcelamentoId = gerarId('finparc');
+        if (dup) throw new Error('Você já possui um contrato com esse nome.');
+        if (!nomeFinal || !Number.isFinite(valorFinal) || valorFinal <= 0 || !dataBase || !Number.isFinite(dataBase.getTime()) || !catFin) throw new Error('Informe nome, parcela, primeiro vencimento e uma categoria de saída válidos.');
+
+        const bem = bemId ? (dados.bens || []).find(x => String(x.id) === String(bemId) && x.ativo !== false) : null;
+        if (tipoContrato === 'financiamento' && !bem) throw new Error('Selecione um bem patrimonial ativo para o financiamento.');
+        if (bemId && !bem) throw new Error('O bem selecionado não existe ou está inativo.');
+        if (bem) {
+            const propBem = Number(bem.usuarioId || 0);
+            const uAtual = (dados.usuarios || []).find(u => Number(u.id) === usuarioId);
+            const pAtual = Number(uAtual?.parceiroId || 0);
+            const bemDoParceiro = propBem !== 0 && propBem !== usuarioId && propBem === pAtual && bem.compartilhado === true;
+            if (propBem !== 0 && propBem !== usuarioId && !bemDoParceiro) throw new Error('O bem pertence a outro usuário e não está compartilhado.');
+        }
+
+        let valorLiberado = 0, dataLiberacao = '', categoriaEntradaId = '', escopoContrato = opcoes.escopoContrato === 'casal' ? 'casal' : 'individual';
+        let valorCompra = null, valorEntrada = 0, valorFinanciado = null;
+        if (tipoContrato === 'emprestimo') {
+            valorLiberado = numeroSeguro(opcoes.valorLiberado);
+            const dataLib = criarDataLocal(opcoes.dataLiberacao);
+            categoriaEntradaId = opcoes.categoriaEntradaId || '';
+            const catEntrada = (dados.categorias || []).find(c => String(c.id) === String(categoriaEntradaId) && c.tipo === 'entrada');
+            if (!Number.isFinite(valorLiberado) || valorLiberado <= 0) throw new Error('Informe o valor líquido efetivamente recebido no empréstimo.');
+            if (!dataLib || !Number.isFinite(dataLib.getTime())) throw new Error('Informe uma data de recebimento válida.');
+            if (!catEntrada) throw new Error('Selecione uma categoria do tipo entrada para registrar o valor recebido.');
+            dataLiberacao = dataParaString(dataLib);
+        } else {
+            valorCompra = numeroSeguro(opcoes.valorCompra, NaN);
+            valorEntrada = numeroSeguro(opcoes.valorEntrada, 0);
+            if (!Number.isFinite(valorCompra) || valorCompra <= 0) throw new Error('Informe o valor de compra do bem.');
+            if (!Number.isFinite(valorEntrada) || valorEntrada < 0) throw new Error('O valor da entrada não pode ser negativo.');
+            if (valorEntrada >= valorCompra) throw new Error('A entrada deve ser menor que o valor de compra para haver saldo financiado.');
+            valorCompra = Number(valorCompra.toFixed(2));
+            valorEntrada = Number(valorEntrada.toFixed(2));
+            valorFinanciado = Number((valorCompra - valorEntrada).toFixed(2));
+            escopoContrato = bem?.compartilhado ? 'casal' : 'individual';
+        }
+
+        const finId = (dados.financiamentos || []).reduce((m, f) => Math.max(m, Number(f.id) || 0), 0) + 1;
+        const parcelamentoId = tipoContrato === 'financiamento' ? gerarId('finparc') : null;
         const totalMeses = recorrente === 'sim' ? meses : 1;
-        dados.financiamentos.push({ id: finId, usuarioId, nome: nomeFinal, bemId: bemId ? Number(bemId) : null, totalMeses, mesesPagos: 0, valorParcela: Number(valorFinal.toFixed(2)), categoriaId: catId, primeiroVencimento, ativo: true, createdAt: new Date().toISOString() });
-        let nId = dados.lancamentos.reduce((m, l) => Math.max(m, Number(l.id) || 0), 0) + 1;
-        const parcelas = dividirValorExato(valorFinal * totalMeses, totalMeses);
+        const valorParcelaFinal = Number(valorFinal.toFixed(2));
+        const valorContrato = {
+            id: finId, usuarioId, nome: nomeFinal, tipoContrato,
+            bemId: bem ? Number(bem.id) : null,
+            totalMeses, mesesPagos: 0, valorParcela: valorParcelaFinal,
+            valorLiberado, categoriaId: catId, categoriaEntradaId,
+            dataLiberacao, valorCompra, valorEntrada, valorFinanciado,
+            primeiroVencimento: dataParaString(dataBase),
+            escopoContrato, ativo: true, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString()
+        };
+        dados.financiamentos.push(valorContrato);
+
+        let nId = (dados.lancamentos || []).reduce((m, l) => Math.max(m, Number(l.id) || 0), 0) + 1;
+        const agora = new Date().toISOString();
+        const prefixo = tipoContrato === 'emprestimo' ? 'Empréstimo' : 'Financiamento';
+
+        // O valor efetivamente recebido é registrado como entrada já realizada e vinculado ao contrato.
+        if (tipoContrato === 'emprestimo') {
+            dados.lancamentos.push({
+                id: nId++, usuarioId, descricao: `Empréstimo recebido: ${nomeFinal}`,
+                valor: Number(valorLiberado.toFixed(2)), tipo: 'entrada', categoriaId: Number(categoriaEntradaId),
+                formaPagamento: 'DINHEIRO', cartaoId: null, bemId: null,
+                vencimento: dataLiberacao, dataCompra: null, dataPagamento: dataLiberacao,
+                recorrencia: 'unica', parcelaAtual: 1, totalParcelas: 1, parcelamentoId: null,
+                financiamentoId: finId, observacao: 'Valor efetivamente recebido na liberação do contrato de empréstimo/consignado.',
+                horaExtra: 0, servicoEssencial: 'nao', escopo: escopoContrato,
+                pago: true, status: 'pago', usuarioPagamentoId: usuarioId, faturaId: null,
+                createdAt: agora, updatedAt: agora
+            });
+        }
+
         for (let i = 1; i <= totalMeses; i++) {
             const dataVenc = adicionarMesesClamped(dataBase, i - 1);
             dados.lancamentos.push({
-                id: nId++, usuarioId, descricao: `Financiamento: ${nomeFinal} (${i}/${totalMeses})`, valor: parcelas[i - 1],
-                tipo: 'saida', categoriaId: catId, formaPagamento: 'BOLETO', cartaoId: null, bemId: bemId ? Number(bemId) : null,
-                vencimento: dataParaString(dataVenc), recorrencia: 'mensal', parcelaAtual: i, totalParcelas: totalMeses, parcelamentoId,
-                financiamentoId: finId, observacao: 'Gerado automaticamente pelo contrato', horaExtra: 0, servicoEssencial: 'nao',
-                escopo: escopoFin, pago: false, status: 'pendente', faturaId: null, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString()
+                id: nId++, usuarioId, descricao: `${prefixo}: ${nomeFinal} (${i}/${totalMeses})`, valor: valorParcelaFinal,
+                tipo: 'saida', categoriaId: catId, formaPagamento: 'BOLETO', cartaoId: null, bemId: bem ? Number(bem.id) : null,
+                vencimento: dataParaString(dataVenc), recorrencia: 'mensal', parcelaAtual: i, totalParcelas: totalMeses,
+                parcelamentoId, financiamentoId: finId,
+                observacao: tipoContrato === 'emprestimo' ? 'Parcela mensal gerada pelo contrato de empréstimo/consignado.' : 'Gerado automaticamente pelo contrato',
+                horaExtra: 0, servicoEssencial: 'nao', escopo: escopoContrato,
+                pago: false, status: 'pendente', faturaId: null, createdAt: agora, updatedAt: agora
             });
         }
-        registrarLog(dados, "CADASTRO FINANCIAMENTO", `Contrato: ${nomeFinal} (${totalMeses} meses)`, { entidade: 'financiamento', entidadeId: finId });
+
+        registrarLog(dados, tipoContrato === 'emprestimo' ? 'CADASTRO EMPRÉSTIMO' : 'CADASTRO FINANCIAMENTO',
+            tipoContrato === 'emprestimo'
+                ? `Contrato: ${nomeFinal}; recebido ${formatarMoeda(valorLiberado)}; ${totalMeses} parcelas de ${formatarMoeda(valorParcelaFinal)}.`
+                : `Contrato: ${nomeFinal} (${totalMeses} meses)`,
+            { entidade: 'financiamento', entidadeId: finId });
         await salvarDados(dados);
         esconderLoading(); processandoAcaoModal = false;
-        await mostrarAlertaModal("Financiamento cadastrado com sucesso!"); return true;
+        await mostrarAlertaModal(tipoContrato === 'emprestimo'
+            ? 'Empréstimo cadastrado! O valor recebido foi lançado como entrada e as parcelas foram criadas como saídas.'
+            : 'Financiamento cadastrado com sucesso!');
+        return true;
     } catch (erro) {
         console.error(erro);
         esconderLoading(); processandoAcaoModal = false;
-        await mostrarAlertaModal(erro.message || 'Erro ao cadastrar financiamento.'); return false;
+        await mostrarAlertaModal(erro.message || 'Erro ao cadastrar o contrato.');
+        return false;
     }
 }
 
@@ -1486,7 +1627,9 @@ async function excluirFinanciamento(id) {
         const fin = dados.financiamentos.find(f => String(f.id) === String(id));
         if (!fin) throw new Error('Financiamento não encontrado.');
         if (Number(fin.usuarioId) !== Number(obterUsuarioAtualId(dados))) throw new Error('Só o dono pode excluir.');
-        const parcelas = dados.lancamentos.filter(l => pertenceAoFinanciamento(l, fin, dados));
+        const parcelas = dados.lancamentos.filter(l =>
+            String(l.financiamentoId) === String(fin.id) || pertenceAoFinanciamento(l, fin, dados)
+        );
         parcelas.forEach(l => {
             const u = obterUsuarioAtual(dados);
             dados.exclusao_movimento.push({ id: gerarId('exc'), dataHora: formatarDataSemHora(new Date()), usuario: u ? u.nome : 'Desconhecido', usuarioId: u ? Number(u.id) : null, lancamentoId: l.id, descricao: l.descricao, valor: l.valor, motivo: '[FINANCIAMENTO] Exclusão do contrato' });
@@ -1740,16 +1883,23 @@ function carregarDashboard() {
     const lns = filtrarDadosPorPermissao(d.lancamentos || [], d, esc).filter(l => String(l.vencimento || l.dataCompra || '').startsWith(mes) && (esc === 'todos' || l.tipo === 'entrada' || (l.escopo || 'casal') === esc));
     const reSalario = /salario|adiantamento|plr|decimo terceiro|(^|[^0-9])13(?![0-9])/;
     const reUber = /uber|(^|[^0-9])99(?![0-9])/;
-    let tE = 0, tS = 0, tSal = 0, tUb = 0, tCart = 0;
+    let tE = 0, tS = 0, tSal = 0, tUb = 0, tEmprestimos = 0, tCart = 0;
     lns.forEach(l => {
         const v = Number(l.valor || 0), c = normalizarTexto(nomeCat(l.categoriaId));
-        if (l.tipo === 'entrada') { tE += v; if (reSalario.test(c)) tSal += v; else if (reUber.test(c)) tUb += v; }
-        else { tS += v; if (l.formaPagamento === 'CARTAO') tCart += v; }
+        const contratoEntrada = l.tipo === 'entrada' && (d.financiamentos || []).some(f =>
+            String(f.id) === String(l.financiamentoId) && f.tipoContrato === 'emprestimo'
+        );
+        if (l.tipo === 'entrada') {
+            tE += v;
+            if (contratoEntrada) tEmprestimos += v;
+            else if (reSalario.test(c)) tSal += v;
+            else if (reUber.test(c)) tUb += v;
+        } else { tS += v; if (l.formaPagamento === 'CARTAO') tCart += v; }
     });
     const safeHTML = (id, html) => { const e = document.getElementById(id); if (e) e.innerHTML = html; };
     safeHTML('totalEntradas', formatarMoeda(tE)); safeHTML('totalSaidas', formatarMoeda(tS));
     const eS = document.getElementById('saldoGeral'); if (eS) { eS.textContent = formatarMoeda(tE - tS); eS.className = `stat-value saldo-destaque ${tE - tS >= 0 ? 'positivo' : 'negativo'}`; }
-    safeHTML('subDetalhesEntradas', `<strong>Salário:</strong> ${formatarMoeda(tSal)}<br><strong>Uber:</strong> ${formatarMoeda(tUb)}<br><strong>Outros:</strong> ${formatarMoeda(Math.max(0, tE - tSal - tUb))}`);
+    safeHTML('subDetalhesEntradas', `<strong>Salário:</strong> ${formatarMoeda(tSal)}<br><strong>Uber:</strong> ${formatarMoeda(tUb)}<br><strong>Empréstimos:</strong> ${formatarMoeda(tEmprestimos)}<br><strong>Outros:</strong> ${formatarMoeda(Math.max(0, tE - tSal - tUb - tEmprestimos))}`);
     safeHTML('subDetalhesSaidas', `<strong>Cartão:</strong> ${formatarMoeda(tCart)}<br><strong>Outras:</strong> ${formatarMoeda(Math.max(0, tS - tCart))}`);
     const saidas = lns.filter(l => l.tipo !== 'entrada');
     const topo = somarPor(saidas, l => nomeCat(l.categoriaId))[0];
@@ -2108,8 +2258,13 @@ function abrirDetalhamentoParcelamento(lancamentoId, paginaAtual = 1) {
     const grupoId = resolverParcelamentoId(lanc);
     const finId = resolverFinanciamentoIdPorLancamento(lanc, dados);
     let grupo;
-    if (grupoId) grupo = dados.lancamentos.filter(l => String(l.parcelamentoId) === String(grupoId));
-    else if (finId != null) grupo = dados.lancamentos.filter(l => String(resolverFinanciamentoIdPorLancamento(l, dados)) === String(finId));
+    const finRelacionado = finId == null ? null : (dados.financiamentos || []).find(f => String(f.id) === String(finId));
+    if (finRelacionado?.tipoContrato === 'emprestimo' && lanc.tipo === 'entrada') grupo = [lanc];
+    else if (grupoId) grupo = dados.lancamentos.filter(l => String(l.parcelamentoId) === String(grupoId));
+    else if (finId != null) grupo = dados.lancamentos.filter(l =>
+        String(resolverFinanciamentoIdPorLancamento(l, dados)) === String(finId) &&
+        (finRelacionado?.tipoContrato !== 'emprestimo' || l.tipo === 'saida')
+    );
     else grupo = [lanc];
     grupo.sort((a, b) => String(a.vencimento || '').localeCompare(String(b.vencimento || '')));
     const porPag = 30, total = grupo.length || Number(lanc.totalParcelas) || 1, totalPgs = Math.ceil(total / porPag);
@@ -2134,7 +2289,7 @@ function abrirDetalhamentoParcelamento(lancamentoId, paginaAtual = 1) {
     document.querySelectorAll('.modal-overlay-detalhe-parcelas').forEach(el => el.remove());
     const overlay = document.createElement('div');
     overlay.className = 'modal-overlay modal-overlay-detalhe-parcelas';
-    overlay.innerHTML = `<div class="modal-box" style="max-width:650px;width:95%;"><h3>Detalhes do Financiamento / Parcelamento</h3><div style="text-align:left;display:flex;flex-direction:column;gap:6px;margin-bottom:12px;font-size:.9rem;"><p><strong>Descrição:</strong> ${escaparHTML(descricaoBaseParcelamento(lanc.descricao))}</p><p><strong>Valor Total:</strong> R$ ${valTot.toLocaleString('pt-BR', {minimumFractionDigits: 2})} (${total}x de R$ ${valParc.toFixed(2)})</p><p><strong>${formaInfo}</strong> | <strong>Responsável:</strong> ${escaparHTML(resp)}</p></div><h4 style="margin:10px 0 6px 0;font-size:.95rem;text-align:left;">Parcelas (${ini + 1} a ${Math.min(fim, total)} de ${total}):</h4>${pag}<div class="tabela-container" style="max-height:240px;overflow-y:auto;border:1px solid var(--border);border-radius:8px;"><table class="tabela" style="width:100%;font-size:.85rem;"><thead><tr><th style="text-align:center;">Parcela</th><th>Vencimento</th><th style="text-align:right;">Valor</th><th style="text-align:center;">Status</th></tr></thead><tbody>${linhas}</tbody></table></div>${pag}<div class="modal-buttons modal-buttons-center" style="margin-top:15px;"><button type="button" data-fechar style="background-color:var(--primary);width:100%;">Fechar</button></div></div>`;
+    overlay.innerHTML = `<div class="modal-box" style="max-width:650px;width:95%;"><h3>${finRelacionado?.tipoContrato === 'emprestimo' ? 'Detalhes do Empréstimo / Consignado' : 'Detalhes do Financiamento / Parcelamento'}</h3><div style="text-align:left;display:flex;flex-direction:column;gap:6px;margin-bottom:12px;font-size:.9rem;"><p><strong>Descrição:</strong> ${escaparHTML(descricaoBaseParcelamento(lanc.descricao))}</p><p><strong>Valor Total:</strong> R$ ${valTot.toLocaleString('pt-BR', {minimumFractionDigits: 2})} (${total}x de R$ ${valParc.toFixed(2)})</p><p><strong>${formaInfo}</strong> | <strong>Responsável:</strong> ${escaparHTML(resp)}</p></div><h4 style="margin:10px 0 6px 0;font-size:.95rem;text-align:left;">Parcelas (${ini + 1} a ${Math.min(fim, total)} de ${total}):</h4>${pag}<div class="tabela-container" style="max-height:240px;overflow-y:auto;border:1px solid var(--border);border-radius:8px;"><table class="tabela" style="width:100%;font-size:.85rem;"><thead><tr><th style="text-align:center;">Parcela</th><th>Vencimento</th><th style="text-align:right;">Valor</th><th style="text-align:center;">Status</th></tr></thead><tbody>${linhas}</tbody></table></div>${pag}<div class="modal-buttons modal-buttons-center" style="margin-top:15px;"><button type="button" data-fechar style="background-color:var(--primary);width:100%;">Fechar</button></div></div>`;
     document.body.appendChild(overlay);
     overlay.querySelector('[data-fechar]').onclick = () => fecharModal(overlay);
     overlay.addEventListener('click', e => { if (e.target === overlay) fecharModal(overlay); });

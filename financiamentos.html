@@ -12,7 +12,7 @@
         <div class="page-heading">
             <div>
                 <h2>Financiamentos e Contratos</h2>
-                <p>Gerencie contratos de longo prazo, vincule bens patrimoniais e acompanhe parcelas.</p>
+                <p>Gerencie financiamentos, empréstimos e consignados, acompanhando o valor recebido e as parcelas.</p>
             </div>
             <div class="toolbar-actions">
                 <button type="button" onclick="abrirModalNovoFinanciamento()">+ Novo Contrato</button>
@@ -28,6 +28,7 @@
                     <thead>
                         <tr>
                             <th>Contrato</th>
+                            <th>Tipo</th>
                             <th>Bem Vinculado</th>
                             <th>Progresso</th>
                             <th>Valor Parcela</th>
@@ -42,45 +43,95 @@
     </main>
 
     <div id="modalNovoFinanciamento" class="modal-overlay" style="display: none;">
-        <div class="modal-box" style="max-width: 600px; width: 95%;">
+        <div class="modal-box" style="max-width: 720px; width: 95%; max-height: 90vh; overflow-y: auto;">
             <h3>Novo Contrato</h3>
-            <p>Informe os dados do financiamento ou parcelamento. É obrigatório vincular a um bem.</p>
-            
+            <p id="descricaoModalNovoContrato">Cadastre um financiamento vinculado a um bem ou um empréstimo com entrada do valor recebido e parcelas mensais.</p>
+
             <form id="formFinanciamentoModal" onsubmit="salvarFinanciamentoModal(event)">
-                <div class="form-grid-2">
+                <div class="form-group">
+                    <label for="tipoContratoFin">Tipo de contrato</label>
+                    <select id="tipoContratoFin" onchange="tratarMudancaTipoContrato()">
+                        <option value="financiamento">Financiamento de bem</option>
+                        <option value="emprestimo">Empréstimo / Consignado</option>
+                    </select>
+                </div>
+
+                <div class="form-grid-2" style="margin-top: 12px;">
                     <div class="form-group">
-                        <label for="nomeFinanciamento">Nome do Contrato / Descrição</label>
-                        <input type="text" id="nomeFinanciamento" placeholder="Ex.: Financiamento Ford Ka" required>
+                        <label for="nomeFinanciamento">Nome do contrato / descrição</label>
+                        <input type="text" id="nomeFinanciamento" maxlength="120" placeholder="Ex.: Consignado Banco X" required>
                     </div>
-                    <div class="form-group">
-                        <label for="bemVinculadoFin">Vincular a um Bem Patrimonial (*Obrigatório)</label>
+                    <div class="form-group" id="blocoBemVinculadoFin">
+                        <label for="bemVinculadoFin" id="labelBemVinculadoFin">Vincular a um bem patrimonial (obrigatório)</label>
                         <div style="display: flex; gap: 6px;">
                             <select id="bemVinculadoFin" required style="flex: 1;">
-                                <option value="">Carregando bens...</option>
+                                <option value="">Selecione um bem...</option>
                             </select>
                             <button type="button" class="btn-secundario" onclick="window.location.href='bens.html'" title="Cadastrar novo bem" style="padding: 0 12px;">+ Bem</button>
                         </div>
                     </div>
                 </div>
 
+                <div id="blocoDadosCompraFin" class="form-card nested-card" style="margin-top:14px; margin-bottom:0; background:var(--surface-2); box-shadow:none;">
+                    <div class="section-title"><div><h3>Valor da aquisição</h3><p>Informe o preço do bem e a entrada já paga. A entrada é usada na análise de custos e não cria outro lançamento automaticamente, para evitar duplicidade.</p></div></div>
+                    <div class="form-grid-2">
+                        <div class="form-group">
+                            <label for="valorCompraFin">Valor de compra do bem (R$)</label>
+                            <input type="number" id="valorCompraFin" min="0.01" step="0.01" placeholder="Ex.: 200000,00" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="valorEntradaFin">Entrada paga (R$)</label>
+                            <input type="number" id="valorEntradaFin" min="0" step="0.01" value="0" placeholder="Ex.: 20000,00">
+                        </div>
+                    </div>
+                    <p id="previewValorFinanciado" class="muted small" style="margin:8px 0 0;">Valor financiado estimado: —</p>
+                </div>
+
+                <div id="blocoDadosEmprestimo" class="form-card nested-card" style="display:none; margin-top:14px; margin-bottom:0; background:var(--surface-2); box-shadow:none;">
+                    <div class="section-title"><div><h3>Liberação do empréstimo</h3><p>O valor informado será registrado como uma entrada já recebida na data indicada.</p></div></div>
+                    <div class="form-grid-2">
+                        <div class="form-group">
+                            <label for="valorLiberadoEmprestimo">Valor efetivamente recebido (R$)</label>
+                            <input type="number" id="valorLiberadoEmprestimo" min="0.01" step="0.01" placeholder="Ex.: 12000,00">
+                        </div>
+                        <div class="form-group">
+                            <label for="dataLiberacaoEmprestimo">Data do recebimento</label>
+                            <input type="date" id="dataLiberacaoEmprestimo">
+                        </div>
+                    </div>
+                    <div class="form-grid-2" style="margin-top:12px;">
+                        <div class="form-group">
+                            <label for="categoriaEntradaEmprestimo">Categoria da entrada</label>
+                            <select id="categoriaEntradaEmprestimo"></select>
+                        </div>
+                        <div class="form-group">
+                            <label for="escopoContratoEmprestimo">Destino do contrato</label>
+                            <select id="escopoContratoEmprestimo">
+                                <option value="individual">Individual</option>
+                                <option value="casal">Casal / Casa</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+
                 <div class="form-grid-2" style="margin-top: 12px;">
                     <div class="form-group">
-                        <label for="qtdMesesFin">Total de Meses / Parcelas</label>
+                        <label for="qtdMesesFin">Total de meses / parcelas</label>
                         <input type="number" min="1" max="360" id="qtdMesesFin" value="48" required>
                     </div>
                     <div class="form-group">
-                        <label for="valorParcelaFin">Valor da Parcela (R$)</label>
+                        <label for="valorParcelaFin">Valor da parcela mensal (R$)</label>
                         <input type="number" step="0.01" min="0.01" id="valorParcelaFin" placeholder="850,00" required>
                     </div>
                 </div>
 
                 <div class="form-grid-2" style="margin-top: 12px;">
                     <div class="form-group">
-                        <label for="primeiroVencimentoFin">Primeiro Vencimento</label>
+                        <label for="primeiroVencimentoFin">Primeiro vencimento</label>
                         <input type="date" id="primeiroVencimentoFin" required>
                     </div>
                     <div class="form-group">
-                        <label for="categoriaFinanciamento">Categoria Padrão</label>
+                        <label for="categoriaFinanciamento">Categoria das parcelas (saída)</label>
                         <select id="categoriaFinanciamento" required></select>
                     </div>
                 </div>
@@ -97,11 +148,58 @@
     <script>
         document.addEventListener('DOMContentLoaded', async () => {
             injetarHeader();
+            document.getElementById('valorCompraFin')?.addEventListener('input', atualizarPreviewValorFinanciado);
+            document.getElementById('valorEntradaFin')?.addEventListener('input', atualizarPreviewValorFinanciado);
             const autenticado = await verificarAutenticacao();
-            if (autenticado) {
-                carregarTabelaFinanciamentosGeral();
-            }
+            if (autenticado) carregarTabelaFinanciamentosGeral();
         });
+
+        function tratarMudancaTipoContrato() {
+            const tipo = document.getElementById('tipoContratoFin')?.value || 'financiamento';
+            const ehEmprestimo = tipo === 'emprestimo';
+            const blocoBem = document.getElementById('blocoBemVinculadoFin');
+            const selectBem = document.getElementById('bemVinculadoFin');
+            const labelBem = document.getElementById('labelBemVinculadoFin');
+            const blocoEmprestimo = document.getElementById('blocoDadosEmprestimo');
+            const blocoCompra = document.getElementById('blocoDadosCompraFin');
+            const valorCompraEl = document.getElementById('valorCompraFin');
+            const catEntrada = document.getElementById('categoriaEntradaEmprestimo');
+            const escopo = document.getElementById('escopoContratoEmprestimo');
+            const texto = document.getElementById('descricaoModalNovoContrato');
+
+            if (blocoBem) blocoBem.style.display = 'block';
+            if (selectBem) selectBem.required = !ehEmprestimo;
+            if (labelBem) labelBem.textContent = ehEmprestimo ? 'Bem vinculado (opcional)' : 'Vincular a um bem patrimonial (obrigatório)';
+            if (blocoEmprestimo) blocoEmprestimo.style.display = ehEmprestimo ? 'block' : 'none';
+            if (blocoCompra) blocoCompra.style.display = ehEmprestimo ? 'none' : 'block';
+            if (valorCompraEl) valorCompraEl.required = !ehEmprestimo;
+            if (catEntrada) catEntrada.required = ehEmprestimo;
+            if (escopo) escopo.required = ehEmprestimo;
+            const valorLib = document.getElementById('valorLiberadoEmprestimo');
+            const dataLib = document.getElementById('dataLiberacaoEmprestimo');
+            if (valorLib) valorLib.required = ehEmprestimo;
+            if (dataLib) dataLib.required = ehEmprestimo;
+            if (texto) texto.textContent = ehEmprestimo
+                ? 'O valor liberado será lançado como entrada e as parcelas mensais como saídas vinculadas a este contrato.'
+                : 'Cadastre o financiamento vinculado a um bem patrimonial e informe o preço de compra para calcular o custo adicional e a taxa estimada.';
+            atualizarPreviewValorFinanciado();
+        }
+
+        function atualizarPreviewValorFinanciado() {
+            const tipo = document.getElementById('tipoContratoFin')?.value || 'financiamento';
+            const preview = document.getElementById('previewValorFinanciado');
+            if (!preview || tipo === 'emprestimo') return;
+            const compraTxt = document.getElementById('valorCompraFin')?.value ?? '';
+            const entradaTxt = document.getElementById('valorEntradaFin')?.value ?? '0';
+            if (compraTxt.trim() === '') { preview.textContent = 'Valor financiado estimado: —'; return; }
+            const compra = Number(compraTxt);
+            const entrada = entradaTxt.trim() === '' ? 0 : Number(entradaTxt);
+            if (!Number.isFinite(compra) || !Number.isFinite(entrada) || compra <= 0 || entrada < 0 || entrada >= compra) {
+                preview.textContent = 'Confira os valores: a entrada deve ser igual ou superior a zero e menor que o preço de compra.';
+                return;
+            }
+            preview.textContent = `Valor financiado estimado: ${formatarMoeda(compra - entrada)}`;
+        }
 
         async function abrirModalNovoFinanciamento() {
             const dados = obterDados();
@@ -109,59 +207,82 @@
             const usuarioId = String(usuario?.id ?? '');
             const parceiroId = String(usuario?.parceiroId ?? '');
             const bensAtivos = (dados.bens || []).filter(b => b.ativo !== false && (b.usuarioId == null || String(b.usuarioId) === usuarioId || (b.compartilhado === true && String(b.usuarioId) === parceiroId)));
-            
-            if (bensAtivos.length === 0) {
-                const criar = await mostrarConfirmacaoModal("Você precisa cadastrar pelo menos um bem patrimonial antes de criar um financiamento. Deseja ir para a tela de Bens agora?");
-                if (criar) window.location.href = 'bens.html';
-                return;
-            }
 
             const selectBens = document.getElementById('bemVinculadoFin');
-            const selectCat = document.getElementById('categoriaFinanciamento');
-            
-            selectBens.innerHTML = '<option value="">Selecione um bem obrigatório...</option>';
+            const selectCatSaida = document.getElementById('categoriaFinanciamento');
+            const selectCatEntrada = document.getElementById('categoriaEntradaEmprestimo');
+            selectBens.innerHTML = '<option value="">Nenhum bem vinculado</option>';
             bensAtivos.forEach(b => {
-                const opt = document.createElement('option');
-                opt.value = b.id;
-                opt.textContent = b.nome;
-                selectBens.appendChild(opt);
+                const opt = document.createElement('option'); opt.value = b.id; opt.textContent = b.nome; selectBens.appendChild(opt);
             });
-
-            selectCat.innerHTML = '';
+            selectCatSaida.innerHTML = '';
             (dados.categorias || []).filter(c => c.tipo === 'saida').forEach(c => {
-                const opt = document.createElement('option');
-                opt.value = c.id;
-                opt.textContent = c.nome;
-                selectCat.appendChild(opt);
+                const opt = document.createElement('option'); opt.value = c.id; opt.textContent = c.nome; selectCatSaida.appendChild(opt);
             });
-
+            selectCatEntrada.innerHTML = '';
+            (dados.categorias || []).filter(c => c.tipo === 'entrada').forEach(c => {
+                const opt = document.createElement('option'); opt.value = c.id; opt.textContent = c.nome; selectCatEntrada.appendChild(opt);
+            });
+            if (!selectCatSaida.options.length) {
+                await mostrarAlertaModal('Cadastre ao menos uma categoria do tipo saída antes de criar um contrato.'); return;
+            }
+            if (!selectCatEntrada.options.length) {
+                // O financiamento tradicional ainda pode ser cadastrado, mas o empréstimo exige categoria de entrada.
+                selectCatEntrada.innerHTML = '<option value="">Cadastre uma categoria de entrada</option>';
+            }
+            document.getElementById('formFinanciamentoModal').reset();
+            document.getElementById('tipoContratoFin').value = 'financiamento';
             document.getElementById('primeiroVencimentoFin').value = dataLocalYYYYMMDD();
+            document.getElementById('dataLiberacaoEmprestimo').value = dataLocalYYYYMMDD();
+            document.getElementById('qtdMesesFin').value = 48;
+            document.getElementById('valorEntradaFin').value = '0';
+            if (selectCatEntrada.options.length && selectCatEntrada.options[0].value) selectCatEntrada.value = selectCatEntrada.options[0].value;
+            tratarMudancaTipoContrato();
+            atualizarPreviewValorFinanciado();
             document.getElementById('modalNovoFinanciamento').style.display = 'flex';
         }
 
         function fecharModalNovoFinanciamento() {
             document.getElementById('modalNovoFinanciamento').style.display = 'none';
             document.getElementById('formFinanciamentoModal').reset();
+            tratarMudancaTipoContrato();
         }
 
         async function salvarFinanciamentoModal(event) {
             event.preventDefault();
+            const tipoContrato = document.getElementById('tipoContratoFin').value;
             const nome = document.getElementById('nomeFinanciamento').value.trim();
-            const bemId = document.getElementById('bemVinculadoFin').value;
+            const bemId = document.getElementById('bemVinculadoFin').value || null;
             const qtdMeses = parseInt(document.getElementById('qtdMesesFin').value, 10);
             const valorParcela = numeroSeguro(document.getElementById('valorParcelaFin').value);
             const primeiroVencimento = document.getElementById('primeiroVencimentoFin').value;
             const categoriaId = document.getElementById('categoriaFinanciamento').value;
+            const valorLiberado = numeroSeguro(document.getElementById('valorLiberadoEmprestimo').value);
+            const dataLiberacao = document.getElementById('dataLiberacaoEmprestimo').value;
+            const categoriaEntradaId = document.getElementById('categoriaEntradaEmprestimo').value;
+            const escopoContrato = document.getElementById('escopoContratoEmprestimo').value;
+            const valorCompra = numeroSeguro(document.getElementById('valorCompraFin').value, NaN);
+            const valorEntrada = numeroSeguro(document.getElementById('valorEntradaFin').value, 0);
 
-            if (!nome || !bemId || !qtdMeses || !Number.isFinite(valorParcela) || !primeiroVencimento || !categoriaId) {
-                await mostrarAlertaModal('Preencha todos os campos obrigatórios (incluindo o bem patrimonial).');
-                return;
+            if (!nome || !qtdMeses || qtdMeses < 1 || qtdMeses > 360 || !Number.isFinite(valorParcela) || valorParcela <= 0 || !primeiroVencimento || !categoriaId) {
+                await mostrarAlertaModal('Preencha os dados do contrato e das parcelas corretamente.'); return;
+            }
+            if (tipoContrato === 'financiamento' && !bemId) {
+                await mostrarAlertaModal('Selecione um bem patrimonial para o financiamento.'); return;
+            }
+            if (tipoContrato === 'financiamento' && (!Number.isFinite(valorCompra) || valorCompra <= 0 || !Number.isFinite(valorEntrada) || valorEntrada < 0 || valorEntrada >= valorCompra)) {
+                await mostrarAlertaModal('Informe o preço de compra e uma entrada entre R$ 0,00 e um valor menor que o preço de compra.'); return;
+            }
+            if (tipoContrato === 'emprestimo' && (valorLiberado <= 0 || !dataLiberacao || !categoriaEntradaId)) {
+                await mostrarAlertaModal('Informe o valor recebido, a data de recebimento e uma categoria de entrada.'); return;
             }
 
+            const opcoes = tipoContrato === 'emprestimo'
+                ? { tipoContrato, valorLiberado, dataLiberacao, categoriaEntradaId, escopoContrato }
+                : { tipoContrato, valorCompra, valorEntrada };
             const sucesso = await adicionarFinanciamentoComRecorrencia(
-                nome, 'sim', valorParcela, qtdMeses, primeiroVencimento, categoriaId, bemId
+                nome, 'sim', valorParcela, qtdMeses, primeiroVencimento, categoriaId, bemId, opcoes
             );
-
             if (sucesso) {
                 fecharModalNovoFinanciamento();
                 carregarTabelaFinanciamentosGeral();
@@ -177,7 +298,7 @@
             const financiamentos = filtrarDadosPorPermissao(dados.financiamentos || [], dados, 'casal').filter(f => f.ativo !== false);
 
             if (financiamentos.length === 0) {
-                tbody.innerHTML = `<tr><td colspan="6" style="text-align: center;">Nenhum contrato cadastrado.</td></tr>`;
+                tbody.innerHTML = `<tr><td colspan="7" style="text-align: center;">Nenhum contrato cadastrado.</td></tr>`;
                 return;
             }
 
@@ -194,6 +315,7 @@
                 const tr = document.createElement('tr');
                 tr.innerHTML = `
                     <td><strong>${escaparHTML(f.nome)}</strong></td>
+                    <td>${f.tipoContrato === 'emprestimo' ? 'Empréstimo / Consignado' : 'Financiamento'}</td>
                     <td>${escaparHTML(nomeBem)}</td>
                     <td>${pagos}/${totalMeses} (${percentual}%)</td>
                     <td>R$ ${Number(f.valorParcela || 0).toLocaleString('pt-BR', {minimumFractionDigits: 2})}</td>

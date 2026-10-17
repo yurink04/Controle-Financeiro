@@ -31,9 +31,10 @@ var SCHEMA = {
   ],
 
   financiamentos: [
-    'id', 'usuarioId', 'nome', 'bemId', 'totalMeses', 'mesesPagos',
-    'valorParcela', 'categoriaId', 'primeiroVencimento', 'ativo',
-    'createdAt', 'updatedAt'
+    'id', 'usuarioId', 'nome', 'tipoContrato', 'bemId', 'totalMeses', 'mesesPagos',
+    'valorParcela', 'valorLiberado', 'categoriaId', 'categoriaEntradaId', 'dataLiberacao',
+    'valorCompra', 'valorEntrada', 'valorFinanciado', 'primeiroVencimento',
+    'escopoContrato', 'ativo', 'createdAt', 'updatedAt'
   ],
 
   bens: [
@@ -72,6 +73,7 @@ var CAMPOS_DATA = {
   vencimento: true,
   dataCompra: true,
   dataPagamento: true,
+  dataLiberacao: true,
   primeiroVencimento: true,
   dataVencimento: true
 };
@@ -96,7 +98,9 @@ function respostaJson(obj) {
 }
 
 function tokenValido(token) {
-  return token && String(token) === String(SENHA_MESTRA_API);
+  var tokenInformado = token == null ? '' : String(token).trim();
+  var tokenConfigurado = String(SENHA_MESTRA_API || '').trim();
+  return tokenInformado !== '' && tokenConfigurado !== '' && tokenInformado === tokenConfigurado;
 }
 
 var CHAVE_REVISAO_DADOS = 'DADOS_REVISAO';
@@ -211,8 +215,9 @@ function doPost(e) {
     }
 
     if (action === 'verificarAdmin') {
-      var senhaInformada = data.senha == null ? '' : String(data.senha);
-      var autorizado = senhaInformada !== '' && senhaInformada === String(SENHA_ADMIN);
+      var senhaInformada = data.senha == null ? '' : String(data.senha).trim();
+      var senhaConfigurada = String(SENHA_ADMIN || '').trim();
+      var autorizado = senhaInformada !== '' && senhaConfigurada !== '' && senhaInformada === senhaConfigurada;
       return respostaJson({
         status: 'sucesso',
         autorizado: autorizado

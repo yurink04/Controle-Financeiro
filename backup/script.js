@@ -15,6 +15,7 @@ let syncTimer = null;
 let syncPendingData = null;
 let syncInFlight = false;
 let processandoAcaoModal = false;
+let processandoSaidaSistema = false;
 let memoriaSistema = null;
 let verificacaoAutenticacaoPromise = null;
 
@@ -303,20 +304,91 @@ async function selecionarUsuario(id) {
     return true;
 }
 
-function deslogarSistema() {
-    const uId = localStorage.getItem('usuarioLogado');
-    if (uId) {
-        const dados = obterDados();
-        const u = dados.usuarios.find(user => Number(user.id) === Number(uId));
-        if (u && normalizarTexto(u.nome) === 'teste') {
-            const bkp = localStorage.getItem(BACKUP_TESTE_KEY);
-            if (bkp) { localStorage.setItem(DB_KEY, bkp); localStorage.removeItem(BACKUP_TESTE_KEY); }
+async function deslogarSistema(solicitadoPeloUsuario = true) {
+    if (processandoSaidaSistema) return false;
+    processandoSaidaSistema = true;
+    let loadingSaidaAtivo = false;
+
+    try {
+        const temPendencias = localStorage.getItem('syncPendente') === 'true';
+        const temConflito = localStorage.getItem(SYNC_CONFLICT_KEY) !== null;
+
+        // A confirmação só aparece quando a saída é solicitada pelo botão "Sair do sistema".
+        // Navegar normalmente entre páginas não fica bloqueado pela sincronização em segundo plano.
+        if (solicitadoPeloUsuario && (temPendencias || temConflito)) {
+            const aguardar = await mostrarConfirmacaoModal(
+                temConflito
+                    ? 'Existe um conflito de sincronização pendente. Deseja tentar resolver/enviar os dados antes de sair?'
+                    : 'Há alterações sendo sincronizadas em segundo plano. Deseja aguardar a sincronização antes de sair?'
+            );
+            if (!aguardar) return false;
+
+            mostrarLoading('Aguardando sincronização...');
+            loadingSaidaAtivo = true;
+            const sincronizado = await aguardarSincronizacaoPendente(30000);
+            esconderLoading();
+            loadingSaidaAtivo = false;
+
+            if (!sincronizado) {
+                const sairMesmoAssim = await mostrarConfirmacaoModal(
+                    'Não foi possível concluir a sincronização agora. As alterações continuam salvas neste navegador e poderão ser sincronizadas quando você voltar. Deseja sair mesmo assim?'
+                );
+                if (!sairMesmoAssim) return false;
+            }
         }
+
+        const uId = localStorage.getItem('usuarioLogado');
+        if (uId) {
+            const dados = obterDados();
+            const u = dados.usuarios.find(user => Number(user.id) === Number(uId));
+            if (u && normalizarTexto(u.nome) === 'teste') {
+                const bkp = localStorage.getItem(BACKUP_TESTE_KEY);
+                if (bkp) { localStorage.setItem(DB_KEY, bkp); localStorage.removeItem(BACKUP_TESTE_KEY); }
+            }
+        }
+
+        localStorage.removeItem('usuarioLogado');
+        localStorage.removeItem('adminAutorizado');
+        localStorage.removeItem('adminLogado');
+        window.location.href = 'index.html';
+        return true;
+    } finally {
+        processandoSaidaSistema = false;
+        if (loadingSaidaAtivo) esconderLoading();
     }
-    localStorage.removeItem('usuarioLogado');
-    localStorage.removeItem('adminAutorizado');
-    localStorage.removeItem('adminLogado');
-    window.location.href = 'index.html';
+}
+
+async function aguardarSincronizacaoPendente(tempoLimiteMs = 30000) {
+    // Reconstitui a fila a partir do armazenamento local se esta página acabou de ser aberta.
+    if (!syncPendingData && localStorage.getItem('syncPendente') === 'true') {
+        const local = lerJSONLocal(DB_KEY, null);
+        if (local) syncPendingData = clonarDados(local);
+    }
+
+    if (!syncInFlight && syncPendingData && !syncTimer && !localStorage.getItem(SYNC_CONFLICT_KEY)) {
+        agendarSincronizacaoSilenciosa();
+    }
+
+    const prazoFinal = Date.now() + Math.max(1000, Number(tempoLimiteMs) || 30000);
+    while (Date.now() < prazoFinal) {
+        const pendente = localStorage.getItem('syncPendente') === 'true';
+        const conflito = localStorage.getItem(SYNC_CONFLICT_KEY) !== null;
+
+        if (conflito) return false;
+        if (!pendente && !syncInFlight && !syncPendingData) return true;
+
+        // Se não houver tentativa agendada, inicia uma sem bloquear a navegação normal do sistema.
+        if (pendente && !syncInFlight && syncPendingData && !syncTimer) {
+            agendarSincronizacaoSilenciosa();
+        }
+
+        await new Promise(resolve => setTimeout(resolve, 200));
+    }
+
+    return localStorage.getItem('syncPendente') !== 'true'
+        && localStorage.getItem(SYNC_CONFLICT_KEY) === null
+        && !syncInFlight
+        && !syncPendingData;
 }
 
 function verificarAutenticacao() {
@@ -347,7 +419,7 @@ function verificarAutenticacao() {
             }
             const d = obterDados();
             const u = (d.usuarios || []).find(user => String(user.id) === String(uId));
-            if (!u || u.ativo === false) { deslogarSistema(); return false; }
+            if (!u || u.ativo === false) { deslogarSistema(false); return false; }
             if (!usuarioPodeAcessarPagina(u, permissaoPaginaAtual())) {
                 await mostrarAlertaModal('Acesso restrito.');
                 window.location.href = 'dashboard.html'; return false;
@@ -492,7 +564,10 @@ function marcarConflitoSincronizacao(dadosLocais, campos, mensagem) {
 
 function agendarSincronizacaoSilenciosa() {
     clearTimeout(syncTimer);
-    syncTimer = setTimeout(sincronizarComServidor, SYNC_DEBOUNCE_MS);
+    syncTimer = setTimeout(() => {
+        syncTimer = null;
+        sincronizarComServidor();
+    }, SYNC_DEBOUNCE_MS);
 }
 
 async function buscarDadosServidor() {
@@ -553,8 +628,12 @@ async function inicializarBanco() {
         memoriaSistema = migrarDados(local).dados;
         syncPendingData = clonarDados(memoriaSistema);
         if (!localStorage.getItem(SYNC_CONFLICT_KEY)) {
-            if (!lerJSONLocal(SYNC_BASELINE_KEY, null)) marcarConflitoSincronizacao(memoriaSistema, [], 'Sem snapshot.');
-            else await sincronizarComServidor();
+            if (!lerJSONLocal(SYNC_BASELINE_KEY, null)) {
+                marcarConflitoSincronizacao(memoriaSistema, [], 'Sem snapshot.');
+            } else {
+                // A interface abre com os dados locais; a rede sincroniza em segundo plano.
+                agendarSincronizacaoSilenciosa();
+            }
         }
         return memoriaSistema;
     }
@@ -824,20 +903,42 @@ async function verificarSenhaAdmin(nomeSecao = 'esta seção') {
     } catch { await mostrarAlertaModal('Falha na conexão.'); return false; }
 }
 
-function mostrarLoading(mensagem = "Processando...") {
+function mostrarLoading(mensagem = "Processando...", usarGif = false) {
     const span = document.getElementById('headerLoadingText');
     const spanVisivel = span && span.offsetParent !== null && document.body.classList.contains('sidebar-open');
     if (span) { span.textContent = mensagem; span.style.display = 'inline-block'; }
+
     const antigo = document.getElementById('loadingOverlay');
     if (antigo) antigo.remove();
-    if (!spanVisivel) {
+
+    // Quando solicitado, usa o GIF do próprio projeto. Para os outros processos,
+    // mantém o indicador CSS leve já utilizado pelo sistema.
+    if (!spanVisivel || usarGif) {
         const ov = document.createElement('div');
         ov.id = 'loadingOverlay';
         ov.setAttribute('role', 'status');
         ov.setAttribute('aria-live', 'polite');
-        ov.style.cssText = 'position:fixed;top:20px;left:50%;transform:translateX(-50%);z-index:900;background:var(--surface);color:var(--text-main);padding:10px 20px;border-radius:12px;box-shadow:var(--shadow-lg);border:1px solid var(--border);display:flex;align-items:center;gap:10px;font-weight:700;font-size:0.85rem;pointer-events:none;';
-        ov.innerHTML = '<div style="width:18px;height:18px;border:2px solid var(--border);border-top-color:var(--primary);border-radius:50%;animation:spin .8s linear infinite;"></div><span></span>';
-        ov.querySelector('span').textContent = mensagem;
+        ov.style.cssText = 'position:fixed;top:20px;left:50%;transform:translateX(-50%);z-index:900;background:var(--surface);color:var(--text-main);padding:14px 20px;border-radius:14px;box-shadow:var(--shadow-lg);border:1px solid var(--border);display:flex;align-items:center;gap:12px;font-weight:700;font-size:0.85rem;pointer-events:none;';
+
+        let indicador;
+        if (usarGif) {
+            indicador = document.createElement('img');
+            indicador.src = 'imagens/loading1.gif';
+            indicador.alt = '';
+            indicador.style.cssText = 'width:64px;height:64px;object-fit:contain;flex-shrink:0;';
+            indicador.onerror = () => {
+                const fallback = document.createElement('div');
+                fallback.style.cssText = 'width:22px;height:22px;border:2px solid var(--border);border-top-color:var(--primary);border-radius:50%;animation:spin .8s linear infinite;flex-shrink:0;';
+                indicador.replaceWith(fallback);
+            };
+        } else {
+            indicador = document.createElement('div');
+            indicador.style.cssText = 'width:18px;height:18px;border:2px solid var(--border);border-top-color:var(--primary);border-radius:50%;animation:spin .8s linear infinite;flex-shrink:0;';
+        }
+
+        const texto = document.createElement('span');
+        texto.textContent = mensagem;
+        ov.append(indicador, texto);
         document.body.appendChild(ov);
     }
 }
@@ -872,7 +973,7 @@ function injetarHeader() {
             </div>
             <a href="lancamentos.html">Lançamentos</a><a href="central-pagamentos.html">Central de pagamentos</a><a href="relatorios.html">Relatórios</a>
         </nav>
-        <div class="sidebar-footer"><a href="#" onclick="deslogarSistema()" class="btn-sair-sidebar"><img src="imagens/exit.png" alt="Sair"><span>Sair do sistema</span></a></div>
+        <div class="sidebar-footer"><a href="#" onclick="event.preventDefault(); deslogarSistema(true)" class="btn-sair-sidebar"><img src="imagens/exit.png" alt="Sair"><span>Sair do sistema</span></a></div>
     </aside>`);
 
     const p = String(window.location.pathname).split('/').pop().toLowerCase();
@@ -994,7 +1095,7 @@ function criarIndicadorSincronizacaoUi() {
 }
 
 async function forcarEnvioComBackup() {
-    mostrarLoading("Criando backup e forçando envio...");
+    mostrarLoading("Criando backup e forçando envio...", true);
     try {
         const dbLocalStr = localStorage.getItem(DB_KEY);
         if (!dbLocalStr) throw new Error("Sem dados locais para enviar.");
@@ -2239,13 +2340,6 @@ document.addEventListener("DOMContentLoaded", async () => {
         const dd = document.querySelector('.nav-dropdown');
         if (!dd || !dd.classList.contains('active')) return;
         if (!dd.contains(e.target)) dd.classList.remove('active');
-    });
-
-    window.addEventListener('beforeunload', (e) => {
-        if (localStorage.getItem('syncPendente') === 'true' || localStorage.getItem(SYNC_CONFLICT_KEY) !== null) {
-            e.preventDefault();
-            e.returnValue = '';
-        }
     });
 
     if (!window.location.pathname.endsWith('index.html') && typeof verificarAutenticacao === 'function') {

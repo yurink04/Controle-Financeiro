@@ -84,9 +84,25 @@
             border-radius: 99px;
             transition: width 0.1s linear;
         }
-        /* Remove completamente qualquer indicador estático legado do botão */
-        .login-submit.loading::after {
+        /* Durante a validação, use somente o GIF como indicador de carregamento.
+           Desativa spinners/dots antigos criados por pseudo-elementos no CSS global. */
+        .login-submit.loading::before,
+        .login-submit.loading::after,
+        .login-submit.loading *::before,
+        .login-submit.loading *::after {
+            content: none !important;
             display: none !important;
+            visibility: hidden !important;
+            animation: none !important;
+            transform: none !important;
+        }
+
+        .login-submit.loading #loginSubmitLoadingGif {
+            display: inline-block !important;
+            width: 24px !important;
+            height: 24px !important;
+            object-fit: contain;
+            vertical-align: middle;
         }
     </style>
 </head>
@@ -193,7 +209,7 @@
                         <span class="login-submit-content">
                             <span class="login-submit-text">Continuar</span>
                             <span class="login-submit-arrow" id="loginSubmitArrow">→</span>
-                            <img id="loginSubmitLoadingGif" src="imagens/loading1.gif" alt="Carregando..." style="width: 20px; height: 20px; object-fit: contain; display: none; margin-left: 8px; vertical-align: middle;">
+                            <img id="loginSubmitLoadingGif" src="imagens/loading1.gif" alt="Carregando..." style="width: 24px; height: 24px; object-fit: contain; display: none; margin-left: 8px; vertical-align: middle;">
                         </span>
                     </button>
 
