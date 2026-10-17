@@ -216,16 +216,21 @@
             const entradasUsuario = (dados.lancamentos || []).filter(l => Number(l.usuarioId) === usuarioIdNum && l.tipo === 'entrada');
             const mesesMap = {};
             entradasUsuario.forEach(e => {
-                const catObj = (dados.categorias || []).find(c => Number(c.id) === Number(e.categoriaId));
-                const catNome = catObj ? normalizarTexto(catObj.nome) : '';
-                const isFixa = ['salario', 'adiantamento', 'ferias', 'plr', 'decimo', '13'].some(t => catNome.includes(t));
-                
-                if (!isFixa) { 
-                    const mesAno = (e.vencimento || e.dataCompra || e.createdAt || '').substring(0, 7);
-                    if (mesAno) mesesMap[mesAno] = (mesesMap[mesAno] || 0) + Number(e.valor || 0);
-                }
-            });
+    // [FIX #8] Empréstimos NÃO inflam a média de ganhos variáveis
+    const ehEmprestimo = (dados.financiamentos || []).some(f =>
+        String(f.id) === String(e.financiamentoId) && f.tipoContrato === 'emprestimo'
+    );
+    if (ehEmprestimo) return;
 
+    const catObj = (dados.categorias || []).find(c => Number(c.id) === Number(e.categoriaId));
+    const catNome = catObj ? normalizarTexto(catObj.nome) : '';
+    const isFixa = ['salario', 'adiantamento', 'ferias', 'plr', 'decimo', '13'].some(t => catNome.includes(t));
+    
+    if (!isFixa) { 
+        const mesAno = (e.vencimento || e.dataCompra || e.createdAt || '').substring(0, 7);
+        if (mesAno) mesesMap[mesAno] = (mesesMap[mesAno] || 0) + Number(e.valor || 0);
+    }
+});
             const valoresMensais = Object.values(mesesMap);
             const totalGanhosHistorico = valoresMensais.reduce((a, b) => a + b, 0);
             const qtdMesesComEntrada = valoresMensais.length || 1; 

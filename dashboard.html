@@ -3,24 +3,228 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Dashboard | Controle Financeiro</title>
+    <title>Painel Financeiro | Controle Financeiro</title>
     <link rel="stylesheet" href="style.css">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        /* ============================================================
+           NOVOS COMPONENTES EXCLUSIVOS DO PAINEL (dashboard.html)
+           ============================================================ */
+
+        /* Par de botões: secundário (Relatórios) + primário (Novo Lançamento) */
+        .btn-acao-secundario {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 10px 18px;
+            font-weight: 700;
+            font-size: 0.88rem;
+            border-radius: 8px;
+            border: 1.5px solid var(--primary);
+            background: transparent;
+            color: var(--primary);
+            text-decoration: none;
+            cursor: pointer;
+            transition: var(--transition-fast);
+            white-space: nowrap;
+        }
+        .btn-acao-secundario:hover {
+            background: var(--primary-soft);
+            transform: translateY(-1px);
+        }
+        body.dark-mode .btn-acao-secundario {
+            color: var(--primary);
+            border-color: var(--primary);
+        }
+        body.dark-mode .btn-acao-secundario:hover {
+            background: var(--primary-soft);
+        }
+
+        /* Pulso do mês — banner de veredito */
+        .pulso-card {
+            display: flex;
+            align-items: center;
+            gap: 18px;
+            padding: 22px 26px;
+            border-radius: 16px;
+            border: 1px solid var(--border);
+            border-left-width: 6px;
+            margin-bottom: 18px;
+            animation: pulsoIn 0.35s cubic-bezier(.22, 1, .36, 1) both;
+            position: relative;
+            overflow: hidden;
+        }
+        .pulso-card::after {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background: radial-gradient(circle at right center, rgba(255,255,255,0.06), transparent 60%);
+            pointer-events: none;
+        }
+        .pulso-card.perigo {
+            background: linear-gradient(135deg, var(--danger-soft) 0%, transparent 80%);
+            border-left-color: var(--danger);
+        }
+        .pulso-card.atencao {
+            background: linear-gradient(135deg, var(--warning-soft) 0%, transparent 80%);
+            border-left-color: var(--warning);
+        }
+        .pulso-card.saudavel {
+            background: linear-gradient(135deg, var(--success-soft) 0%, transparent 80%);
+            border-left-color: var(--success);
+        }
+        .pulso-card.neutro {
+            background: linear-gradient(135deg, var(--surface-2) 0%, transparent 80%);
+            border-left-color: var(--text-muted);
+        }
+        .pulso-icone {
+            font-size: 2.6rem;
+            line-height: 1;
+            flex-shrink: 0;
+            filter: drop-shadow(0 3px 6px rgba(0, 0, 0, 0.12));
+        }
+        .pulso-conteudo { flex: 1; min-width: 0; }
+        .pulso-eyebrow {
+            font-size: 0.68rem;
+            font-weight: 850;
+            letter-spacing: 0.1em;
+            text-transform: uppercase;
+            margin-bottom: 4px;
+            opacity: 0.7;
+        }
+        .pulso-card.perigo .pulso-eyebrow,
+        .pulso-card.perigo .pulso-titulo { color: var(--danger); }
+        .pulso-card.atencao .pulso-eyebrow,
+        .pulso-card.atencao .pulso-titulo { color: var(--warning); }
+        .pulso-card.saudavel .pulso-eyebrow,
+        .pulso-card.saudavel .pulso-titulo { color: var(--success); }
+        .pulso-titulo {
+            font-size: clamp(1.1rem, 2.2vw, 1.35rem);
+            font-weight: 850;
+            letter-spacing: -0.02em;
+            line-height: 1.25;
+            margin-bottom: 4px;
+        }
+        .pulso-detalhe {
+            font-size: 0.88rem;
+            color: var(--text-muted);
+            line-height: 1.45;
+        }
+
+        /* Onde o dinheiro foi — barras horizontais */
+        .categoria-barra {
+            padding: 12px 0;
+            border-bottom: 1px solid var(--border);
+        }
+        .categoria-barra:first-child { padding-top: 0; }
+        .categoria-barra:last-child { border-bottom: 0; padding-bottom: 0; }
+        .categoria-barra-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: baseline;
+            gap: 10px;
+            margin-bottom: 8px;
+            flex-wrap: wrap;
+        }
+        .categoria-barra-info {
+            display: flex;
+            align-items: baseline;
+            gap: 8px;
+            min-width: 0;
+        }
+        .categoria-barra-pos {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 22px;
+            height: 22px;
+            border-radius: 50%;
+            background: var(--primary-soft);
+            color: var(--primary);
+            font-size: 0.72rem;
+            font-weight: 900;
+            flex-shrink: 0;
+        }
+        .categoria-barra-nome {
+            font-weight: 700;
+            font-size: 0.92rem;
+            color: var(--text-main);
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .categoria-barra-valores {
+            display: flex;
+            align-items: baseline;
+            gap: 8px;
+            flex-shrink: 0;
+        }
+        .categoria-barra-valor {
+            font-weight: 850;
+            font-size: 0.95rem;
+            color: var(--text-main);
+        }
+        .categoria-barra-pct {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            font-weight: 600;
+        }
+        .categoria-barra-track {
+            height: 10px;
+            background: var(--surface-2);
+            border-radius: 99px;
+            overflow: hidden;
+            border: 1px solid var(--border);
+        }
+        .categoria-barra-fill {
+            height: 100%;
+            border-radius: 99px;
+            background: linear-gradient(90deg, var(--primary), color-mix(in srgb, var(--primary) 60%, var(--warning)));
+            transition: width 0.55s cubic-bezier(0.22, 1, 0.36, 1);
+        }
+        .categoria-barra-fill.essencial {
+            background: linear-gradient(90deg, var(--danger), color-mix(in srgb, var(--danger) 55%, var(--warning)));
+        }
+
+        @keyframes pulsoIn {
+            from { opacity: 0; transform: translateY(-6px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        /* Mobile */
+        @media (max-width: 760px) {
+            .toolbar-actions { display: flex; flex-direction: column; width: 100%; gap: 8px !important; }
+            .toolbar-actions > * { width: 100% !important; }
+            .btn-acao-secundario { justify-content: center; padding: 12px 16px; }
+            .pulso-card {
+                padding: 16px 18px;
+                gap: 12px;
+                border-left-width: 5px;
+            }
+            .pulso-icone { font-size: 2rem; }
+            .pulso-titulo { font-size: 1rem; }
+            .pulso-detalhe { font-size: 0.82rem; }
+            .categoria-barra-header { flex-direction: column; align-items: stretch; gap: 4px; }
+            .categoria-barra-valores { justify-content: space-between; }
+        }
+    </style>
 </head>
 <body>
-    
+
     <main class="container">
         <div class="page-heading">
             <div>
-                <h2>Visão geral</h2>
-                <p>Acompanhe entradas, despesas, patrimônio e compromissos ativos do mês. Empréstimos recebidos aparecem separados no detalhamento das entradas.</p>
+                <h2>Painel Financeiro</h2>
+                <p>O que entra, o que sai e para onde vai — em um olhar. Aja agora, detalhe em <a href="relatorios.html" class="text-link">Relatórios</a>.</p>
             </div>
-            
-            <!-- NOVO MENU EXPANSÍVEL -->
-            <div class="toolbar-actions">
+
+            <div class="toolbar-actions" style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+                <a href="relatorios.html" class="btn-acao-secundario" title="Ver análise completa do mês">
+                    📊 Relatórios
+                </a>
                 <div class="dropdown-acao">
                     <button class="btn-acao-principal">
-                        <span>Novo Lançamento</span>
+                        <span>+ Novo Lançamento</span>
                         <span style="font-size: 0.8rem;">▼</span>
                     </button>
                     <div class="dropdown-acao-conteudo">
@@ -28,7 +232,7 @@
                             <span class="indicador-entrada">+</span> Nova Entrada
                         </button>
                         <button onclick="redirecionarNovoLancamento('saida')">
-                            <span class="indicador-saida">-</span> Nova Saída
+                            <span class="indicador-saida">−</span> Nova Saída
                         </button>
                         <button onclick="redirecionarNovoLancamento('cartao')">
                             <span class="indicador-cartao">💳</span> Nova Saída no Cartão
@@ -36,14 +240,13 @@
                     </div>
                 </div>
             </div>
-            <!-- FIM MENU EXPANSÍVEL -->
-            
         </div>
 
+        <!-- Filtros -->
         <section class="form-card filter-bar">
             <div>
                 <div class="section-title" style="margin-bottom: 2px;"><h2>Resumo mensal</h2></div>
-                <p class="muted small">Use os filtros para analisar por período e escopo.</p>
+                <p class="muted small">Ajuste período e escopo para recalcular o pulso.</p>
             </div>
             <div style="display: flex; gap: 12px; flex-wrap: wrap;">
                 <div class="filter-group">
@@ -60,48 +263,54 @@
             </div>
         </section>
 
-       <section class="stat-grid" aria-label="Indicadores financeiros do mês">
-        <!-- Novo Card Mestre (Unifica Saldo, Entradas, Saídas e Foco) -->
-        <div class="stat-box kpi-card card-mestre">
-            <span class="kpi-accent" style="background: var(--primary);"></span>
-            
-            <div class="mestre-grid">
-                <!-- 1. Saldo -->
-                <div class="mestre-bloco">
-                    <div class="stat-label">Saldo geral do Mês</div>
-                    <div id="saldoGeral" class="stat-value saldo-destaque">R$ 0,00</div>
-                    <p class="stat-detail">(Entradas abatendo as Saídas)</p>
-                </div>
+        <!-- 🚦 NOVO: Pulso do Mês -->
+        <section id="pulsoDashboard"></section>
 
-                <!-- 2. Entradas -->
-                <div class="mestre-bloco">
-                    <div class="stat-label kpi-entrada">
-                        <span>↓</span> Entradas
-                    </div>
-                    <div id="totalEntradas" class="stat-value positivo detalhe-valor">R$ 0,00</div>
-                    <div id="subDetalhesEntradas" class="stat-detail"></div>
-                </div>
-                
-                <!-- 3. Saídas -->
-                <div class="mestre-bloco">
-                    <div class="stat-label kpi-saida">
-                        <span>↑</span> Saídas
-                    </div>
-                    <div id="totalSaidas" class="stat-value negativo detalhe-valor">R$ 0,00</div>
-                    <div id="subDetalhesSaidas" class="stat-detail"></div>
-                </div>
+        <!-- KPI Mestre (mantido) -->
+        <section class="stat-grid" aria-label="Indicadores financeiros do mês">
+            <div class="stat-box kpi-card card-mestre">
+                <span class="kpi-accent" style="background: var(--primary);"></span>
 
-                <!-- 4. Foco de Atenção -->
-                <div class="mestre-bloco">
-                    <div class="stat-label" style="color: #b91c1c;">⚠️ Foco de atenção</div>
-                    <div id="maiorFocoValor" class="stat-value" style="color: #b91c1c;">R$ 0,00</div>
-                    <div id="maiorFocoDetalhe" class="stat-detail">Nenhum gasto registrado</div>
+                <div class="mestre-grid">
+                    <div class="mestre-bloco">
+                        <div class="stat-label">Saldo do Mês</div>
+                        <div id="saldoGeral" class="stat-value saldo-destaque">R$ 0,00</div>
+                        <p class="stat-detail">Entradas − Saídas</p>
+                    </div>
+
+                    <div class="mestre-bloco">
+                        <div class="stat-label kpi-entrada"><span>↓</span> Entradas</div>
+                        <div id="totalEntradas" class="stat-value positivo detalhe-valor">R$ 0,00</div>
+                        <div id="subDetalhesEntradas" class="stat-detail"></div>
+                    </div>
+
+                    <div class="mestre-bloco">
+                        <div class="stat-label kpi-saida"><span>↑</span> Saídas</div>
+                        <div id="totalSaidas" class="stat-value negativo detalhe-valor">R$ 0,00</div>
+                        <div id="subDetalhesSaidas" class="stat-detail"></div>
+                    </div>
+
+                    <div class="mestre-bloco">
+                        <div class="stat-label" style="color: #b91c1c;">⚠️ Maior foco</div>
+                        <div id="maiorFocoValor" class="stat-value" style="color: #b91c1c;">R$ 0,00</div>
+                        <div id="maiorFocoDetalhe" class="stat-detail">Nenhum gasto registrado</div>
+                    </div>
                 </div>
             </div>
-        </div>
         </section>
 
-<!-- Central de Lembretes (Expansível) -->
+        <!-- 💸 NOVO: Onde o dinheiro foi -->
+        <section class="form-card" id="cardTopCategorias" style="margin-top: 16px;">
+            <div class="section-title">
+                <div>
+                    <h2>💸 Onde o dinheiro foi</h2>
+                    <p>Top 5 categorias de gasto do mês — clique em <a href="relatorios.html" class="text-link">Relatórios</a> para auditoria completa.</p>
+                </div>
+            </div>
+            <div id="topCategoriasDashboard"></div>
+        </section>
+
+        <!-- Central de Lembretes (mantida) -->
         <section class="form-card" id="cardCentralLembretes" style="margin-top: 16px; padding: 18px 24px; transition: var(--transition);">
             <div class="section-title" style="cursor: pointer; user-select: none; margin-bottom: 0;" onclick="toggleCentralLembretes()">
                 <div style="display: flex; align-items: center; justify-content: space-between; width: 100%;">
@@ -112,21 +321,18 @@
                     <span id="iconeToggleLembretes" style="font-size: 1.2rem; transition: transform 0.3s; color: var(--text-muted);">▼</span>
                 </div>
             </div>
-            
             <div id="corpoCentralLembretes" class="lembretes-expansivel">
                 <div class="lembretes-conteudo">
-                    <ul id="listaCentralLembretes" class="lista-simples">
-                        <!-- Preenchido automaticamente via JS -->
-                    </ul>
+                    <ul id="listaCentralLembretes" class="lista-simples"></ul>
                 </div>
             </div>
         </section>
 
-        <!-- Gráficos -->
+        <!-- Gráficos (mantidos) -->
         <section class="grid-2" style="margin-top:16px;">
             <article class="form-card chart-card">
                 <div class="chart-head">
-                    <div><h3>Entradas x saídas</h3><span class="muted small">Comparação do período selecionado</span></div>
+                    <div><h3>Entradas x saídas</h3><span class="muted small">Comparação do período</span></div>
                 </div>
                 <div class="chart-container"><canvas id="graficoEntradasSaidas"></canvas></div>
             </article>
@@ -155,7 +361,7 @@
 
             <article class="form-card chart-card" id="cardGraficoCartoes">
                 <div class="chart-head">
-                    <div><h3>Limite dos cartões</h3><span class="muted small">Uso atual dos cartões ativos</span></div>
+                    <div><h3>Limite dos cartões</h3><span class="muted small">Uso atual</span></div>
                     <select id="filtroGraficoCartao" onchange="carregarDashboard()">
                         <option value="todos">Todos</option>
                     </select>
@@ -164,9 +370,10 @@
             </article>
         </section>
 
+        <!-- Últimos lançamentos (mantido) -->
         <section class="form-card" style="margin-top: 16px;">
             <div class="section-title">
-                <div><h2>Últimos lançamentos do mês</h2><p>Use o filtro para visualizar somente entradas ou saídas.</p></div>
+                <div><h2>Últimos lançamentos do mês</h2><p>Histórico recente para conferência rápida.</p></div>
                 <div class="filter-group">
                     <label for="filtroTipoUltimosLancamentos">Exibir</label>
                     <select id="filtroTipoUltimosLancamentos" onchange="carregarDashboard()" style="width:auto;">
@@ -190,30 +397,170 @@
     </main>
 
     <script>
-    // Mês/ano atual definido já na leitura da página (antes de qualquer requisição)
+    // Define mês/ano atual imediatamente, antes de qualquer requisição
     (function () {
         const el = document.getElementById('filtroMesAno');
-        if (el && !el.value) { const h = new Date(); el.value = h.getFullYear() + '-' + String(h.getMonth() + 1).padStart(2, '0'); }
+        if (el && !el.value) {
+            const h = new Date();
+            el.value = h.getFullYear() + '-' + String(h.getMonth() + 1).padStart(2, '0');
+        }
     })();
     </script>
     <script src="script.js"></script>
     <script>
+    /* ============================================================
+       FUNÇÕES EXTRAS DO PAINEL (Pulso + Top Categorias)
+       Estas funções são chamadas por `carregarDashboard` (script.js)
+       através do hook `renderizarSessoesDashboardExtras`.
+       ============================================================ */
+
+    function renderizarSessoesDashboardExtras() {
+        try {
+            const mes = document.getElementById('filtroMesAno')?.value || '';
+            const esc = document.getElementById('filtroEscopoDashboardGeral')?.value || 'casal';
+            const d = obterDados();
+            const lns = filtrarDadosPorPermissao(d.lancamentos || [], d, esc)
+                .filter(l => String(l.vencimento || l.dataCompra || '').startsWith(mes)
+                    && (esc === 'todos' || l.tipo === 'entrada' || (l.escopo || 'casal') === esc));
+
+            renderizarPulsoDashboard(lns, d, mes);
+            renderizarTopCategoriasDashboard(d, lns);
+        } catch (e) {
+            console.warn('[Extras Dashboard]', e);
+        }
+    }
+
+    /* 🚦 PULSO DO MÊS — 1 veredito colorido, prioriza o que mais importa */
+    function renderizarPulsoDashboard(lns, dados, mes) {
+        const cont = document.getElementById('pulsoDashboard');
+        if (!cont) return;
+
+        let ent = 0, sai = 0, ess = 0;
+        lns.forEach(l => {
+            const v = Number(l.valor || 0);
+            if (l.tipo === 'entrada') ent += v;
+            else {
+                sai += v;
+                if (l.servicoEssencial === 'sim') ess += v;
+            }
+        });
+
+        const hoje = dataLocalYYYYMMDD();
+        const atrasadas = lns.filter(l => !l.pago && l.vencimento && l.vencimento < hoje && l.tipo === 'saida');
+        const totalAtrasado = atrasadas.reduce((a, l) => a + Number(l.valor || 0), 0);
+        const saldo = ent - sai;
+        const taxaPoup = ent > 0 ? (saldo / ent) * 100 : 0;
+        const compEss = ent > 0 ? (ess / ent) * 100 : 0;
+
+        let nivel = 'saudavel', icone = '🟢', titulo = '', detalhe = '';
+
+        if (lns.length === 0) {
+            nivel = 'neutro'; icone = '📊';
+            titulo = 'Mês sem movimento';
+            detalhe = 'Registre seus lançamentos para ver o pulso do mês.';
+        } else if (saldo < 0) {
+            nivel = 'perigo'; icone = '🚨';
+            titulo = `No vermelho: ${formatarMoeda(Math.abs(saldo))}`;
+            detalhe = 'Você gastou mais do que recebeu. Corte gastos não essenciais ou reforce entradas.';
+        } else if (totalAtrasado > 0) {
+            nivel = 'perigo'; icone = '⏰';
+            titulo = `${atrasadas.length} conta(s) atrasada(s) — ${formatarMoeda(totalAtrasado)}`;
+            detalhe = 'Priorize a quitação para evitar juros e negativação. Abra a Central de Pagamentos.';
+        } else if (compEss > 70 && ent > 0) {
+            nivel = 'atencao'; icone = '⚠️';
+            titulo = `Essenciais consomem ${compEss.toFixed(0)}% da renda`;
+            detalhe = `${formatarMoeda(ess)} foram para despesas essenciais. Revise contratos e assinaturas.`;
+        } else if (taxaPoup < 10 && ent > 0) {
+            nivel = 'atencao'; icone = '📉';
+            titulo = `Poupança baixa: ${taxaPoup.toFixed(0)}%`;
+            detalhe = `Ideal é guardar 20% ou mais. Veja em Relatórios onde reduzir.`;
+        } else {
+            nivel = 'saudavel'; icone = '✅';
+            titulo = `Boa saúde financeira — ${taxaPoup.toFixed(0)}% poupado`;
+            detalhe = `Você guardou ${formatarMoeda(saldo)} este mês. Continue assim.`;
+        }
+
+        cont.innerHTML = `
+            <div class="pulso-card ${nivel}">
+                <div class="pulso-icone">${icone}</div>
+                <div class="pulso-conteudo">
+                    <div class="pulso-eyebrow">Pulso do mês</div>
+                    <div class="pulso-titulo">${escaparHTML(titulo)}</div>
+                    <div class="pulso-detalhe">${escaparHTML(detalhe)}</div>
+                </div>
+            </div>`;
+    }
+
+    /* 💸 ONDE O DINHEIRO FOI — Top 5 em barras horizontais */
+    function renderizarTopCategoriasDashboard(dados, lns) {
+        const cont = document.getElementById('topCategoriasDashboard');
+        if (!cont) return;
+
+        const saidas = lns.filter(l => l.tipo !== 'entrada');
+        const totalSaidas = saidas.reduce((a, l) => a + Number(l.valor || 0), 0);
+
+        if (!saidas.length) {
+            cont.innerHTML = `<p class="muted" style="text-align:center; padding:24px 0;">Nenhum gasto registrado no mês.</p>`;
+            return;
+        }
+
+        const nomeCat = id => (dados.categorias.find(x => String(x.id) === String(id)) || {}).nome || 'Sem categoria';
+        const somasCat = {};
+        const essencialCat = {};
+        saidas.forEach(l => {
+            const k = nomeCat(l.categoriaId);
+            somasCat[k] = (somasCat[k] || 0) + Number(l.valor || 0);
+            if (l.servicoEssencial === 'sim') essencialCat[k] = true;
+        });
+
+        const ranking = Object.entries(somasCat).sort((a, b) => b[1] - a[1]).slice(0, 5);
+        const maxVal = ranking[0]?.[1] || 1;
+
+        cont.innerHTML = ranking.map(([nome, valor], i) => {
+            const pctTotal = totalSaidas > 0 ? (valor / totalSaidas) * 100 : 0;
+            const pctBarra = (valor / maxVal) * 100;
+            const essencial = essencialCat[nome];
+            return `
+                <div class="categoria-barra">
+                    <div class="categoria-barra-header">
+                        <div class="categoria-barra-info">
+                            <span class="categoria-barra-pos">${i + 1}</span>
+                            <span class="categoria-barra-nome">${escaparHTML(nome)}${essencial ? ' <span style="font-size:0.65rem;color:var(--danger);font-weight:800;">ESSENCIAL</span>' : ''}</span>
+                        </div>
+                        <div class="categoria-barra-valores">
+                            <span class="categoria-barra-valor">${formatarMoeda(valor)}</span>
+                            <span class="categoria-barra-pct">${pctTotal.toFixed(1)}% do total</span>
+                        </div>
+                    </div>
+                    <div class="categoria-barra-track">
+                        <div class="categoria-barra-fill ${essencial ? 'essencial' : ''}" style="width:${pctBarra}%"></div>
+                    </div>
+                </div>`;
+        }).join('');
+    }
+
+    /* ============================================================
+       Inicialização da página
+       ============================================================ */
     document.addEventListener('DOMContentLoaded', async () => {
         injetarHeader();
 
         // Menu "Novo Lançamento": abre por clique (funciona no celular) e fecha ao clicar fora
         const dd = document.querySelector('.dropdown-acao');
         if (dd) {
-            dd.querySelector('.btn-acao-principal').addEventListener('click', e => { e.stopPropagation(); dd.classList.toggle('aberto'); });
+            dd.querySelector('.btn-acao-principal').addEventListener('click', e => {
+                e.stopPropagation();
+                dd.classList.toggle('aberto');
+            });
             document.addEventListener('click', () => dd.classList.remove('aberto'));
         }
 
-        // Desenha na hora com o último snapshot local, sem esperar a rede
+        // Desenha com snapshot local antes da rede
         if (localStorage.getItem('usuarioLogado') && localStorage.getItem(DB_KEY)) {
             try { carregarDashboard(); } catch (e) { console.warn(e); }
         }
 
-        // Valida a sessão (e só rebaixa o banco se o snapshot estiver velho) e atualiza
+        // Valida a sessão e re-renderiza
         if (await verificarAutenticacao()) carregarDashboard();
     });
     </script>

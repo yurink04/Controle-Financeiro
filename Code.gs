@@ -14,7 +14,7 @@ var SCHEMA = {
   ],
 
   categorias: ['id', 'nome', 'tipo', 'classificacao', 'criadopor'],
-  
+
   cartoes: [
     'id', 'usuarioId', 'nome', 'limite', 'fechamento', 'vencimento',
     'isBeneficio', 'tipoCartao', 'ativo', 'createdAt', 'updatedAt'
@@ -26,7 +26,7 @@ var SCHEMA = {
     'parcelaAtual', 'totalParcelas', 'observacao', 'horaExtra',
     'servicoEssencial', 'pago', 'status', 'dataCompra', 'dataPagamento',
     'usuarioPagamentoId', 'financiamentoId', 'parcelamentoId', 'bemId', 'escopo',
-    'faturaId', // Novo campo adicionado para o controlo relacional das faturas
+    'faturaId',
     'createdAt', 'updatedAt'
   ],
 
@@ -251,29 +251,25 @@ function doPost(e) {
         return respostaJson({ status: 'erro', mensagem: 'Este usuário está desativado.' });
       }
 
+      // [FIX #2] Retorno mínimo — apenas primeiro nome, sem PII.
       if (senhaHash === 'CHECK_APENAS_USUARIO') {
         return respostaJson({
           status: 'sucesso',
           usuario: {
             id: usuarioEncontrado.id,
-            nome: usuarioEncontrado.nome,
-            usuario: usuarioEncontrado.usuario,
-            fotoPerfil: usuarioEncontrado.fotoPerfil || ''
+            nome: String(usuarioEncontrado.nome || '').split(' ')[0],
+            usuario: usuarioEncontrado.usuario
           }
         });
       }
 
       var senhaCadastrada = String(usuarioEncontrado.pin || usuarioEncontrado.senha || '').trim();
 
+      // [FIX #1] Usuário sem senha NÃO pode entrar — exige redefinição.
       if (senhaCadastrada === '') {
         return respostaJson({
-          status: 'sucesso',
-          primeiroAcesso: true,
-          usuario: {
-            id: usuarioEncontrado.id,
-            nome: usuarioEncontrado.nome,
-            usuario: usuarioEncontrado.usuario
-          }
+          status: 'erro',
+          mensagem: 'Este usuário ainda não possui palavra-passe cadastrada. Peça ao administrador para redefinir o acesso.'
         });
       }
 
@@ -471,7 +467,6 @@ function normalizarValorLido(header, val) {
   if (typeof val === 'string') {
     var texto = val.trim();
 
-    // Normaliza datas legadas em texto (dd/MM/yyyy) para o ISO usado pela aplicação.
     if (CAMPOS_DATA[header]) {
       return normalizarDataISO(texto);
     }

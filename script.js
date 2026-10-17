@@ -19,6 +19,10 @@ let processandoSaidaSistema = false;
 let memoriaSistema = null;
 let verificacaoAutenticacaoPromise = null;
 
+// [FIX #10] Cache da migração
+let _migracaoCacheRef = null;
+let _migracaoCacheDados = null;
+
 const charts = {
     entradasSaidas: null, gastosCategorias: null, cartoesLimite: null,
     relatorioES: null, relatorioCat: null, servicosEssenciais: null, servicosEssenciaisRel: null
@@ -62,14 +66,12 @@ function normalizarDataISO(dataValor) {
     const texto = String(dataValor).trim();
     if (!texto) return null;
 
-    // Datas ISO, inclusive timestamps: preserva a data escrita sem aplicar conversão UTC.
     let partes = texto.match(/^(\d{4})-(\d{1,2})-(\d{1,2})(?:$|[T\s])/);
     let ano, mes, dia;
 
     if (partes) {
         ano = Number(partes[1]); mes = Number(partes[2]); dia = Number(partes[3]);
     } else {
-        // Compatibilidade com dados antigos em PT-BR, com ou sem horário.
         partes = texto.match(/^(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{4})(?:$|[\s,])/);
         if (!partes) return null;
         dia = Number(partes[1]); mes = Number(partes[2]); ano = Number(partes[3]);
@@ -92,9 +94,7 @@ function formatarDataBR(dataStr) {
     }
 
     const texto = String(dataStr).trim();
-    // Não deixa o JavaScript transformar datas impossíveis (ex.: 2026-02-30) em outro dia.
     if (/^(?:\d{4}-\d{1,2}-\d{1,2}|\d{1,2}[\/.-]\d{1,2}[\/.-]\d{4})(?:$|[T\s,])/.test(texto)) return texto || '-';
-    // Última tentativa para formatos textuais/timestamps incomuns, sempre sem exibir hora.
     const data = new Date(texto);
     if (Number.isFinite(data.getTime())) return data.toLocaleDateString('pt-BR');
     return texto || '-';
@@ -107,7 +107,6 @@ function formatarDataSemHora(dataValor) {
     }
 
     const texto = String(dataValor).trim();
-    // Campos de auditoria são timestamps; neste caso, respeitamos o fuso local do navegador.
     if (/^\d{4}-\d{2}-\d{2}T/.test(texto)) {
         const data = new Date(texto);
         if (Number.isFinite(data.getTime())) return data.toLocaleDateString('pt-BR');
@@ -176,7 +175,6 @@ function resolverFinanciamentoIdPorLancamento(lancamento, dados = obterDados()) 
 }
 
 function pertenceAoFinanciamento(lancamento, financiamento, dados = obterDados()) {
-    // A liberação de um empréstimo é uma entrada de caixa, nunca uma parcela de pagamento.
     if (!lancamento || !financiamento || lancamento.tipo !== 'saida') return false;
     if (lancamento.financiamentoId != null && String(lancamento.financiamentoId).trim() !== '') {
         return String(lancamento.financiamentoId) === String(financiamento.id);
@@ -320,8 +318,6 @@ async function deslogarSistema(solicitadoPeloUsuario = true) {
         const temPendencias = localStorage.getItem('syncPendente') === 'true';
         const temConflito = localStorage.getItem(SYNC_CONFLICT_KEY) !== null;
 
-        // A confirmação só aparece quando a saída é solicitada pelo botão "Sair do sistema".
-        // Navegar normalmente entre páginas não fica bloqueado pela sincronização em segundo plano.
         if (solicitadoPeloUsuario && (temPendencias || temConflito)) {
             const aguardar = await mostrarConfirmacaoModal(
                 temConflito
@@ -366,7 +362,6 @@ async function deslogarSistema(solicitadoPeloUsuario = true) {
 }
 
 async function aguardarSincronizacaoPendente(tempoLimiteMs = 30000) {
-    // Reconstitui a fila a partir do armazenamento local se esta página acabou de ser aberta.
     if (!syncPendingData && localStorage.getItem('syncPendente') === 'true') {
         const local = lerJSONLocal(DB_KEY, null);
         if (local) syncPendingData = clonarDados(local);
@@ -384,7 +379,6 @@ async function aguardarSincronizacaoPendente(tempoLimiteMs = 30000) {
         if (conflito) return false;
         if (!pendente && !syncInFlight && !syncPendingData) return true;
 
-        // Se não houver tentativa agendada, inicia uma sem bloquear a navegação normal do sistema.
         if (pendente && !syncInFlight && syncPendingData && !syncTimer) {
             agendarSincronizacaoSilenciosa();
         }
@@ -442,8 +436,11 @@ function verificarAutenticacao() {
 // ============================================================================
 function obterDados() {
     let d = memoriaSistema || lerJSONLocal(DB_KEY, null) || { usuarios: [], categorias: [], cartoes: [], lancamentos: [], financiamentos: [], bens: [], notificacoes: [], logs: [], exclusao_movimento: [], edicao_movimento: [], fatura_cartao: [] };
+    if (_migracaoCacheRef === d && _migracaoCacheDados) return _migracaoCacheDados;
     const res = migrarDados(d);
     memoriaSistema = res.dados;
+    _migracaoCacheRef = res.dados;
+    _migracaoCacheDados = res.dados;
     return res.dados;
 }
 
@@ -452,6 +449,8 @@ function lerJSONLocal(chave, padrao = null) {
 }
 
 function gravarSnapshotLocal(dados, definirBase = false) {
+    _migracaoCacheRef = null;
+    _migracaoCacheDados = null;
     const c = clonarDados(dados);
     memoriaSistema = c;
     localStorage.setItem(DB_KEY, JSON.stringify(c));
@@ -461,6 +460,8 @@ function gravarSnapshotLocal(dados, definirBase = false) {
 }
 
 async function salvarDados(dados, opcoes = {}) {
+    _migracaoCacheRef = null;
+    _migracaoCacheDados = null;
     const norm = migrarDados(dados).dados;
     norm._revision = Number(norm._revision) || Number(window.revisaoServidorAtual) || 0;
     memoriaSistema = norm;
@@ -557,6 +558,8 @@ function mesclarSnapshotsTresVias(base, local, remoto) {
 }
 
 function marcarConflitoSincronizacao(dadosLocais, campos, mensagem) {
+    _migracaoCacheRef = null;
+    _migracaoCacheDados = null;
     const conflito = { dataHora: new Date().toISOString(), campos: (campos || []).slice(0, 30), mensagem: mensagem || 'Conflito de alterações.' };
     localStorage.setItem(SYNC_CONFLICT_KEY, JSON.stringify(conflito));
     localStorage.setItem('syncPendente', 'true');
@@ -638,7 +641,6 @@ async function inicializarBanco() {
             if (!lerJSONLocal(SYNC_BASELINE_KEY, null)) {
                 marcarConflitoSincronizacao(memoriaSistema, [], 'Sem snapshot.');
             } else {
-                // A interface abre com os dados locais; a rede sincroniza em segundo plano.
                 agendarSincronizacaoSilenciosa();
             }
         }
@@ -662,7 +664,6 @@ function migrarDados(dados) {
     const d = { usuarios: [], categorias: [], cartoes: [], lancamentos: [], financiamentos: [], bens: [], notificacoes: [], logs: [], exclusao_movimento: [], edicao_movimento: [], fatura_cartao: [] };
     Object.keys(d).forEach(k => { if (!Array.isArray(dados[k])) { dados[k] = d[k]; alterou = true; } });
 
-    // Mantém datas de negócio no padrão interno ISO (yyyy-MM-dd), aceitando dados legados PT-BR.
     const camposDataPorColecao = {
         lancamentos: ['vencimento', 'dataCompra', 'dataPagamento'],
         financiamentos: ['primeiroVencimento', 'dataLiberacao'],
@@ -679,7 +680,6 @@ function migrarDados(dados) {
         });
     });
 
-    // Datas que aparecem nos históricos/auditoria ficam sem horário na camada de exibição.
     (dados.logs || []).forEach(registro => {
         if (!registro) return;
         const referencia = registro.dataHora || registro.dataHoraFormatada;
@@ -695,34 +695,42 @@ function migrarDados(dados) {
             if (registro.dataHora !== dataExibicao) { registro.dataHora = dataExibicao; alterou = true; }
         });
     });
-    
+
     dados.cartoes.forEach(c => {
         if (c.ativo === undefined) { c.ativo = true; alterou = true; }
         if (!c.tipoCartao) { c.tipoCartao = c.isBeneficio ? 'beneficio' : 'credito'; alterou = true; }
         if (c.usuarioId == null && dados.usuarios[0]) { c.usuarioId = dados.usuarios[0].id; alterou = true; }
     });
-    
+
     dados.financiamentos.forEach(f => {
         if (f.ativo === undefined) { f.ativo = true; alterou = true; }
         if (f.totalMeses == null) { f.totalMeses = 0; alterou = true; }
         if (!f.valorParcela) { f.valorParcela = 0; alterou = true; }
-        // Contratos antigos continuam sendo tratados como financiamentos tradicionais.
         if (!f.tipoContrato) { f.tipoContrato = 'financiamento'; alterou = true; }
         if (f.valorLiberado == null) { f.valorLiberado = 0; alterou = true; }
         if (f.categoriaEntradaId == null) { f.categoriaEntradaId = ''; alterou = true; }
         if (f.dataLiberacao == null) { f.dataLiberacao = ''; alterou = true; }
         if (!f.escopoContrato) { f.escopoContrato = 'individual'; alterou = true; }
-        // Dados de aquisição: contratos antigos permanecem sem preço informado até serem atualizados.
-        if (!Object.prototype.hasOwnProperty.call(f, 'valorCompra')) { f.valorCompra = null; alterou = true; }
-        if (f.valorEntrada == null) { f.valorEntrada = 0; alterou = true; }
-        if (!Object.prototype.hasOwnProperty.call(f, 'valorFinanciado')) {
+
+        // [FIX #7] Normaliza valores que a planilha devolve como '' (string vazia).
+        if (f.valorCompra === '' || f.valorCompra === undefined) { f.valorCompra = null; alterou = true; }
+        else if (f.valorCompra !== null && !Number.isFinite(Number(f.valorCompra))) { f.valorCompra = null; alterou = true; }
+
+        if (f.valorEntrada === '' || f.valorEntrada === undefined || f.valorEntrada === null) {
+            if (f.valorEntrada !== 0) { f.valorEntrada = 0; alterou = true; }
+        } else if (!Number.isFinite(Number(f.valorEntrada))) {
+            f.valorEntrada = 0; alterou = true;
+        }
+
+        if (f.valorFinanciado === '' || f.valorFinanciado === undefined || f.valorFinanciado === null
+            || !Number.isFinite(Number(f.valorFinanciado))) {
             f.valorFinanciado = Number(f.valorCompra) > 0
                 ? Number(Math.max(0, Number(f.valorCompra) - Number(f.valorEntrada || 0)).toFixed(2))
                 : null;
             alterou = true;
         }
     });
-    
+
     const mat = dados.usuarios.some(u => u?.permissoes?.paginas && u?.permissoes?.acoes);
     dados.usuarios.forEach((u, i) => {
         if (u?.permissoes?.paginas && u?.permissoes?.acoes) return;
@@ -730,7 +738,7 @@ function migrarDados(dados) {
         u.permissoes = { perfil: p, paginas: { dashboard: true, relatorios: true, lancamentos: true, cartoes: true, categorias: true, configuracoes: p === 'admin' }, acoes: { criarMovimento: p !== 'usuario', excluirMovimento: p !== 'usuario', financiamentos: p !== 'usuario', lotes: p !== 'usuario', usuarios: p === 'admin', logs: p === 'admin' } };
         alterou = true;
     });
-    
+
     [['exclusao_movimento', 'legacy_exc'], ['edicao_movimento', 'legacy_edit']].forEach(([nc, pref]) => {
         dados[nc].forEach((r, i) => {
             if (!r || r.id) return;
@@ -738,7 +746,7 @@ function migrarDados(dados) {
             r.id = `${pref}_${encodeURIComponent(`${serializarEstavel(c)}#${i}`)}`; alterou = true;
         });
     });
-    
+
     dados.lancamentos.forEach(l => {
         const pago = l.pago === true || String(l.status).toLowerCase() === 'pago';
         if (l.pago !== pago) { l.pago = pago; alterou = true; }
@@ -749,7 +757,7 @@ function migrarDados(dados) {
         if (!l.escopo) { l.escopo = 'casal'; alterou = true; }
         if (!l.observacao) l.observacao = '';
         if (!l.cartaoId && l.formaPagamento !== 'CARTAO') l.cartaoId = null;
-        
+
         if (l.formaPagamento === 'CARTAO' && l.cartaoId && l.vencimento && !l.faturaId) {
             l.faturaId = `fat_${l.cartaoId}_${String(l.vencimento).slice(0, 7)}`;
             alterou = true;
@@ -765,7 +773,7 @@ function migrarDados(dados) {
             if (fin.length === 1) { l.financiamentoId = fin[0].id; alterou = true; }
         }
     });
-    
+
     const grps = new Map();
     dados.lancamentos.forEach(l => {
         if (l._legacyParcelamentoChave) {
@@ -780,10 +788,10 @@ function migrarDados(dados) {
             faturasAtivas.add(l.faturaId);
             let fat = dados.fatura_cartao.find(f => f.id === l.faturaId);
             if (!fat) {
-                fat = { 
-                    id: l.faturaId, cartaoId: l.cartaoId, mesReferencia: String(l.vencimento).slice(0, 7), 
-                    valorTotal: 0, valorPago: 0, status: 'pendente', 
-                    dataVencimento: l.vencimento, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() 
+                fat = {
+                    id: l.faturaId, cartaoId: l.cartaoId, mesReferencia: String(l.vencimento).slice(0, 7),
+                    valorTotal: 0, valorPago: 0, status: 'pendente',
+                    dataVencimento: l.vencimento, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString()
                 };
                 dados.fatura_cartao.push(fat);
                 alterou = true;
@@ -796,14 +804,14 @@ function migrarDados(dados) {
         const vTot = Number(itens.reduce((a, b) => a + Number(b.valor || 0), 0).toFixed(2));
         const vPag = Number(itens.filter(x => x.pago).reduce((a, b) => a + Number(b.valor || 0), 0).toFixed(2));
         const st = vPag === 0 ? 'pendente' : (vPag >= vTot ? 'paga' : 'parcial');
-        
+
         if (fat.valorTotal !== vTot || fat.valorPago !== vPag || fat.status !== st) {
             fat.valorTotal = vTot; fat.valorPago = vPag; fat.status = st;
             fat.updatedAt = new Date().toISOString();
             alterou = true;
         }
     });
-    
+
     const antesOrfas = dados.fatura_cartao.length;
     dados.fatura_cartao = dados.fatura_cartao.filter(f => faturasAtivas.has(f.id));
     if (dados.fatura_cartao.length !== antesOrfas) alterou = true;
@@ -817,11 +825,27 @@ function migrarDados(dados) {
 // ============================================================================
 function criarModalBase({ titulo, mensagem, htmlExtra = '', classe = '' }) {
     const o = document.createElement('div');
-    o.className = `modal-overlay ${classe}`.trim(); o.setAttribute('role', 'dialog'); o.setAttribute('aria-modal', 'true');
+    o.className = `modal-overlay ${classe}`.trim();
+    o.setAttribute('role', 'dialog');
+    o.setAttribute('aria-modal', 'true');
     o.innerHTML = `<div class="modal-box" tabindex="-1"><h3>${escaparHTML(titulo)}</h3><p>${escaparHTML(mensagem)}</p>${htmlExtra}</div>`;
     document.body.appendChild(o);
-    setTimeout(() => o.querySelector('.modal-box')?.focus(), 10);
-    return { overlay: o, box: o.querySelector('.modal-box') };
+    const box = o.querySelector('.modal-box');
+    setTimeout(() => box?.focus(), 10);
+
+    // [FIX #11] Focus trap
+    o.addEventListener('keydown', function trap(e) {
+        if (e.key !== 'Tab') return;
+        const focaveis = Array.from(box.querySelectorAll(
+            'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+        )).filter(el => el.offsetParent !== null);
+        if (!focaveis.length) return;
+        const primeiro = focaveis[0];
+        const ultimo = focaveis[focaveis.length - 1];
+        if (e.shiftKey && document.activeElement === primeiro) { e.preventDefault(); ultimo.focus(); }
+        else if (!e.shiftKey && document.activeElement === ultimo) { e.preventDefault(); primeiro.focus(); }
+    });
+    return { overlay: o, box };
 }
 
 function fecharModal(overlay) { if (overlay) { overlay.classList.add('modal-closing'); setTimeout(() => overlay.remove(), 120); } }
@@ -964,8 +988,6 @@ function mostrarLoading(mensagem = "Processando...", usarGif = false) {
     const antigo = document.getElementById('loadingOverlay');
     if (antigo) antigo.remove();
 
-    // Quando solicitado, usa o GIF do próprio projeto. Para os outros processos,
-    // mantém o indicador CSS leve já utilizado pelo sistema.
     if (!spanVisivel || usarGif) {
         const ov = document.createElement('div');
         ov.id = 'loadingOverlay';
@@ -1112,29 +1134,29 @@ function criarIndicadorSincronizacaoUi() {
     const c = document.getElementById('syncStatusIcon'); if (!c || c.dataset.syncWired) return;
     c.dataset.syncWired = 'true'; c.innerHTML = `<img src="imagens/sincronizar.png" style="width:18px;" alt="Sync"><span id="syncTextLabel" style="font-size:0.82rem; font-weight:700;">Sincronizado</span>`;
     c.style.cssText = 'display:inline-flex; align-items:center; gap:8px; padding:6px 12px; border-radius:99px; background:var(--success-soft); border:1px solid var(--success); cursor:pointer;';
-    
+
     c.onclick = async () => {
         const pendente = localStorage.getItem('syncPendente') === 'true';
         const temConflito = localStorage.getItem(SYNC_CONFLICT_KEY) !== null;
 
         if (pendente || temConflito) {
             const forcar = await mostrarConfirmacaoModal('Atenção! Existem dados locais não enviados ou em conflito. Deseja forçar um novo envio agora (baixando um backup de segurança antes)?');
-            
+
             if (forcar) {
                 await forcarEnvioComBackup();
             } else {
                 if (await mostrarConfirmacaoModal('Aviso: Tem certeza que deseja descartar suas alterações locais e baixar os dados limpos do servidor?')) {
                     atualizarIndicadorSyncUI('pending');
-                    try { 
-                        const j = await buscarDadosServidor(); 
-                        gravarSnapshotLocal(migrarDados(j).dados, true); 
-                        syncPendingData = null; 
-                        localStorage.removeItem('syncPendente'); 
-                        localStorage.removeItem(SYNC_CONFLICT_KEY); 
-                        atualizarIndicadorSyncUI('success'); 
-                    } catch (e) { 
-                        atualizarIndicadorSyncUI('error'); 
-                        await mostrarAlertaModal('Erro: ' + e.message); 
+                    try {
+                        const j = await buscarDadosServidor();
+                        gravarSnapshotLocal(migrarDados(j).dados, true);
+                        syncPendingData = null;
+                        localStorage.removeItem('syncPendente');
+                        localStorage.removeItem(SYNC_CONFLICT_KEY);
+                        atualizarIndicadorSyncUI('success');
+                    } catch (e) {
+                        atualizarIndicadorSyncUI('error');
+                        await mostrarAlertaModal('Erro: ' + e.message);
                     }
                 }
             }
@@ -1246,17 +1268,20 @@ async function adicionarLancamentoComParcelas(form) {
     if (!await exigirPermissao('criarMovimento') || processandoAcaoModal) return false;
     processandoAcaoModal = true; mostrarLoading("Salvando...");
     try {
-        const d = obterDados(), uId = Number(obterUsuarioAtualId(d)), vt = numeroSeguro(form.valorTotal), q = form.formaPagamento === 'FIXO' ? 12 : Math.min(48, Math.max(1, inteiroSeguro(form.qtdParcelas, 1)));
+        const d = obterDados(), uId = Number(obterUsuarioAtualId(d)), vt = numeroSeguro(form.valorTotal);
+        // [FIX #5] Respeita o total de parcelas escolhido pelo usuário, sem forçar 12 em "Conta fixa".
+        const q = Math.min(48, Math.max(1, inteiroSeguro(form.qtdParcelas, 1)));
         if (!form.descricao?.trim() || vt <= 0 || !form.vencimento) throw new Error('Preencha corretamente.');
         const b = form.bemId ? d.bens.find(x => String(x.id) === String(form.bemId)) : null;
         let esc = form.tipo === 'saida' ? (form.escopo || 'casal') : 'casal';
         if (b) esc = b.compartilhado ? 'casal' : esc;
-        const valP = form.formaPagamento === 'FIXO' ? Array(q).fill(Number(vt.toFixed(2))) : dividirValorExato(vt, q);
+        // [FIX #5] Distribuição exata em centavos, independente da forma de pagamento.
+        const valP = dividirValorExato(vt, q);
         const heP = form.horaExtra ? dividirValorExato(form.horaExtra, q) : Array(q).fill(0);
         const dB = criarDataLocal(form.vencimento);
         let nId = d.lancamentos.reduce((m, l) => Math.max(m, l.id||0), 0) + 1;
         const pId = q > 1 ? gerarId('parc') : null;
-        
+
         for (let i = 1; i <= q; i++) {
             const dV = adicionarMesesClamped(dB, i - 1);
             const pg = form.tipo === 'entrada' ? (form.statusInicial === 'pago') : (form.formaPagamento !== 'CARTAO' && form.statusInicial === 'pago');
@@ -1311,7 +1336,7 @@ async function alternarStatusPagamento(id) {
             throw new Error('Esta entrada representa o valor já recebido do empréstimo. Para evitar divergências, ela não pode ser marcada como pendente.');
         }
         if (l.faturaId || l.formaPagamento === 'CARTAO') throw new Error('A quitação de compras de crédito é controlada globalmente pela fatura do cartão.');
-        
+
         l.pago = !l.pago; l.status = l.pago ? 'pago' : (l.vencimento < dataLocalYYYYMMDD() ? 'atrasado' : 'pendente');
         l.dataPagamento = l.pago ? dataLocalYYYYMMDD() : null; l.usuarioPagamentoId = l.pago ? obterUsuarioAtualId(d) : null;
         l.updatedAt = new Date().toISOString();
@@ -1325,19 +1350,19 @@ async function alternarStatusFaturaConsolidada(faturaId, statusPago) {
     processandoAcaoModal = true; mostrarLoading('Atualizando a fatura inteira...');
     try {
         const d = obterDados(), uId = Number(obterUsuarioAtualId(d));
-        
+
         const itens = d.lancamentos.filter(l => String(l.faturaId) === String(faturaId));
         if (!itens.length) throw new Error('Nenhum lançamento foi encontrado para esta fatura.');
-        
+
         const hj = dataLocalYYYYMMDD(), ag = new Date().toISOString();
-        itens.forEach(l => { 
-            l.pago = statusPago; 
-            l.status = statusPago ? 'pago' : (l.vencimento < hj ? 'atrasado' : 'pendente'); 
-            l.dataPagamento = statusPago ? hj : null; 
-            l.usuarioPagamentoId = statusPago ? uId : null; 
-            l.updatedAt = ag; 
+        itens.forEach(l => {
+            l.pago = statusPago;
+            l.status = statusPago ? 'pago' : (l.vencimento < hj ? 'atrasado' : 'pendente');
+            l.dataPagamento = statusPago ? hj : null;
+            l.usuarioPagamentoId = statusPago ? uId : null;
+            l.updatedAt = ag;
         });
-        
+
         registrarLog(d, 'STATUS FATURA', `Fatura ${faturaId} -> ${statusPago ? 'PAGA' : 'PENDENTE'}`);
         await salvarDados(d); return true;
     } catch (e) { await mostrarAlertaModal(e.message); return false; } finally { esconderLoading(); processandoAcaoModal = false; }
@@ -1373,6 +1398,87 @@ async function removerLancamentoInteligente(id) {
     }
     registrarLog(d, "EXCLUSÃO", `Excluído. Motivo: ${mt}`);
     await salvarDados(d); esconderLoading(); await mostrarAlertaModal("Sucesso!"); return true;
+}
+
+// [FIX #3] Descreve a origem de um lançamento (para badge na tabela).
+function descreverOrigemLancamento(l, dados = obterDados()) {
+    if (!l) return null;
+    const finId = resolverFinanciamentoIdPorLancamento(l, dados);
+    if (finId) {
+        const fin = (dados.financiamentos || []).find(f => String(f.id) === String(finId));
+        if (fin) return {
+            icone: fin.tipoContrato === 'emprestimo' ? '💰' : '🏦',
+            cor: 'var(--primary)',
+            detalhe: `${fin.tipoContrato === 'emprestimo' ? 'Empréstimo' : 'Financiamento'}: ${fin.nome}`
+        };
+    }
+    if (l.parcelamentoId) return {
+        icone: '🔢', cor: 'var(--warning)',
+        detalhe: `Compra parcelada: ${descricaoBaseParcelamento(l.descricao || '')}`
+    };
+    if (l.faturaId) return {
+        icone: '💳', cor: 'var(--text-muted)',
+        detalhe: `Fatura de cartão: ${l.faturaId}`
+    };
+    return null;
+}
+
+// [FIX #4] Modal de histórico individual por lançamento.
+function abrirHistoricoLancamento(lancamentoId) {
+    const dados = obterDados();
+    const lanc = (dados.lancamentos || []).find(l => String(l.id) === String(lancamentoId));
+    if (!lanc) { mostrarAlertaModal('Lançamento não encontrado.'); return; }
+
+    const edicoes = (dados.edicao_movimento || []).filter(e => String(e.lancamentoId) === String(lancamentoId));
+    const exclusoes = (dados.exclusao_movimento || []).filter(e => String(e.lancamentoId) === String(lancamentoId));
+    const origem = descreverOrigemLancamento(lanc, dados);
+
+    let timeline = '';
+    edicoes.slice().reverse().forEach(e => {
+        timeline += `<li style="margin-bottom:10px;padding:10px;background:var(--warning-soft);border-radius:8px;list-style:none;">
+            <div style="font-size:.72rem;color:var(--text-muted);">${escaparHTML(e.dataHora || '-')} • ${escaparHTML(e.usuario || '-')}</div>
+            <div style="font-size:.85rem;margin-top:4px;"><strong>Edição:</strong>
+                ${escaparHTML(e.descricaoAntiga || '')} → ${escaparHTML(e.descricaoNova || '')}<br>
+                Valor: ${escaparHTML(formatarMoeda(e.valorAntigo || 0))} → ${escaparHTML(formatarMoeda(e.valorNovo || 0))}<br>
+                <em style="color:var(--text-muted);">Motivo: ${escaparHTML(e.motivo || '-')}</em>
+            </div></li>`;
+    });
+    exclusoes.slice().reverse().forEach(e => {
+        timeline += `<li style="margin-bottom:10px;padding:10px;background:var(--danger-soft);border-radius:8px;list-style:none;">
+            <div style="font-size:.72rem;color:var(--text-muted);">${escaparHTML(e.dataHora || '-')} • ${escaparHTML(e.usuario || '-')}</div>
+            <div style="font-size:.85rem;margin-top:4px;"><strong>Exclusão:</strong>
+                ${escaparHTML(e.descricao || '')} (${escaparHTML(formatarMoeda(e.valor || 0))})<br>
+                <em style="color:var(--text-muted);">Motivo: ${escaparHTML(e.motivo || '-')}</em>
+            </div></li>`;
+    });
+    if (!timeline) timeline = '<li style="color:var(--text-muted);text-align:center;padding:20px;list-style:none;">Nenhuma edição ou exclusão registrada.</li>';
+
+    const origemHtml = origem
+        ? `<p style="margin-bottom:4px;"><strong>Origem:</strong> <span style="color:${origem.cor};font-weight:700;">${origem.icone} ${escaparHTML(origem.detalhe)}</span></p>`
+        : '';
+    const parcInfo = (lanc.parcelaAtual && lanc.totalParcelas)
+        ? `<p style="margin-bottom:4px;"><strong>Parcela:</strong> ${escaparHTML(lanc.parcelaAtual)}/${escaparHTML(lanc.totalParcelas)}</p>` : '';
+
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    overlay.innerHTML = `
+        <div class="modal-box" style="max-width:560px;width:95%;">
+            <h3>Histórico do lançamento</h3>
+            <div style="text-align:left;margin-bottom:14px;font-size:.9rem;">
+                <p style="margin-bottom:4px;"><strong>Descrição:</strong> ${escaparHTML(lanc.descricao || '-')}</p>
+                <p style="margin-bottom:4px;"><strong>Valor:</strong> ${escaparHTML(formatarMoeda(lanc.valor || 0))}</p>
+                <p style="margin-bottom:4px;"><strong>Vencimento:</strong> ${escaparHTML(formatarDataBR(lanc.vencimento || ''))}</p>
+                ${parcInfo}${origemHtml}
+                <p style="margin-bottom:4px;"><strong>Criado em:</strong> ${escaparHTML(formatarDataSemHora(lanc.createdAt || ''))}</p>
+                <p style="margin-bottom:4px;"><strong>Última alteração:</strong> ${escaparHTML(formatarDataSemHora(lanc.updatedAt || ''))}</p>
+            </div>
+            <h4 style="margin:12px 0 8px;font-size:.95rem;">Linha do tempo</h4>
+            <ul style="padding:0;max-height:300px;overflow-y:auto;">${timeline}</ul>
+            <button type="button" data-fechar style="width:100%;background-color:var(--primary);margin-top:16px;">Fechar</button>
+        </div>`;
+    document.body.appendChild(overlay);
+    overlay.querySelector('[data-fechar]').onclick = () => fecharModal(overlay);
+    overlay.addEventListener('click', e => { if (e.target === overlay) fecharModal(overlay); });
 }
 
 async function atualizarLancamentoNoBanco(id, novosDados) {
@@ -1447,12 +1553,25 @@ async function atualizarLancamentoNoBanco(id, novosDados) {
             l.observacao = novosDados.observacao;
             l.servicoEssencial = novosDados.tipo === 'saida' ? (novosDados.servicoEssencial || 'nao') : 'nao';
             l.escopo = novosDados.tipo === 'saida' ? (novosDados.escopo || 'casal') : 'casal';
-            
+
+            // [NOVO] Persiste hora extra (só faz sentido em entradas)
+            l.horaExtra = novosDados.tipo === 'entrada' ? numeroSeguro(novosDados.horaExtra) : 0;
+
+            // [NOVO] Persiste vínculo com bem patrimonial (só faz sentido em saídas)
+            l.bemId = (novosDados.tipo === 'saida' && novosDados.bemId != null && novosDados.bemId !== '')
+                ? Number(novosDados.bemId) : null;
+
+            const cartaoAnteriorGrupo = l.cartaoId;
             if (novosDados.formaPagamento === 'CARTAO' && novosDados.tipo === 'saida') {
                 l.cartaoId = novosDados.cartaoId || l.cartaoId || null;
                 l.dataCompra = novosDados.dataCompra || l.dataCompra || null;
+                // Se trocou de cartão, recalcula vencimento pelo ciclo do novo cartão.
+                if (String(l.cartaoId) !== String(cartaoAnteriorGrupo) && l.dataCompra) {
+                    const novoCartao = (dados.cartoes || []).find(c => String(c.id) === String(l.cartaoId));
+                    if (novoCartao) l.vencimento = calcularPrimeiroVencimentoCartao(novoCartao, l.dataCompra);
+                }
             } else { l.cartaoId = null; l.dataCompra = null; }
-            
+
             if (novosDados.vencimento) {
                 const novaDataRef = criarDataLocal(novosDados.vencimento);
                 if (novaDataRef) {
@@ -1461,9 +1580,9 @@ async function atualizarLancamentoNoBanco(id, novosDados) {
                     l.vencimento = dataParaString(adicionarMesesClamped(novaDataRef, pRel - pAtual));
                 }
             }
-            
+
             l.faturaId = (l.formaPagamento === 'CARTAO' && l.cartaoId && l.vencimento) ? `fat_${l.cartaoId}_${String(l.vencimento).slice(0, 7)}` : null;
-            
+
             l.updatedAt = new Date().toISOString();
             dados.edicao_movimento.push({ id: gerarId('edit'), dataHora: dataHoraAtual, usuario: nomeUsuario, usuarioId: Number(uId), lancamentoId: l.id, descricaoAntiga: descAntiga, descricaoNova: l.descricao, valorAntigo, valorNovo: l.valor, motivo: `[EM LOTE] ${motivo}` });
         });
@@ -1478,11 +1597,25 @@ async function atualizarLancamentoNoBanco(id, novosDados) {
         lancamento.observacao = novosDados.observacao;
         lancamento.vencimento = novosDados.vencimento;
         lancamento.updatedAt = new Date().toISOString();
+
+        // [NOVO] Persiste hora extra (só faz sentido em entradas)
+        lancamento.horaExtra = novosDados.tipo === 'entrada' ? numeroSeguro(novosDados.horaExtra) : 0;
+
+        // [NOVO] Persiste vínculo com bem patrimonial (só faz sentido em saídas)
+        lancamento.bemId = (novosDados.tipo === 'saida' && novosDados.bemId != null && novosDados.bemId !== '')
+            ? Number(novosDados.bemId) : null;
+
+        const cartaoAnterior = lancamento.cartaoId;
         if (novosDados.formaPagamento === 'CARTAO' && novosDados.tipo === 'saida') {
             lancamento.cartaoId = novosDados.cartaoId || lancamento.cartaoId || null;
             lancamento.dataCompra = novosDados.dataCompra || lancamento.dataCompra || null;
+            // Recalcula vencimento quando o cartão muda.
+            if (String(lancamento.cartaoId) !== String(cartaoAnterior) && lancamento.dataCompra) {
+                const novoCartao = (dados.cartoes || []).find(c => String(c.id) === String(lancamento.cartaoId));
+                if (novoCartao) lancamento.vencimento = calcularPrimeiroVencimentoCartao(novoCartao, lancamento.dataCompra);
+            }
         } else { lancamento.cartaoId = null; lancamento.dataCompra = null; }
-        
+
         lancamento.faturaId = (lancamento.formaPagamento === 'CARTAO' && lancamento.cartaoId && lancamento.vencimento) ? `fat_${lancamento.cartaoId}_${String(lancamento.vencimento).slice(0, 7)}` : null;
 
         lancamento.servicoEssencial = novosDados.tipo === 'saida' ? (novosDados.servicoEssencial || 'nao') : 'nao';
@@ -1568,7 +1701,6 @@ async function adicionarFinanciamentoComRecorrencia(nome, recorrente, valorParce
         const agora = new Date().toISOString();
         const prefixo = tipoContrato === 'emprestimo' ? 'Empréstimo' : 'Financiamento';
 
-        // O valor efetivamente recebido é registrado como entrada já realizada e vinculado ao contrato.
         if (tipoContrato === 'emprestimo') {
             dados.lancamentos.push({
                 id: nId++, usuarioId, descricao: `Empréstimo recebido: ${nomeFinal}`,
@@ -1674,7 +1806,7 @@ async function adicionarContaLotePorPeriodo(descricao, valorParcela, dataInicio,
         let nId = (dados.lancamentos || []).reduce((m, l) => Math.max(m, Number(l.id) || 0), 0) + 1;
         const parcelamentoId = quantidade > 1 ? gerarId('lote') : null;
         const agora = new Date().toISOString(), hoje = dataLocalYYYYMMDD();
-        
+
         for (let i = 0; i < quantidade; i++) {
             const dataCompraDate = adicionarMesesClamped(dataBase, i);
             const dataCompraStr = dataParaString(dataCompraDate);
@@ -1908,6 +2040,11 @@ function carregarDashboard() {
     atualizarGraficosDashboard(tE, tS, d, lns);
     renderizarTabelaUltimosLancamentos(lns, d, nomeCat);
     renderizarCentralLembretes(lns, d, mes);
+
+    // Hook: se a página define renderização extra (ex: dashboard → pulso + top categorias), chama
+    if (typeof renderizarSessoesDashboardExtras === 'function') {
+        try { renderizarSessoesDashboardExtras(); } catch (e) { console.warn('[Extras Dashboard]', e); }
+    }
 }
 
 function atualizarGraficosDashboard(tE, tS, dados, lns) {
@@ -2021,25 +2158,34 @@ function renderizarTabelaUltimosLancamentos(lns, d, nomeCat) {
     const lista = lns.filter(l => f === 'todos' || l.tipo === f)
         .sort((a, b) => String(b.vencimento || b.dataCompra || '').localeCompare(String(a.vencimento || a.dataCompra || ''))).slice(0, 20);
     if (!lista.length) { tb.innerHTML = '<tr><td colspan="7" class="muted" style="text-align:center;">Nenhum lançamento no período.</td></tr>'; return; }
-    
+
     tb.innerHTML = lista.map(l => {
         const u = (d.usuarios || []).find(x => String(x.id) === String(l.usuarioId));
         const ent = l.tipo === 'entrada';
+
+        // [FIX #3] Badge de origem (financiamento, parcelamento ou fatura).
+        const origem = descreverOrigemLancamento(l, d);
+        const badgeOrigem = origem
+            ? ` <span title="${escaparHTML(origem.detalhe)}" style="font-size:.85rem;opacity:.85;cursor:help;">${origem.icone}</span>` : '';
+
         const fId = l.faturaId || (l.formaPagamento === 'CARTAO' && l.cartaoId && l.vencimento ? `fat_${l.cartaoId}_${String(l.vencimento).slice(0, 7)}` : null);
         const podeAlternar = !fId && l.formaPagamento !== 'CARTAO';
-        
-        const acao = podeAlternar 
-            ? `<button class="btn-acao-icone ${l.pago ? 'desfazer' : 'pagar'}" title="${l.pago ? 'Desfazer pagamento' : 'Marcar como pago'}" onclick="alternarStatusPagamento('${escaparHTML(l.id)}')"><img src="imagens/${l.pago ? 'desfazer' : 'pagar'}.png" style="width:20px;" alt="Ação"></button>` 
+
+        const acao = podeAlternar
+            ? `<button class="btn-acao-icone ${l.pago ? 'desfazer' : 'pagar'}" title="${l.pago ? 'Desfazer pagamento' : 'Marcar como pago'}" onclick="alternarStatusPagamento(${Number(l.id)})"><img src="imagens/${l.pago ? 'desfazer' : 'pagar'}.png" style="width:20px;" alt=""></button>`
             : `<a href="grafico.html?tipo=cartao&cartaoId=${l.cartaoId}&mes=${String(l.vencimento).slice(0, 7)}" class="btn-acao-icone" title="Gerenciar Fatura" style="display:inline-flex; align-items:center; justify-content:center; text-decoration:none;"><span style="font-size:16px;">💳</span></a>`;
-            
+
+        // [FIX #4] Botão de histórico/auditoria por lançamento.
+        const btnHist = `<button class="btn-acao-icone" title="Histórico / auditoria" onclick="abrirHistoricoLancamento(${Number(l.id)})" style="background:color-mix(in srgb,var(--primary) 20%,transparent);border-color:var(--primary);">🕘</button>`;
+
         return `<tr>
             <td>${escaparHTML(u ? String(u.nome).split(' ')[0] : '-')}</td>
-            <td>${escaparHTML(l.descricao)}</td>
+            <td>${escaparHTML(l.descricao)}${badgeOrigem}</td>
             <td>${escaparHTML(nomeCat(l.categoriaId))}</td>
             <td>${escaparHTML(l.formaPagamento || '-')}</td>
             <td>${formatarDataBR(l.vencimento || l.dataCompra)}</td>
             <td class="${ent ? 'positivo' : 'negativo'}">${ent ? '+' : '-'} ${formatarMoeda(l.valor)}</td>
-            <td style="text-align:center;">${acao}</td></tr>`;
+            <td style="text-align:center;">${acao}${btnHist}</td></tr>`;
     }).join('');
 }
 
@@ -2083,11 +2229,11 @@ function renderizarCentralLembretes(lns, dados, mes) {
     Object.values(fats).forEach(f => lms.push({ cartaoId: f.cartaoId, desc: `Fatura: ${f.cartaoNome}`, val: f.val, v: f.v, pago: f.pago, isFat: true, m: f.m }));
     const fin = lms.filter(x => !x.pago || (x.v && x.v >= hj)).sort((a, b) => (a.v || '9999').localeCompare(b.v || '9999'));
     if (cnt) { const pnd = fin.filter(x => !x.pago).length; cnt.style.display = pnd ? 'inline-flex' : 'none'; cnt.textContent = pnd; }
-    
+
     lst.innerHTML = fin.length ? fin.map(i => {
-        const btnAcao = i.isFat 
+        const btnAcao = i.isFat
             ? `<a href="grafico.html?tipo=cartao&cartaoId=${i.cartaoId}&mes=${i.m}" class="btn-acao-icone" title="Gerenciar Fatura" style="display:inline-flex; align-items:center; justify-content:center; text-decoration:none;"><span style="font-size:16px;">💳</span></a>`
-            : `<button class="btn-acao-icone ${i.pago ? 'desfazer' : 'pagar'}" onclick="alternarStatusPagamento('${escaparHTML(i.id)}')"><img src="imagens/${i.pago ? 'desfazer' : 'pagar'}.png" style="width:20px;" alt="Ação"></button>`;
+            : `<button class="btn-acao-icone ${i.pago ? 'desfazer' : 'pagar'}" onclick="alternarStatusPagamento(${Number(i.id)})"><img src="imagens/${i.pago ? 'desfazer' : 'pagar'}.png" style="width:20px;" alt=""></button>`;
 
         return `<li style="opacity:${i.pago ? '0.55' : '1'}; border-bottom:1px solid var(--border); display:flex; justify-content:space-between; align-items:center;">
             <div><strong style="${i.pago ? 'text-decoration:line-through;' : ''}">${escaparHTML(i.desc)}</strong><br><small>Venc: ${formatarDataBR(i.v)}</small></div>
@@ -2099,10 +2245,10 @@ function renderizarCentralLembretes(lns, dados, mes) {
     }).join('') : `<li><span class="muted" style="width:100%; text-align:center;">Nada pendente. 🎉</span></li>`;
 }
 
-async function toggleFaturaDaCentral(cId, m, p) { 
+async function toggleFaturaDaCentral(cId, m, p) {
     const fatId = `fat_${cId}_${m}`;
-    await alternarStatusFaturaConsolidada(fatId, p); 
-    if (typeof carregarDashboard === 'function') carregarDashboard(); 
+    await alternarStatusFaturaConsolidada(fatId, p);
+    if (typeof carregarDashboard === 'function') carregarDashboard();
 }
 
 function toggleCentralLembretes() {
@@ -2486,6 +2632,24 @@ async function abrirModalPrimeiroAcesso() {
 // ============================================================================
 // 10. INICIALIZAÇÃO
 // ============================================================================
+
+// [FIX #9] Sincronização entre abas abertas no mesmo navegador.
+window.addEventListener('storage', (e) => {
+    if (e.key === DB_KEY && e.newValue && !syncInFlight && !syncPendingData) {
+        try {
+            const novo = JSON.parse(e.newValue);
+            _migracaoCacheRef = null; _migracaoCacheDados = null;
+            memoriaSistema = migrarDados(novo).dados;
+            [
+                () => typeof carregarDashboard === 'function' && document.getElementById('filtroMesAno') && carregarDashboard(),
+                () => typeof carregarCentralPagamentos === 'function' && document.getElementById('tabela-pagamentos-body') && carregarCentralPagamentos(),
+                () => typeof carregarTabelaFinanciamentosGeral === 'function' && document.getElementById('tabelaFinanciamentosGeral') && carregarTabelaFinanciamentosGeral(),
+                () => typeof renderizarCategorias === 'function' && document.getElementById('listaCategorias') && renderizarCategorias()
+            ].forEach(fn => { try { fn(); } catch (_) {} });
+        } catch (_) {}
+    }
+});
+
 document.addEventListener("DOMContentLoaded", async () => {
     inicializarTemaVisual();
     inicializarPrivacidade();

@@ -7,87 +7,121 @@
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
-
     <main class="container">
         <div class="page-heading">
             <div>
                 <h2>Editar lançamento</h2>
-                <p>Alterações ficam registradas na auditoria e exigem uma justificativa.</p>
+                <p>Alterações são registradas na auditoria e exigem justificativa.</p>
             </div>
             <a href="#" onclick="voltarOrigem(event)" class="text-link">← Voltar</a>
         </div>
 
         <section class="form-card">
+            <div id="infoVinculoEdit" class="info-vinculo" style="display:none;"></div>
+
             <form id="formEditarLancamento" onsubmit="salvarEdicaoLancamento(event)" novalidate>
                 <input type="hidden" id="editId">
-                <div class="form-grid-2">
-                    <div class="form-group">
-                        <label for="editDescricao">Descrição</label>
-                        <input type="text" id="editDescricao" maxlength="120" required>
+
+                <!-- SEÇÃO 1: Identificação -->
+                <div class="secao-edicao">
+                    <div class="secao-edicao-titulo"><span class="icone">📝</span> Identificação</div>
+                    <div class="form-grid-2">
+                        <div class="form-group">
+                            <label for="editDescricao">Descrição</label>
+                            <input type="text" id="editDescricao" maxlength="120" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="editTipo">Tipo</label>
+                            <select id="editTipo" onchange="tratarMudancaTipoEdicao()">
+                                <option value="saida">Saída</option>
+                                <option value="entrada">Entrada</option>
+                            </select>
+                        </div>
                     </div>
-                    <div class="form-group">
-                        <label for="editTipo">Tipo</label>
-                        <select id="editTipo" onchange="tratarMudancaTipoEdicao()">
-                            <option value="saida">Saída</option>
-                            <option value="entrada">Entrada</option>
-                        </select>
-                    </div>
-                </div>
-                <div class="form-grid-2">
-                    <div class="form-group">
-                        <label for="editCategoria">Categoria</label>
-                        <select id="editCategoria" required></select>
-                    </div>
-                    <div class="form-group">
-                        <label for="editFormaPagamento">Forma de pagamento</label>
-                        <select id="editFormaPagamento" onchange="tratarMudancaFormaEdicao()">
-                            <option value="DINHEIRO">Dinheiro / Pix / Débito</option>
-                            <option value="BOLETO">Boleto / Conta</option>
-                            <option value="FIXO">Conta fixa</option>
-                            <option value="CARTAO">Cartão de crédito</option>
-                        </select>
+                    <div class="form-grid-2" style="margin-top:12px;">
+                        <div class="form-group">
+                            <label for="editCategoria">Categoria</label>
+                            <select id="editCategoria" required></select>
+                        </div>
+                        <div class="form-group">
+                            <label for="editFormaPagamento">Forma de pagamento</label>
+                            <select id="editFormaPagamento" onchange="tratarMudancaFormaEdicao()">
+                                <option value="DINHEIRO">Dinheiro / Pix / Débito</option>
+                                <option value="BOLETO">Boleto / Conta</option>
+                                <option value="FIXO">Conta fixa</option>
+                                <option value="CARTAO">Cartão de crédito</option>
+                            </select>
+                        </div>
                     </div>
                 </div>
 
-                <!-- Bloco de Cartão na Edição -->
-                <div id="blocoEditCartao" class="form-group" style="display:none; margin-top:12px;">
-                    <label for="editCartao">Cartão de crédito</label>
-                    <select id="editCartao"></select>
-                </div>
-
-                <div id="blocoServicoEssencial" class="form-group" style="margin-top:12px;">
-                    <label for="editServicoEssencial">Despesa essencial?</label>
-                    <select id="editServicoEssencial">
-                        <option value="nao">Não</option>
-                        <option value="sim">Sim</option>
-                    </select>
-                </div>
-                
-                <!-- Escopo liberado para entradas e saídas -->
-                <div id="blocoEditEscopo" class="form-group" style="margin-top:12px;">
-                    <label for="editEscopo">Escopo do lançamento</label>
-                    <select id="editEscopo">
-                        <option value="casal">Casal / Casa</option>
-                        <option value="individual">Individual</option>
-                    </select>
-                </div>
-
-                <div class="form-grid-2" style="margin-top:12px;">
-                    <div class="form-group">
-                        <label for="editValor">Valor (R$)</label>
-                        <input type="number" step="0.01" min="0.01" id="editValor" required>
+                <!-- SEÇÃO 2: Valores e datas -->
+                <div class="secao-edicao">
+                    <div class="secao-edicao-titulo"><span class="icone">💵</span> Valores e datas</div>
+                    <div class="form-grid-2">
+                        <div class="form-group">
+                            <label for="editValor">Valor (R$)</label>
+                            <input type="number" step="0.01" min="0.01" id="editValor" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="editVencimento">Data de vencimento / recebimento</label>
+                            <input type="date" id="editVencimento" required>
+                        </div>
                     </div>
-                    <div class="form-group">
-                        <label for="editVencimento">Data de vencimento / recebimento</label>
-                        <input type="date" id="editVencimento" required>
+                    <div class="form-grid-2" style="margin-top:12px;">
+                        <div class="form-group" id="blocoEditHoraExtra" style="display:none;">
+                            <label for="editHoraExtra">Hora extra inclusa (R$)</label>
+                            <input type="number" step="0.01" min="0" id="editHoraExtra" value="0">
+                        </div>
+                        <div class="form-group" id="blocoEditDataCompra" style="display:none;">
+                            <label for="editDataCompra">Data da compra</label>
+                            <input type="date" id="editDataCompra">
+                        </div>
                     </div>
                 </div>
-                <div class="form-group" style="margin-top:12px;">
-                    <label for="editObservacao">Observação</label>
-                    <input type="text" id="editObservacao" maxlength="250">
+
+                <!-- SEÇÃO 3: Cartão (só se CARTAO) -->
+                <div id="blocoEditCartaoSecao" class="secao-edicao" style="display:none;">
+                    <div class="secao-edicao-titulo"><span class="icone">💳</span> Cartão de crédito</div>
+                    <div class="form-group">
+                        <label for="editCartao">Cartão</label>
+                        <select id="editCartao"></select>
+                    </div>
+                    <p class="muted small" id="infoParcelamentoEdit" style="margin-top:8px;"></p>
                 </div>
+
+                <!-- SEÇÃO 4: Classificação -->
+                <div class="secao-edicao">
+                    <div class="secao-edicao-titulo"><span class="icone">🏷️</span> Classificação</div>
+                    <div class="form-grid-2">
+                        <div id="blocoServicoEssencial" class="form-group">
+                            <label for="editServicoEssencial">É despesa essencial?</label>
+                            <select id="editServicoEssencial"><option value="nao">Não</option><option value="sim">Sim</option></select>
+                        </div>
+                        <div id="blocoEditEscopo" class="form-group">
+                            <label for="editEscopo">Escopo</label>
+                            <select id="editEscopo">
+                                <option value="casal">Casal / Casa</option>
+                                <option value="individual">Individual</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div id="blocoEditBem" class="form-group" style="margin-top:12px;">
+                        <label for="editBem">Vincular a Bem Patrimonial</label>
+                        <select id="editBem"><option value="">Nenhum bem vinculado</option></select>
+                    </div>
+                </div>
+
+                <!-- SEÇÃO 5: Observação -->
+                <div class="secao-edicao">
+                    <div class="secao-edicao-titulo"><span class="icone">📄</span> Observação</div>
+                    <div class="form-group">
+                        <input type="text" id="editObservacao" maxlength="250" placeholder="Detalhes adicionais (opcional)">
+                    </div>
+                </div>
+
                 <div class="btn-row" style="margin-top:18px;">
-                    <button type="submit">Salvar alterações</button>
+                    <button type="submit" id="btnSalvarEdicao">Salvar alterações</button>
                     <button type="button" class="btn-secondary" onclick="voltarOrigem(event)">Cancelar</button>
                 </div>
             </form>
@@ -100,7 +134,8 @@
         const lancamentoId = urlParams.get('id') || '';
         const returnUrlInformada = urlParams.get('returnUrl') || '';
         const destinosRetornoPermitidos = new Set([
-    'dashboard.html', 'central-pagamentos.html', 'lancamentos.html', 'relatorios.html', 'cartoes.html', 'financiamentos.html', 'grafico.html'
+            'dashboard.html', 'central-pagamentos.html', 'lancamentos.html',
+            'relatorios.html', 'cartoes.html', 'financiamentos.html', 'grafico.html'
         ]);
         const returnUrl = destinosRetornoPermitidos.has(returnUrlInformada) ? returnUrlInformada : '';
         let lancamentoAtualEdicao = null;
@@ -113,57 +148,43 @@
 
         function voltarOrigem(event) {
             if (event) event.preventDefault();
-            if (returnUrl) {
-                window.location.href = returnUrl;
-            } else {
-                window.location.href = 'dashboard.html';
-            }
-        }
-
-        function popularSelectCartoesEdicao(dados) {
-            const selectCartao = document.getElementById('editCartao');
-            if (!selectCartao) return;
-            const usuarioAtualId = Number(obterUsuarioAtualId());
-            const cartoesUsuario = filtrarDadosPorPermissao(dados.cartoes || [], dados, 'casal')
-                .filter(c => c.ativo !== false && !c.isBeneficio && Number(c.usuarioId) === usuarioAtualId);
-
-            selectCartao.replaceChildren();
-            const placeholder = document.createElement('option');
-            placeholder.value = '';
-            placeholder.textContent = cartoesUsuario.length ? 'Selecione um cartão' : 'Nenhum cartão de crédito ativo';
-            selectCartao.appendChild(placeholder);
-            cartoesUsuario.forEach(c => {
-                const opt = document.createElement('option');
-                opt.value = String(c.id);
-                opt.textContent = c.nome;
-                selectCartao.appendChild(opt);
-            });
+            window.location.href = returnUrl || 'dashboard.html';
         }
 
         function popularCategoriasEdicao(tipo, categoriaPreferida = null) {
             const dados = obterDados();
-            const selectCat = document.getElementById('editCategoria');
-            if (!selectCat) return;
+            const sel = document.getElementById('editCategoria');
             const categorias = (dados.categorias || []).filter(c => c.tipo === tipo)
                 .sort((a, b) => normalizarTexto(a.nome).localeCompare(normalizarTexto(b.nome), 'pt-BR'));
-            selectCat.replaceChildren();
-            categorias.forEach(c => {
-                const option = document.createElement('option');
-                option.value = String(c.id);
-                option.textContent = c.nome;
-                selectCat.appendChild(option);
-            });
+            sel.replaceChildren();
+            categorias.forEach(c => { const o = document.createElement('option'); o.value = String(c.id); o.textContent = c.nome; sel.appendChild(o); });
             if (!categorias.length) {
-                const opt = document.createElement('option');
-                opt.value = '';
-                opt.textContent = 'Nenhuma categoria deste tipo cadastrada';
-                selectCat.appendChild(opt);
-                selectCat.disabled = true;
+                sel.innerHTML = '<option value="">Nenhuma categoria deste tipo</option>';
+                sel.disabled = true;
                 return;
             }
-            selectCat.disabled = false;
-            const preferidaExiste = categorias.some(c => String(c.id) === String(categoriaPreferida));
-            selectCat.value = preferidaExiste ? String(categoriaPreferida) : String(categorias[0].id);
+            sel.disabled = false;
+            const pref = categorias.some(c => String(c.id) === String(categoriaPreferida));
+            sel.value = pref ? String(categoriaPreferida) : String(categorias[0].id);
+        }
+
+        function popularCartoesEdicao(dados) {
+            const sel = document.getElementById('editCartao');
+            const usuarioAtualId = Number(obterUsuarioAtualId());
+            const cartoes = (dados.cartoes || []).filter(c => c.ativo !== false && !c.isBeneficio && Number(c.usuarioId) === usuarioAtualId);
+            sel.replaceChildren();
+            sel.appendChild(new Option(cartoes.length ? 'Selecione um cartão' : 'Nenhum cartão ativo', ''));
+            cartoes.forEach(c => sel.appendChild(new Option(c.nome, String(c.id))));
+        }
+
+        function popularBensEdicao(dados) {
+            const sel = document.getElementById('editBem');
+            const usuario = obterUsuarioAtual();
+            const usuarioId = String(usuario?.id ?? '');
+            const parceiroId = String(usuario?.parceiroId ?? '');
+            const bens = (dados.bens || []).filter(b => b.ativo !== false && (b.usuarioId == null || String(b.usuarioId) === usuarioId || (b.compartilhado && String(b.usuarioId) === parceiroId)));
+            sel.innerHTML = '<option value="">Nenhum bem vinculado</option>';
+            bens.forEach(b => sel.appendChild(new Option(b.nome, String(b.id))));
         }
 
         function carregarFormulario() {
@@ -174,12 +195,33 @@
                 return;
             }
             if (!usuarioPodeAlterarLancamento(lancamentoAtualEdicao, dados)) {
-                mostrarAlertaModal('Você não tem permissão para visualizar ou editar este lançamento.').then(() => voltarOrigem());
-                lancamentoAtualEdicao = null;
+                mostrarAlertaModal('Sem permissão para editar este lançamento.').then(() => voltarOrigem());
                 return;
             }
 
             const lanc = lancamentoAtualEdicao;
+
+            // Info de vínculo (rastreabilidade)
+            const infoEl = document.getElementById('infoVinculoEdit');
+            if (typeof descreverOrigemLancamento === 'function') {
+                const origem = descreverOrigemLancamento(lanc, dados);
+                if (origem) {
+                    infoEl.style.display = 'flex';
+                    infoEl.innerHTML = `<span style="font-size:1.4rem;">${origem.icone}</span><div><strong>${escaparHTML(origem.detalhe)}</strong><br><span class="muted small">Este lançamento está vinculado a outro registro. Alterações afetam o vínculo.</span></div>`;
+                }
+            }
+
+            // Bloqueio para entrada de empréstimo
+            const finVinculado = lanc.financiamentoId
+                ? (dados.financiamentos || []).find(f => String(f.id) === String(lanc.financiamentoId))
+                : null;
+            if (finVinculado?.tipoContrato === 'emprestimo' && lanc.tipo === 'entrada') {
+                infoEl.style.display = 'flex';
+                infoEl.classList.add('bloqueio');
+                infoEl.innerHTML = `<span style="font-size:1.4rem;">🔒</span><div><strong>Entrada de empréstimo não pode ser editada</strong><br><span class="muted small">Este lançamento representa o valor recebido do contrato <em>${escaparHTML(finVinculado.nome)}</em>. Para alterar, edite o contrato em Financiamentos.</span></div>`;
+                document.querySelectorAll('#formEditarLancamento input, #formEditarLancamento select, #formEditarLancamento button[type="submit"]').forEach(el => el.disabled = true);
+            }
+
             document.getElementById('editId').value = String(lanc.id);
             document.getElementById('editDescricao').value = lanc.descricao || '';
             document.getElementById('editTipo').value = lanc.tipo === 'entrada' ? 'entrada' : 'saida';
@@ -189,84 +231,106 @@
             document.getElementById('editVencimento').value = lanc.vencimento || dataLocalYYYYMMDD();
             document.getElementById('editServicoEssencial').value = lanc.servicoEssencial || 'nao';
             document.getElementById('editEscopo').value = lanc.escopo || 'casal';
+            document.getElementById('editHoraExtra').value = Number(lanc.horaExtra || 0);
+            document.getElementById('editDataCompra').value = lanc.dataCompra || '';
+
             popularCategoriasEdicao(lanc.tipo === 'entrada' ? 'entrada' : 'saida', lanc.categoriaId);
-            popularSelectCartoesEdicao(dados);
+            popularCartoesEdicao(dados);
+            popularBensEdicao(dados);
             if (lanc.cartaoId) document.getElementById('editCartao').value = String(lanc.cartaoId);
-            tratarMudancaTipoEdicao(false);
+            if (lanc.bemId) document.getElementById('editBem').value = String(lanc.bemId);
+
+            // Info sobre parcelamento (não editável individualmente)
+            if (Number(lanc.totalParcelas) > 1 || lanc.parcelamentoId) {
+                document.getElementById('infoParcelamentoEdit').textContent =
+                    `Parcela ${lanc.parcelaAtual || 1} de ${lanc.totalParcelas || 1}. O número total de parcelas é definido na criação — para alterar, exclua e recrie o parcelamento.`;
+            }
+
+            tratarMudancaTipoEdicao();
             tratarMudancaFormaEdicao();
         }
 
         function tratarMudancaTipoEdicao(atualizarCategorias = true) {
-    const tipoEl = document.getElementById('editTipo');
-    const tipo = tipoEl?.value === 'entrada' ? 'entrada' : 'saida';
-    if (atualizarCategorias) {
-        const categoriaAtual = document.getElementById('editCategoria')?.value;
-        popularCategoriasEdicao(tipo, categoriaAtual);
-    }
-    const entrada = tipo === 'entrada';
-    const blocoServ = document.getElementById('blocoServicoEssencial');
-    if (blocoServ) blocoServ.style.display = entrada ? 'none' : 'block';
+            const tipo = document.getElementById('editTipo').value === 'entrada' ? 'entrada' : 'saida';
+            if (atualizarCategorias) {
+                const catAtual = document.getElementById('editCategoria').value;
+                popularCategoriasEdicao(tipo, catAtual);
+            }
+            const ehEntrada = tipo === 'entrada';
+            document.getElementById('blocoServicoEssencial').style.display = ehEntrada ? 'none' : 'block';
+            document.getElementById('blocoEditEscopo').style.display = ehEntrada ? 'none' : 'block';
+            document.getElementById('blocoEditBem').style.display = ehEntrada ? 'none' : 'block';
 
-    const blocoEsc = document.getElementById('blocoEditEscopo');
-    if (blocoEsc) blocoEsc.style.display = entrada ? 'none' : 'block';
+            // Hora extra: só para entrada de categoria salário
+            const catSel = document.getElementById('editCategoria');
+            const dados = obterDados();
+            const cat = dados.categorias.find(c => String(c.id) === String(catSel.value));
+            const nome = cat ? normalizarTexto(cat.nome) : '';
+            const ehSalario = nome.includes('salario') || nome.includes('salário');
+            document.getElementById('blocoEditHoraExtra').style.display = (ehEntrada && ehSalario) ? 'block' : 'none';
 
-    if (entrada) document.getElementById('blocoEditCartao').style.display = 'none';
-    else tratarMudancaFormaEdicao();
-}
+            if (ehEntrada) {
+                document.getElementById('blocoEditCartaoSecao').style.display = 'none';
+            } else {
+                tratarMudancaFormaEdicao();
+            }
+        }
 
         function tratarMudancaFormaEdicao() {
-            const forma = document.getElementById('editFormaPagamento')?.value || 'BOLETO';
-            const tipo = document.getElementById('editTipo')?.value || 'saida';
-            const blocoCart = document.getElementById('blocoEditCartao');
-            if (blocoCart) blocoCart.style.display = (tipo === 'saida' && forma === 'CARTAO') ? 'block' : 'none';
+            const forma = document.getElementById('editFormaPagamento').value;
+            const tipo = document.getElementById('editTipo').value;
+            const ehCartao = (tipo === 'saida' && forma === 'CARTAO');
+            document.getElementById('blocoEditCartaoSecao').style.display = ehCartao ? 'block' : 'none';
+            document.getElementById('blocoEditDataCompra').style.display = ehCartao ? 'block' : 'none';
         }
+
+        // Categoria muda → precisa reavaliar hora extra
+        document.addEventListener('change', e => {
+            if (e.target.id === 'editCategoria') tratarMudancaTipoEdicao(false);
+        });
 
         async function salvarEdicaoLancamento(event) {
             event.preventDefault();
             const dados = obterDados();
             const lanc = (dados.lancamentos || []).find(l => String(l.id) === String(lancamentoId));
             if (!lanc || !usuarioPodeAlterarLancamento(lanc, dados)) {
-                await mostrarAlertaModal('O lançamento não existe mais ou você não tem permissão para editá-lo.');
+                await mostrarAlertaModal('Sem permissão ou lançamento não existe mais.');
                 return;
             }
-            const descricao = document.getElementById('editDescricao')?.value?.trim() || '';
-            const tipo = document.getElementById('editTipo')?.value || 'saida';
-            const formaPagamento = document.getElementById('editFormaPagamento')?.value || 'BOLETO';
-            const valor = numeroSeguro(document.getElementById('editValor')?.value, NaN);
-            const categoriaId = document.getElementById('editCategoria')?.value || '';
-            const cartaoId = (tipo === 'saida' && formaPagamento === 'CARTAO') ? (document.getElementById('editCartao')?.value || null) : null;
+
+            const descricao = document.getElementById('editDescricao').value.trim();
+            const tipo = document.getElementById('editTipo').value || 'saida';
+            const formaPagamento = document.getElementById('editFormaPagamento').value || 'BOLETO';
+            const valor = numeroSeguro(document.getElementById('editValor').value, NaN);
+            const categoriaId = document.getElementById('editCategoria').value;
+            const cartaoId = (tipo === 'saida' && formaPagamento === 'CARTAO') ? (document.getElementById('editCartao').value || null) : null;
+            const bemId = tipo === 'saida' ? (document.getElementById('editBem').value || null) : null;
+            const horaExtra = tipo === 'entrada' ? numeroSeguro(document.getElementById('editHoraExtra').value) : 0;
+            const dataCompra = (tipo === 'saida' && formaPagamento === 'CARTAO') ? (document.getElementById('editDataCompra').value || null) : null;
 
             if (!descricao || !Number.isFinite(valor) || valor <= 0) {
-                await mostrarAlertaModal('Informe uma descrição e um valor maior que zero.');
+                await mostrarAlertaModal('Descrição e valor maior que zero são obrigatórios.');
                 return;
             }
             if (!(dados.categorias || []).some(c => String(c.id) === String(categoriaId) && c.tipo === tipo)) {
-                await mostrarAlertaModal('Selecione uma categoria válida para o tipo de lançamento escolhido.');
+                await mostrarAlertaModal('Selecione uma categoria válida.');
                 return;
             }
             if (tipo === 'saida' && formaPagamento === 'CARTAO') {
                 const cartao = (dados.cartoes || []).find(c => String(c.id) === String(cartaoId) && c.ativo !== false && !c.isBeneficio && Number(c.usuarioId) === Number(obterUsuarioAtualId()));
-                if (!cartao) {
-                    await mostrarAlertaModal('Selecione um cartão de crédito ativo e autorizado.');
-                    return;
-                }
+                if (!cartao) { await mostrarAlertaModal('Selecione um cartão válido.'); return; }
+                if (!dataCompra) { await mostrarAlertaModal('Informe a data da compra.'); return; }
             }
-            const vencimento = document.getElementById('editVencimento')?.value || '';
-            const dataValida = criarDataLocal(vencimento);
-            if (!dataValida) {
-                await mostrarAlertaModal('Informe uma data de vencimento válida.');
-                return;
-            }
+            const vencimento = document.getElementById('editVencimento').value;
+            if (!criarDataLocal(vencimento)) { await mostrarAlertaModal('Data de vencimento inválida.'); return; }
 
             const ok = await atualizarLancamentoNoBanco(lancamentoId, {
                 descricao, tipo, categoriaId, formaPagamento, valor,
-                observacao: document.getElementById('editObservacao')?.value?.trim() || '',
+                observacao: document.getElementById('editObservacao').value.trim(),
                 vencimento,
-                servicoEssencial: tipo === 'saida' ? (document.getElementById('editServicoEssencial')?.value || 'nao') : 'nao',
-                escopo: document.getElementById('editEscopo')?.value || 'casal',
-                cartaoId,
-                dataCompra: lanc.dataCompra || null,
-                bemId: tipo === 'saida' ? (lanc.bemId || null) : null
+                servicoEssencial: tipo === 'saida' ? (document.getElementById('editServicoEssencial').value || 'nao') : 'nao',
+                escopo: document.getElementById('editEscopo').value || 'casal',
+                cartaoId, dataCompra, bemId, horaExtra
             });
             if (ok) voltarOrigem();
         }

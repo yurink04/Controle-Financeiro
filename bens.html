@@ -107,9 +107,12 @@
         }
 
         function fecharModalNovoBem() {
-            document.getElementById('modalNovoBem').style.display = 'none';
-            document.getElementById('formBemModal').reset();
-        }
+    document.getElementById('modalNovoBem').style.display = 'none';
+    const form = document.getElementById('formBemModal');
+    form.reset();
+    delete form.dataset.editId;
+    document.querySelector('#modalNovoBem h3').textContent = 'Cadastrar Bem Patrimonial';
+}
 
         function atualizarCampoEspecificoBem() {
             const tipo = document.getElementById('tipoBem').value;
@@ -134,57 +137,73 @@
         }
 
         async function salvarBemModal(event) {
-            event.preventDefault();
-            const nome = document.getElementById('nomeBem').value.trim();
-            const tipo = document.getElementById('tipoBem').value;
-            const valor = numeroSeguro(document.getElementById('valorBem').value);
-            const campoEspecifico = document.getElementById('campoEspecifico').value.trim();
-            const statusBem = document.getElementById('statusBem').value;
-            const compartilhado = document.getElementById('bemCompartilhado').checked;
+    event.preventDefault();
+    const nome = document.getElementById('nomeBem').value.trim();
+    const tipo = document.getElementById('tipoBem').value;
+    const valor = numeroSeguro(document.getElementById('valorBem').value);
+    const campoEspecifico = document.getElementById('campoEspecifico').value.trim();
+    const statusBem = document.getElementById('statusBem').value;
+    const compartilhado = document.getElementById('bemCompartilhado').checked;
+    const editId = document.getElementById('formBemModal').dataset.editId;
 
-            if (!nome || valor < 0) {
-                await mostrarAlertaModal('Preencha os campos corretamente.');
-                return;
-            }
+    if (!nome || valor < 0) { await mostrarAlertaModal('Preencha os campos corretamente.'); return; }
+    if ((tipo === 'veiculo' || tipo === 'imovel') && !campoEspecifico) {
+        await mostrarAlertaModal(tipo === 'veiculo' ? 'Informe a placa.' : 'Informe o CEP.');
+        return;
+    }
 
-            if ((tipo === 'veiculo' || tipo === 'imovel') && !campoEspecifico) {
-                await mostrarAlertaModal(tipo === 'veiculo' ? 'Informe a placa ou final da placa.' : 'Informe o CEP ou final do CEP.');
-                return;
-            }
+    mostrarLoading(editId ? "A atualizar bem..." : "A salvar bem...");
+    const dados = obterDados();
+    const usuarioId = Number(obterUsuarioAtualId());
 
-            mostrarLoading("A salvar bem...");
-            const dados = obterDados();
-            const usuarioId = Number(obterUsuarioAtualId());
+    if (editId) {
+        const b = (dados.bens || []).find(x => String(x.id) === String(editId) && Number(x.usuarioId) === usuarioId);
+        if (!b) { esconderLoading(); await mostrarAlertaModal('Bem não encontrado ou sem permissão.'); return; }
+        b.nome = nome; b.tipo = tipo; b.valor = Number(valor.toFixed(2));
+        b.identificadorEspecifico = campoEspecifico; b.statusBem = statusBem; b.compartilhado = compartilhado;
+        b.updatedAt = new Date().toISOString();
+        registrarLog(dados, "EDIÇÃO BEM", `Bem atualizado: ${nome}`);
+        await salvarDados(dados);
+        esconderLoading(); fecharModalNovoBem(); carregarTabelaBensGeral();
+        await mostrarAlertaModal("Bem atualizado com sucesso!");
+        return;
+    }
 
-            const bemId = dados.bens.reduce((m, b) => Math.max(m, Number(b.id) || 0), 0) + 1;
-            dados.bens.push({
-                id: bemId,
-                usuarioId,
-                nome,
-                tipo,
-                valor: Number(valor.toFixed(2)),
-                identificadorEspecifico: campoEspecifico,
-                statusBem,
-                compartilhado,
-                ativo: true,
-                createdAt: new Date().toISOString()
-            });
+    const bemId = dados.bens.reduce((m, b) => Math.max(m, Number(b.id) || 0), 0) + 1;
+    dados.bens.push({
+        id: bemId, usuarioId, nome, tipo, valor: Number(valor.toFixed(2)),
+        identificadorEspecifico: campoEspecifico, statusBem, compartilhado, ativo: true,
+        createdAt: new Date().toISOString()
+    });
+    registrarLog(dados, "CADASTRO BEM", `Bem cadastrado: ${nome} (${tipo})`, { entidade: 'bem', entidadeId: bemId });
+    await salvarDados(dados);
+    esconderLoading(); fecharModalNovoBem(); carregarTabelaBensGeral();
 
-            // Atualizado para a nova função unificada
-            registrarLog(dados, "CADASTRO BEM", `Bem cadastrado: ${nome} (${tipo})`, { entidade: 'bem', entidadeId: bemId });
-            await salvarDados(dados);
+    if (statusBem === 'financiado') {
+        const criar = await mostrarConfirmacaoModal("Bem cadastrado! Deseja criar o financiamento agora?");
+        if (criar) window.location.href = 'financiamentos.html';
+    } else {
+        await mostrarAlertaModal("Bem cadastrado com sucesso!");
+    }
+}
 
-            esconderLoading();
-            fecharModalNovoBem();
-            carregarTabelaBensGeral();
-
-            if (statusBem === 'financiado') {
-                const criarFinanciamento = await mostrarConfirmacaoModal("Bem cadastrado! Como indicou que está financiado/parcelado, deseja criar o contrato de financiamento agora?");
-                if (criarFinanciamento) window.location.href = 'financiamentos.html';
-            } else {
-                await mostrarAlertaModal("Bem cadastrado com sucesso!");
-            }
-        }
+function prepararEdicaoBem(id) {
+    const dados = obterDados();
+    const usuarioAtualId = Number(obterUsuarioAtualId());
+    const b = (dados.bens || []).find(x => Number(x.id) === Number(id));
+    if (!b) { mostrarAlertaModal('Bem não encontrado.'); return; }
+    if (Number(b.usuarioId) !== usuarioAtualId) { mostrarAlertaModal('Você só pode editar bens vinculados ao seu usuário.'); return; }
+    document.getElementById('nomeBem').value = b.nome || '';
+    document.getElementById('tipoBem').value = b.tipo || 'veiculo';
+    document.getElementById('valorBem').value = b.valor || 0;
+    document.getElementById('campoEspecifico').value = b.identificadorEspecifico || '';
+    document.getElementById('statusBem').value = b.statusBem || 'quitado';
+    document.getElementById('bemCompartilhado').checked = !!b.compartilhado;
+    atualizarCampoEspecificoBem();
+    document.getElementById('formBemModal').dataset.editId = String(b.id);
+    document.querySelector('#modalNovoBem h3').textContent = 'Editar Bem';
+    document.getElementById('modalNovoBem').style.display = 'flex';
+}
 
         function carregarTabelaBensGeral() {
             const dados = obterDados();
@@ -223,11 +242,8 @@
 
                 const tr = document.createElement('tr');
                 tr.innerHTML = `
-                    <td><strong>${b.nome}</strong> ${infoExtra} ${b.compartilhado ? '<span style="font-size:0.7rem; background:var(--primary-soft); color:var(--primary); padding:2px 6px; border-radius:4px;">Compartilhado</span>' : ''}</td>
-                    <td>${b.tipo.toUpperCase()}</td>
-                    <td>${statusHtml}</td>
-                    <td>R$ ${Number(b.valor || 0).toLocaleString('pt-BR', {minimumFractionDigits: 2})}</td>
                     <td>
+                        <button onclick="prepararEdicaoBem(${b.id})" class="btn-acao-icone editar" title="Editar"><img src="imagens/editar.png" alt="Editar"></button>
                         <button onclick="excluirBemGeral(${b.id})" class="btn-acao-icone excluir" title="Excluir"><img src="imagens/excluir.png" alt="Excluir"></button>
                     </td>
                 `;

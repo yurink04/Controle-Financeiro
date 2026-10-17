@@ -14,7 +14,7 @@
                 <h2>Central de Pagamentos</h2>
                 <p>Gerencie suas contas por mês/competência, acompanhe o agrupamento de compras parceladas ou liste todos os lançamentos.</p>
             </div>
-            
+
             <div class="menu-opcoes-container" style="position: relative; display: inline-block;">
                 <button type="button" id="btnToggleOpcoesCentral" class="btn-acao-principal" onclick="toggleMenuOpcoesCentral()">
                     Opções da central <span id="iconeSetaOpcoes" style="transition: transform 0.2s;">▼</span>
@@ -39,7 +39,7 @@
                     <h2 id="tituloSecaoPagamentos">Compras Parceladas</h2>
                     <p id="subtituloSecaoPagamentos">Acompanhe o andamento e os valores consolidados de cada compra parcelada.</p>
                 </div>
-                
+
                 <div style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap;">
                     <label class="app-checkbox-label" style="background: var(--surface-2); padding: 8px 12px; border-radius: 10px; border: 1px solid var(--border);">
                         <input type="checkbox" id="checkIncluirFinanciamento" onchange="carregarCentralPagamentos()">
@@ -109,7 +109,7 @@
                 const hoje = new Date();
                 const primeiroDia = new Date(hoje.getFullYear(), hoje.getMonth(), 1);
                 const ultimoDia = new Date(hoje.getFullYear(), hoje.getMonth() + 1, 0);
-                
+
                 const inputInicio = document.getElementById('filtroDataInicio');
                 const inputFim = document.getElementById('filtroDataFim');
                 if (inputInicio && !inputInicio.value) inputInicio.value = dataLocalYYYYMMDD(primeiroDia);
@@ -182,7 +182,7 @@
             tbody.innerHTML = '';
 
             let totalGeral = 0, totalPago = 0, totalPendente = 0;
-            
+
             const labelStatTotal = document.getElementById('labelStatTotal');
             if (labelStatTotal) labelStatTotal.textContent = visaoAtualPagamentos === 'listagem' ? 'Total Filtrado' : 'Total do Período';
 
@@ -310,9 +310,16 @@
                             formaTexto = 'Conta fixa';
                         }
 
+                        // [FIX #3 + #4] Rastreabilidade: badge de origem e botão de histórico
+                        const origem = (typeof descreverOrigemLancamento === 'function') ? descreverOrigemLancamento(l, dados) : null;
+                        const badgeOrigem = origem
+                            ? ` <span title="${escaparHTML(origem.detalhe)}" style="font-size:.85rem;opacity:.85;cursor:help;">${origem.icone}</span>`
+                            : '';
+                        const btnHist = `<button type="button" onclick="abrirHistoricoLancamento(${Number(l.id)})" class="btn-acao-icone" title="Histórico / auditoria" style="background:color-mix(in srgb,var(--primary) 20%,transparent);border-color:var(--primary);">🕘</button>`;
+
                         const tr = document.createElement('tr');
                         tr.innerHTML = `
-                            <td><strong>${escaparHTML(l.descricao || '')}</strong></td>
+                            <td><strong>${escaparHTML(l.descricao || '')}</strong>${badgeOrigem}</td>
                             <td>${escaparHTML(formatarDataBR(l.vencimento || ''))}</td>
                             <td>${escaparHTML(cat?.nome || 'Geral')}</td>
                             <td>${escaparHTML(formaTexto)}</td>
@@ -322,6 +329,7 @@
                                 ${l.formaPagamento === 'CARTAO'
                                     ? `<a href="grafico.html?tipo=cartao&cartaoId=${l.cartaoId}&mes=${String(l.vencimento).slice(0, 7)}" class="btn-acao-icone" title="Gerenciar Fatura" style="display:inline-flex; align-items:center; justify-content:center; text-decoration:none;"><span style="font-size:16px;">💳</span></a>`
                                     : `<button type="button" onclick="alternarStatusPagamentoCentral(${Number(l.id)})" class="btn-acao-icone ${(l.pago === true || l.status === 'pago') ? 'desfazer' : 'pagar'}" title="Alterar status">${(l.pago === true || l.status === 'pago') ? '↩' : '✓'}</button>`}
+                                ${btnHist}
                             </td>
                         `;
                         tbody.appendChild(tr);
@@ -346,7 +354,7 @@
                 const statusFiltro = document.getElementById('filtroStatusListagem')?.value || 'todos';
 
                 const todosLancamentos = filtrarDadosPorPermissao(dados.lancamentos || [], dados, 'casal');
-                
+
                 const filtradosListagem = todosLancamentos.filter(l => {
                     if (!incluirFinanciamento && l.financiamentoId) return false;
                     const dataRef = l.vencimento || l.dataCompra || l.createdAt || '';
@@ -379,11 +387,18 @@
                         const statusTexto = (l.pago === true || l.status === 'pago') ? 'Pago' : (l.status === 'atrasado' ? 'Atrasado' : 'Pendente');
                         const statusClasse = (l.pago === true || l.status === 'pago') ? 'status-pago' : (l.status === 'atrasado' ? 'status-atrasado' : 'status-pendente');
 
+                        // [FIX #3 + #4] Rastreabilidade: badge de origem e botão de histórico
+                        const origem = (typeof descreverOrigemLancamento === 'function') ? descreverOrigemLancamento(l, dados) : null;
+                        const badgeOrigem = origem
+                            ? ` <span title="${escaparHTML(origem.detalhe)}" style="font-size:.85rem;opacity:.85;cursor:help;">${origem.icone}</span>`
+                            : '';
+                        const btnHist = `<button type="button" onclick="abrirHistoricoLancamento(${Number(l.id)})" class="btn-acao-icone" title="Histórico / auditoria" style="background:color-mix(in srgb,var(--primary) 20%,transparent);border-color:var(--primary);">🕘</button>`;
+
                         const tr = document.createElement('tr');
                         tr.innerHTML = `
                             <td>${escaparHTML(formatarDataBR(l.vencimento || l.dataCompra || ''))}</td>
                             <td><span style="font-weight: 700; color: ${ehEntrada ? 'var(--success)' : 'var(--danger)'};">${ehEntrada ? 'Entrada' : 'Saída'}</span></td>
-                            <td><strong>${escaparHTML(l.descricao || '')}</strong></td>
+                            <td><strong>${escaparHTML(l.descricao || '')}</strong>${badgeOrigem}</td>
                             <td>${escaparHTML(cat?.nome || 'Geral')}</td>
                             <td class="${ehEntrada ? 'positivo' : 'negativo'}">R$ ${valor.toLocaleString('pt-BR', {minimumFractionDigits: 2})}</td>
                             <td><span class="status-badge ${statusClasse}">${statusTexto}</span></td>
@@ -391,6 +406,7 @@
                                 ${!ehEntrada && l.formaPagamento === 'CARTAO'
                                     ? `<a href="grafico.html?tipo=cartao&cartaoId=${l.cartaoId}&mes=${String(l.vencimento).slice(0, 7)}" class="btn-acao-icone" title="Gerenciar Fatura" style="display:inline-flex; align-items:center; justify-content:center; text-decoration:none;"><span style="font-size:16px;">💳</span></a>`
                                     : `<button type="button" onclick="alternarStatusPagamentoListagem(${Number(l.id)})" class="btn-acao-icone ${(l.pago === true || l.status === 'pago') ? 'desfazer' : 'pagar'}" title="Alterar status">${(l.pago === true || l.status === 'pago') ? '↩' : '✓'}</button>`}
+                                ${btnHist}
                             </td>
                         `;
                         tbody.appendChild(tr);
