@@ -49,9 +49,6 @@
             </div>
         </div>
 
-        <!-- ═══════════════════════════════════════════════════════════ -->
-        <!-- [NOVO] INSIGHTS E ALERTAS — análise acionável automática -->
-        <!-- ═══════════════════════════════════════════════════════════ -->
         <section class="form-card" id="blocoInsights" style="margin-bottom: 18px;">
             <div class="section-title">
                 <div><h2>Insights e Alertas</h2><p>Análise automática do mês para orientar suas decisões.</p></div>
@@ -59,7 +56,6 @@
             <div id="containerInsights" class="grid-2"></div>
         </section>
 
-        <!-- [NOVO] COMPARATIVO COM MÊS ANTERIOR -->
         <section class="form-card" id="blocoComparativo" style="margin-bottom: 18px;">
             <div class="section-title">
                 <div><h2>Comparativo com mês anterior</h2><p>Variação percentual das principais métricas.</p></div>
@@ -67,7 +63,6 @@
             <div id="containerComparativo" class="grid-4"></div>
         </section>
 
-        <!-- RESUMO GERAL -->
         <div id="blocoResumoGeral" class="stat-grid" style="margin-bottom: 18px; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));">
             <div class="stat-box"><span class="stat-label">Total Entradas</span><div class="stat-value positivo" id="relTotalEntradas">R$ 0,00</div></div>
             <div class="stat-box"><span class="stat-label">Total Saídas</span><div class="stat-value negativo" id="relTotalSaidas">R$ 0,00</div></div>
@@ -76,7 +71,6 @@
             <div class="stat-box"><span class="stat-label">Essenciais / Entradas</span><div class="stat-value warning" id="relComprometimento">0%</div><div class="stat-detail">Comprometimento da renda</div></div>
         </div>
 
-        <!-- [NOVO] TOP CATEGORIAS -->
         <section class="form-card" id="blocoTopCategorias" style="margin-bottom: 18px;">
             <div class="section-title">
                 <div><h2>Top 5 categorias de gasto</h2><p>Onde a maior parte do dinheiro foi consumida.</p></div>
@@ -84,7 +78,6 @@
             <div id="containerTopCategorias" class="grid-2"></div>
         </section>
 
-        <!-- CLASSIFICAÇÃO -->
         <div class="form-card" id="blocoClassificacao" style="margin-bottom: 18px;">
             <div class="section-title"><div><h2>Classificação Estratégica</h2><p>Divisão contábil entre Casal, Individual, Essencial e Não Essencial.</p></div></div>
             <div class="grid-4">
@@ -229,7 +222,6 @@
 
             const movimentosMes = lancamentosPermitidos.filter(l => String(l.vencimento || l.data || l.dataCompra || l.createdAt || '').startsWith(mesSelecionado));
 
-            // Cálculos do mês atual
             let totalEntradas = 0, totalSaidas = 0, totCasal = 0, totIndividual = 0, totEssencial = 0, totNaoEssencial = 0;
             const somasCat = {};
 
@@ -284,7 +276,6 @@
                 countExtrato++;
             });
 
-            // Faturas (com status)
             const faturasMap = {};
             movimentosMes.filter(l => l.formaPagamento === 'CARTAO' && l.cartaoId).forEach(l => { faturasMap[l.cartaoId] = (faturasMap[l.cartaoId] || 0) + Number(l.valor || 0); });
             let countFat = 0;
@@ -303,7 +294,6 @@
                 countFat++;
             }
 
-            // Bens
             let countBens = 0;
             bensPermitidos.filter(b => b.ativo !== false).forEach(b => {
                 const gasto = movimentosMes.filter(l => Number(l.bemId) === Number(b.id) && l.tipo === 'saida').reduce((a, l) => a + Number(l.valor || 0), 0);
@@ -320,30 +310,24 @@
             if (countBens === 0 && tbodyBens) tbodyBens.innerHTML = `<tr><td colspan="4" style="text-align:center;">Nenhum bem cadastrado.</td></tr>`;
             if (countExtrato === 0 && tbodyExtrato) tbodyExtrato.innerHTML = `<tr><td colspan="7" style="text-align:center;">Nenhum lançamento encontrado.</td></tr>`;
 
-            // Cards resumo
             const set = (id, txt) => { const e = document.getElementById(id); if (e) e.textContent = txt; };
-            set('relTotalEntradas', `R$ ${totalEntradas.toLocaleString('pt-BR',{minimumFractionDigits:2})}`);
-            set('relTotalSaidas', `R$ ${totalSaidas.toLocaleString('pt-BR',{minimumFractionDigits:2})}`);
+            set('relTotalEntradas', formatarMoeda(totalEntradas));
+            set('relTotalSaidas', formatarMoeda(totalSaidas));
             const saldo = totalEntradas - totalSaidas;
             const eSaldo = document.getElementById('relSaldo');
-            if (eSaldo) { eSaldo.textContent = `R$ ${saldo.toLocaleString('pt-BR',{minimumFractionDigits:2})}`; eSaldo.className = `stat-value ${saldo >= 0 ? 'positivo' : 'negativo'}`; }
+            if (eSaldo) { eSaldo.textContent = formatarMoeda(saldo); eSaldo.className = `stat-value ${saldo >= 0 ? 'positivo' : 'negativo'}`; }
             const taxaP = totalEntradas > 0 ? ((totalEntradas - totalSaidas) / totalEntradas) * 100 : 0;
-            set('relTaxaPoupanca', `${taxaP.toFixed(1)}%`);
+            set('relTaxaPoupanca', formatarPercentualPrivado(taxaP, 1));
             const eTaxa = document.getElementById('relTaxaPoupanca'); if (eTaxa) eTaxa.className = `stat-value ${taxaP >= 0 ? 'positivo' : 'negativo'}`;
             const comp = totalEntradas > 0 ? (totEssencial / totalEntradas) * 100 : 0;
-            set('relComprometimento', `${comp.toFixed(1)}%`);
-            set('totCasal', `R$ ${totCasal.toLocaleString('pt-BR',{minimumFractionDigits:2})}`);
-            set('totIndividual', `R$ ${totIndividual.toLocaleString('pt-BR',{minimumFractionDigits:2})}`);
-            set('totEssencial', `R$ ${totEssencial.toLocaleString('pt-BR',{minimumFractionDigits:2})}`);
-            set('totNaoEssencial', `R$ ${totNaoEssencial.toLocaleString('pt-BR',{minimumFractionDigits:2})}`);
+            set('relComprometimento', formatarPercentualPrivado(comp, 1));
+            set('totCasal', formatarMoeda(totCasal));
+            set('totIndividual', formatarMoeda(totIndividual));
+            set('totEssencial', formatarMoeda(totEssencial));
+            set('totNaoEssencial', formatarMoeda(totNaoEssencial));
 
-            // [NOVO] INSIGHTS
             renderizarInsights(dados, movimentosMes, totalEntradas, totalSaidas, totEssencial, somasCat, mesSelecionado);
-
-            // [NOVO] COMPARATIVO
             renderizarComparativo(dados, mesSelecionado, totalEntradas, totalSaidas, totEssencial);
-
-            // [NOVO] TOP CATEGORIAS
             renderizarTopCategorias(dados, somasCat, totalSaidas);
         }
 
@@ -352,32 +336,69 @@
             if (!cont) return;
             const insights = [];
             const saldo = ent - sai;
+            const priv = privacidadeAtiva();
 
             if (ent === 0 && sai === 0) {
                 cont.innerHTML = `<div class="stat-box" style="grid-column:1/-1;text-align:center;"><p class="muted">Nenhum lançamento no período.</p></div>`;
                 return;
             }
             if (saldo < 0) {
-                insights.push({ ic:'🔴', cor:'var(--danger)', tit:'Saldo negativo', txt:`Você gastou ${formatarMoeda(Math.abs(saldo))} mais do que recebeu este mês.` });
+                insights.push({
+                    ic: '🔴', cor: 'var(--danger)',
+                    tit: 'Saldo negativo',
+                    txt: priv
+                        ? 'Você gastou mais do que recebeu este mês. Revise os gastos não essenciais.'
+                        : `Você gastou ${formatarMoeda(Math.abs(saldo))} mais do que recebeu este mês.`
+                });
             } else if (ent > 0 && (saldo / ent) > 0.2) {
-                insights.push({ ic:'🟢', cor:'var(--success)', tit:'Boa taxa de poupança', txt:`Você guardou ${(saldo/ent*100).toFixed(0)}% da renda. Continue assim.` });
+                insights.push({
+                    ic: '🟢', cor: 'var(--success)',
+                    tit: 'Boa taxa de poupança',
+                    txt: priv
+                        ? 'Você guardou parte da renda este mês. Continue assim.'
+                        : `Você guardou ${(saldo / ent * 100).toFixed(0)}% da renda. Continue assim.`
+                });
             }
             if (ent > 0) {
                 const pct = (ess / ent) * 100;
-                if (pct > 70) insights.push({ ic:'🚨', cor:'var(--danger)', tit:'Essenciais muito altos', txt:`${pct.toFixed(0)}% da renda foi para despesas essenciais. Considere revisar.` });
-                else if (pct > 50) insights.push({ ic:'⚠️', cor:'var(--warning)', tit:'Atenção aos essenciais', txt:`${pct.toFixed(0)}% da renda foi para essenciais — acima do ideal.` });
+                const pctTxt = priv ? '••%' : `${pct.toFixed(0)}%`;
+                if (pct > 70) {
+                    insights.push({
+                        ic: '🚨', cor: 'var(--danger)',
+                        tit: 'Essenciais muito altos',
+                        txt: `${pctTxt} da renda foi para despesas essenciais. Considere revisar.`
+                    });
+                } else if (pct > 50) {
+                    insights.push({
+                        ic: '⚠️', cor: 'var(--warning)',
+                        tit: 'Atenção aos essenciais',
+                        txt: `${pctTxt} da renda foi para essenciais — acima do ideal.`
+                    });
+                }
             }
             const hoje = dataLocalYYYYMMDD();
             const atrasadas = movs.filter(m => !m.pago && m.vencimento < hoje && m.tipo === 'saida');
             if (atrasadas.length) {
-                const t = atrasadas.reduce((a,m) => a + Number(m.valor||0), 0);
-                insights.push({ ic:'⏰', cor:'var(--danger)', tit:`${atrasadas.length} conta(s) atrasada(s)`, txt:`Total em atraso: ${formatarMoeda(t)}. Priorize a quitação.` });
+                const t = atrasadas.reduce((a, m) => a + Number(m.valor || 0), 0);
+                insights.push({
+                    ic: '⏰', cor: 'var(--danger)',
+                    tit: `${atrasadas.length} conta(s) atrasada(s)`,
+                    txt: priv
+                        ? 'Priorize a quitação para evitar juros e negativação.'
+                        : `Total em atraso: ${formatarMoeda(t)}. Priorize a quitação.`
+                });
             }
-            const seteDias = dataLocalYYYYMMDD(new Date(Date.now() + 7*24*60*60*1000));
+            const seteDias = dataLocalYYYYMMDD(new Date(Date.now() + 7 * 24 * 60 * 60 * 1000));
             const vencendo = movs.filter(m => !m.pago && m.vencimento >= hoje && m.vencimento <= seteDias);
             if (vencendo.length) {
-                const t = vencendo.reduce((a,m) => a + Number(m.valor||0), 0);
-                insights.push({ ic:'📅', cor:'var(--warning)', tit:`${vencendo.length} conta(s) vencem em 7 dias`, txt:`Total: ${formatarMoeda(t)}. Programe os pagamentos.` });
+                const t = vencendo.reduce((a, m) => a + Number(m.valor || 0), 0);
+                insights.push({
+                    ic: '📅', cor: 'var(--warning)',
+                    tit: `${vencendo.length} conta(s) vencem em 7 dias`,
+                    txt: priv
+                        ? 'Programe os pagamentos para evitar atrasos.'
+                        : `Total: ${formatarMoeda(t)}. Programe os pagamentos.`
+                });
             }
 
             cont.innerHTML = insights.length ? insights.map(i => `
@@ -395,7 +416,7 @@
             if (!cont) return;
             const [ano, m] = mes.split('-').map(Number);
             const dataAnt = new Date(ano, m - 2, 1);
-            const mesAnt = `${dataAnt.getFullYear()}-${String(dataAnt.getMonth()+1).padStart(2,'0')}`;
+            const mesAnt = `${dataAnt.getFullYear()}-${String(dataAnt.getMonth() + 1).padStart(2, '0')}`;
             const lancs = filtrarDadosPorPermissao(dados.lancamentos || [], dados, 'casal');
             const movsAnt = lancs.filter(l => String(l.vencimento || l.dataCompra || '').startsWith(mesAnt));
             let entAnt = 0, saiAnt = 0, essAnt = 0;
@@ -406,16 +427,18 @@
                     if (l.servicoEssencial === 'sim') essAnt += Number(l.valor || 0);
                 }
             });
+            const priv = privacidadeAtiva();
             const calcularPct = (atual, ant) => {
                 if (ant === 0) return atual > 0 ? { v: '—', cor: 'var(--text-muted)' } : { v: '0%', cor: 'var(--text-muted)' };
                 const p = ((atual - ant) / ant) * 100;
+                if (priv) return { v: '••%', cor: 'var(--text-muted)' };
                 const sinal = p > 0 ? '+' : '';
                 return { v: `${sinal}${p.toFixed(0)}%`, cor: p > 0 ? 'var(--danger)' : p < 0 ? 'var(--success)' : 'var(--text-muted)' };
             };
             const cards = [
                 { label: 'Entradas', atual: ent, ant: entAnt, inv: true },
                 { label: 'Saídas', atual: sai, ant: saiAnt, inv: false },
-                { label: 'Saldo', atual: ent-sai, ant: entAnt-saiAnt, inv: true },
+                { label: 'Saldo', atual: ent - sai, ant: entAnt - saiAnt, inv: true },
                 { label: 'Essenciais', atual: ess, ant: essAnt, inv: false }
             ];
             cont.innerHTML = cards.map(c => {
@@ -432,26 +455,33 @@
         function renderizarTopCategorias(dados, somasCat, totalSaidas) {
             const cont = document.getElementById('containerTopCategorias');
             if (!cont) return;
+            const priv = privacidadeAtiva();
             const ranking = Object.entries(somasCat).map(([catId, val]) => {
                 const cat = (dados.categorias || []).find(c => String(c.id) === String(catId));
-                return { nome: cat ? cat.nome : 'Sem categoria', valor: val, pct: totalSaidas > 0 ? (val/totalSaidas*100) : 0 };
-            }).sort((a,b) => b.valor - a.valor).slice(0, 5);
+                return { nome: cat ? cat.nome : 'Sem categoria', valor: val, pct: totalSaidas > 0 ? (val / totalSaidas * 100) : 0 };
+            }).sort((a, b) => b.valor - a.valor).slice(0, 5);
 
             if (!ranking.length) {
                 cont.innerHTML = `<div class="stat-box" style="grid-column:1/-1;text-align:center;"><p class="muted">Nenhum gasto registrado no período.</p></div>`;
                 return;
             }
-            cont.innerHTML = ranking.map((r, i) => `
+            const maxVal = ranking[0]?.valor || 1;
+            cont.innerHTML = ranking.map((r, i) => {
+                const pctTxt = priv ? '••%' : `${r.pct.toFixed(1)}%`;
+                const valorTxt = priv ? 'R$ •••,••' : formatarMoeda(r.valor);
+                const larguraBarra = priv ? 100 : (r.valor / maxVal) * 100;
+                return `
                 <div class="stat-box">
                     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
-                        <div class="stat-label">#${i+1} · ${escaparHTML(r.nome)}</div>
-                        <span style="font-size:0.78rem;font-weight:800;color:var(--primary);">${r.pct.toFixed(1)}%</span>
+                        <div class="stat-label">#${i + 1} · ${escaparHTML(r.nome)}</div>
+                        <span style="font-size:0.78rem;font-weight:800;color:var(--primary);">${pctTxt}</span>
                     </div>
-                    <div class="stat-value" style="font-size:1.1rem;">${formatarMoeda(r.valor)}</div>
+                    <div class="stat-value" style="font-size:1.1rem;">${valorTxt}</div>
                     <div class="progress" style="margin-top:8px;height:6px;">
-                        <div style="height:100%;background:var(--primary);border-radius:inherit;width:${r.pct}%;"></div>
+                        <div style="height:100%;background:var(--primary);border-radius:inherit;width:${larguraBarra}%;"></div>
                     </div>
-                </div>`).join('');
+                </div>`;
+            }).join('');
         }
 
         function exportarCSV() {
@@ -459,11 +489,11 @@
             const dados = obterDados();
             const lancs = filtrarDadosPorPermissao(dados.lancamentos || [], dados, 'casal').filter(l => String(l.vencimento || l.data || l.dataCompra || l.createdAt || '').startsWith(mes));
             if (!lancs.length) { mostrarAlertaModal('Não há dados para exportar.'); return; }
-            const campo = v => { let t = v == null ? '' : String(v); if (/^[\s\u0000-\u001f]*[=+\-@]/.test(t)) t = "'" + t; return `"${t.replace(/"/g,'""').replace(/\r?\n/g,' ')}"`; };
-            const linhas = [['Vencimento','Descrição','Tipo','Valor']];
+            const campo = v => { let t = v == null ? '' : String(v); if (/^[\s\u0000-\u001f]*[=+\-@]/.test(t)) t = "'" + t; return `"${t.replace(/"/g, '""').replace(/\r?\n/g, ' ')}"`; };
+            const linhas = [['Vencimento', 'Descrição', 'Tipo', 'Valor']];
             lancs.forEach(l => linhas.push([l.vencimento || '', l.descricao || '', l.tipo || '', Number(l.valor || 0).toFixed(2).replace('.', ',')]));
             const csv = '\uFEFF' + linhas.map(l => l.map(campo).join(';')).join('\r\n');
-            const url = URL.createObjectURL(new Blob([csv], {type:'text/csv;charset=utf-8;'}));
+            const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8;' }));
             const a = document.createElement('a');
             a.href = url; a.download = `relatorio_${mes || 'completo'}.csv`;
             document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);

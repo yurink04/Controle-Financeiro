@@ -172,6 +172,13 @@ function doGet(e) {
       }
     }
 
+    if (action === 'revisao') {
+      return respostaJson({
+        status: 'sucesso',
+        _revision: obterRevisaoDados()
+      });
+    }
+
     if (action === 'ping') {
       return respostaJson({
         status: 'sucesso',

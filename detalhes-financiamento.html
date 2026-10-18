@@ -212,107 +212,142 @@
         }
 
         function carregarDetalhesFinanciamentoPagina() {
-            const dados = obterDados();
-            const fin = (dados.financiamentos || []).find(f => String(f.id) === String(financiamentoId));
-            if (!fin) {
-                mostrarAlertaModal('Financiamento não encontrado.').then(() => window.location.href = 'relatorios.html');
-                return;
-            }
+    const dados = obterDados();
+    const fin = (dados.financiamentos || []).find(f => String(f.id) === String(financiamentoId));
+    if (!fin) {
+        mostrarAlertaModal('Financiamento não encontrado.').then(() => window.location.href = 'relatorios.html');
+        return;
+    }
 
-            const elTitFin = document.getElementById('tituloFinanciamentoDetalhe');
-            if (elTitFin) elTitFin.textContent = `Contrato: ${fin.nome}`;
-            const elNomeFin = document.getElementById('editNomeFin');
-            if (elNomeFin) elNomeFin.value = fin.nome || '';
-            const elTotMesesFin = document.getElementById('editTotalMesesFin');
-            if (elTotMesesFin) elTotMesesFin.value = fin.totalMeses || 1;
+    // [MODO DISCRETO] — oculta análise e parcelas
+    if (document.body.classList.contains('privacidade-ativa')) {
+        // Stats topo
+        const elProg = document.getElementById('infoProgressoMeses');
+        if (elProg) elProg.textContent = '••• / •••';
+        const elFalt = document.getElementById('infoMesesFaltantes');
+        if (elFalt) elFalt.textContent = '•••';
+        const elTerm = document.getElementById('infoTerminoFinanciamento');
+        if (elTerm) elTerm.textContent = '--/----';
 
-            const parcelas = obterParcelasFinanciamento(dados, fin);
-            const ehEmprestimo = fin.tipoContrato === 'emprestimo';
-            const blocoEdicaoCompra = document.getElementById('blocoEdicaoCompraFin');
-            if (blocoEdicaoCompra) blocoEdicaoCompra.style.display = ehEmprestimo ? 'none' : 'grid';
-            const elValorCompra = document.getElementById('editValorCompraFin');
-            const elValorEntrada = document.getElementById('editValorEntradaFin');
-            if (elValorCompra) elValorCompra.value = !ehEmprestimo && Number(fin.valorCompra) > 0 ? Number(fin.valorCompra).toFixed(2) : '';
-            if (elValorEntrada) elValorEntrada.value = !ehEmprestimo && Number(fin.valorCompra) > 0 ? Number(fin.valorEntrada || 0).toFixed(2) : '';
-            const notaEdicaoCompra = document.getElementById('notaEdicaoCompraFin');
-            if (notaEdicaoCompra) notaEdicaoCompra.style.display = ehEmprestimo ? 'none' : 'block';
-            const tituloTabelaParcelas = document.getElementById('tituloTabelaParcelas');
-            if (tituloTabelaParcelas) tituloTabelaParcelas.textContent = ehEmprestimo ? 'Parcelas do empréstimo / consignado' : 'Parcelas do financiamento';
-            atualizarAnaliseCustoContrato(fin, parcelas, ehEmprestimo);
-            const pagas = parcelas.filter(p => p.pago).length;
-            const total = Number(fin.totalMeses) || parcelas.length;
-            const faltantes = Math.max(0, total - pagas);
-            
-            const elProg = document.getElementById('infoProgressoMeses');
-            if (elProg) elProg.textContent = `${pagas} / ${total}`;
-            const elFalt = document.getElementById('infoMesesFaltantes');
-            if (elFalt) elFalt.textContent = String(faltantes);
-            
-            const ultima = parcelas[parcelas.length - 1];
-            const elTerm = document.getElementById('infoTerminoFinanciamento');
-            if (elTerm) {
-                elTerm.textContent = ultima?.vencimento ? ultima.vencimento.slice(5, 7) + '/' + ultima.vencimento.slice(0, 4) : '--/----';
-            }
+        // Cards de análise
+        ['metricaValorCompra','metricaValorEntrada','metricaValorFinanciado','metricaValorLiberado',
+         'metricaDataLiberacao','metricaTotalParcelas','metricaTotalPagoParcelas','metricaSaldoDevedor',
+         'metricaCustoTotal','metricaCustoAdicional','metricaPercentualAdicional','metricaTaxaMensal',
+         'metricaTaxaAnual'].forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.textContent = '•••';
+        });
+        const nota = document.getElementById('notaAnaliseCusto');
+        if (nota) nota.textContent = 'Análise financeira oculta pelo modo privacidade.';
 
-            const totalPaginas = Math.ceil(parcelas.length / itensPorPaginaFin) || 1;
-            if (paginaAtualFinanciamento > totalPaginas) paginaAtualFinanciamento = totalPaginas;
+        // Tabela de parcelas
+        const tbody = document.getElementById('tabelaParcelasFinanciamento');
+        if (tbody) tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;padding:32px 12px;">
+            <div style="display:flex;flex-direction:column;align-items:center;gap:8px;color:var(--text-muted);">
+                <span style="font-size:2rem;opacity:.6;">🔒</span>
+                <strong style="color:var(--text-main);">Parcelas ocultas</strong>
+                <span style="font-size:.82rem;">Toque no banner de privacidade para ver o contrato.</span>
+            </div>
+        </td></tr>`;
+        const pagTopo = document.getElementById('paginacaoTopoFinanciamento');
+        const pagRod = document.getElementById('paginacaoRodapeFinanciamento');
+        if (pagTopo) pagTopo.innerHTML = '';
+        if (pagRod) pagRod.innerHTML = '';
+        return;
+    }
 
-            const inicio = (paginaAtualFinanciamento - 1) * itensPorPaginaFin;
-            const fim = inicio + itensPorPaginaFin;
-            const parcelasPagina = parcelas.slice(inicio, fim);
+    const elTitFin = document.getElementById('tituloFinanciamentoDetalhe');
+    if (elTitFin) elTitFin.textContent = `Contrato: ${fin.nome}`;
+    const elNomeFin = document.getElementById('editNomeFin');
+    if (elNomeFin) elNomeFin.value = fin.nome || '';
+    const elTotMesesFin = document.getElementById('editTotalMesesFin');
+    if (elTotMesesFin) elTotMesesFin.value = fin.totalMeses || 1;
 
-            const renderizarPaginacaoHtml = () => {
-                if (totalPaginas <= 1) return '';
-                
-                let optionsSelect = '';
-                for (let p = 1; p <= totalPaginas; p++) {
-                    const parcelaInicialBloco = ((p - 1) * itensPorPaginaFin) + 1;
-                    const parcelaFinalBloco = Math.min(p * itensPorPaginaFin, parcelas.length);
-                    optionsSelect += `<option value="${p}" ${p === paginaAtualFinanciamento ? 'selected' : ''}>Parcelas ${parcelaInicialBloco} a ${parcelaFinalBloco}</option>`;
-                }
+    const parcelas = obterParcelasFinanciamento(dados, fin);
+    const ehEmprestimo = fin.tipoContrato === 'emprestimo';
+    const blocoEdicaoCompra = document.getElementById('blocoEdicaoCompraFin');
+    if (blocoEdicaoCompra) blocoEdicaoCompra.style.display = ehEmprestimo ? 'none' : 'grid';
+    const elValorCompra = document.getElementById('editValorCompraFin');
+    const elValorEntrada = document.getElementById('editValorEntradaFin');
+    if (elValorCompra) elValorCompra.value = !ehEmprestimo && Number(fin.valorCompra) > 0 ? Number(fin.valorCompra).toFixed(2) : '';
+    if (elValorEntrada) elValorEntrada.value = !ehEmprestimo && Number(fin.valorCompra) > 0 ? Number(fin.valorEntrada || 0).toFixed(2) : '';
+    const notaEdicaoCompra = document.getElementById('notaEdicaoCompraFin');
+    if (notaEdicaoCompra) notaEdicaoCompra.style.display = ehEmprestimo ? 'none' : 'block';
+    const tituloTabelaParcelas = document.getElementById('tituloTabelaParcelas');
+    if (tituloTabelaParcelas) tituloTabelaParcelas.textContent = ehEmprestimo ? 'Parcelas do empréstimo / consignado' : 'Parcelas do financiamento';
+    atualizarAnaliseCustoContrato(fin, parcelas, ehEmprestimo);
+    const pagas = parcelas.filter(p => p.pago).length;
+    const total = Number(fin.totalMeses) || parcelas.length;
+    const faltantes = Math.max(0, total - pagas);
 
-                return `
-                    <button type="button" class="btn-secundario" ${paginaAtualFinanciamento === 1 ? 'disabled style="opacity:0.5;"' : ''} onclick="mudarPaginaFinanciamento(${paginaAtualFinanciamento - 1})">← Anterior</button>
-                    <div style="display: flex; align-items: center; gap: 6px;">
-                        <span style="font-size: 0.85rem; font-weight: bold;">Salto:</span>
-                        <select onchange="mudarPaginaFinanciamento(Number(this.value))" style="padding: 4px 8px; border-radius: 6px; border: 1px solid var(--border); font-size: 0.85rem; background: var(--surface); color: var(--text-main);">
-                            ${optionsSelect}
-                        </select>
-                        <span style="font-size: 0.85rem; font-weight: bold;">(Pág. ${paginaAtualFinanciamento}/${totalPaginas})</span>
-                    </div>
-                    <button type="button" class="btn-secundario" ${paginaAtualFinanciamento === totalPaginas ? 'disabled style="opacity:0.5;"' : ''} onclick="mudarPaginaFinanciamento(${paginaAtualFinanciamento + 1})">Próxima →</button>
-                `;
-            };
+    const elProg = document.getElementById('infoProgressoMeses');
+    if (elProg) elProg.textContent = `${pagas} / ${total}`;
+    const elFalt = document.getElementById('infoMesesFaltantes');
+    if (elFalt) elFalt.textContent = String(faltantes);
 
-            const htmlPaginacao = renderizarPaginacaoHtml();
-            document.getElementById('paginacaoTopoFinanciamento').innerHTML = htmlPaginacao;
-            document.getElementById('paginacaoRodapeFinanciamento').innerHTML = htmlPaginacao;
+    const ultima = parcelas[parcelas.length - 1];
+    const elTerm = document.getElementById('infoTerminoFinanciamento');
+    if (elTerm) {
+        elTerm.textContent = ultima?.vencimento ? ultima.vencimento.slice(5, 7) + '/' + ultima.vencimento.slice(0, 4) : '--/----';
+    }
 
-            const tbody = document.getElementById('tabelaParcelasFinanciamento');
-            if (!tbody) return;
-            tbody.innerHTML = '';
-            if (!parcelas.length) {
-                tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;">Nenhuma parcela encontrada.</td></tr>';
-                return;
-            }
+    const totalPaginas = Math.ceil(parcelas.length / itensPorPaginaFin) || 1;
+    if (paginaAtualFinanciamento > totalPaginas) paginaAtualFinanciamento = totalPaginas;
 
-            parcelasPagina.forEach(l => {
-                const cat = (dados.categorias || []).find(c => String(c.id) === String(l.categoriaId));
-                const tr = document.createElement('tr');
-                const parcela = `${l.parcelaAtual || '-'} / ${l.totalParcelas || '-'}`;
-                tr.innerHTML = `
-                    <td><strong>${escaparHTML(parcela)}</strong></td>
-                    <td>${escaparHTML(formatarDataBR(l.vencimento || ''))}</td>
-                    <td>${escaparHTML(cat?.nome || 'Geral')}</td>
-                    <td>${escaparHTML(formatarMoeda(l.valor || 0))}</td>
-                    <td>${statusBadge(l)}</td>
-                    <td class="action-cell">
-                        <button type="button" onclick="editarValorParcelaFinanciamento(${Number(l.id)})" class="btn-acao-icone editar" title="Editar valor">✎</button>
-                        <button type="button" onclick="alternarStatusPagamentoFin(${Number(l.id)})" class="btn-acao-icone ${l.pago ? 'desfazer' : 'pagar'}" title="Alterar status">${l.pago ? '↩' : '✓'}</button>
-                    </td>`;
-                tbody.appendChild(tr);
-            });
+    const inicio = (paginaAtualFinanciamento - 1) * itensPorPaginaFin;
+    const fim = inicio + itensPorPaginaFin;
+    const parcelasPagina = parcelas.slice(inicio, fim);
+
+    const renderizarPaginacaoHtml = () => {
+        if (totalPaginas <= 1) return '';
+        let optionsSelect = '';
+        for (let p = 1; p <= totalPaginas; p++) {
+            const parcelaInicialBloco = ((p - 1) * itensPorPaginaFin) + 1;
+            const parcelaFinalBloco = Math.min(p * itensPorPaginaFin, parcelas.length);
+            optionsSelect += `<option value="${p}" ${p === paginaAtualFinanciamento ? 'selected' : ''}>Parcelas ${parcelaInicialBloco} a ${parcelaFinalBloco}</option>`;
         }
+        return `
+            <button type="button" class="btn-secundario" ${paginaAtualFinanciamento === 1 ? 'disabled style="opacity:0.5;"' : ''} onclick="mudarPaginaFinanciamento(${paginaAtualFinanciamento - 1})">← Anterior</button>
+            <div style="display: flex; align-items: center; gap: 6px;">
+                <span style="font-size: 0.85rem; font-weight: bold;">Salto:</span>
+                <select onchange="mudarPaginaFinanciamento(Number(this.value))" style="padding: 4px 8px; border-radius: 6px; border: 1px solid var(--border); font-size: 0.85rem; background: var(--surface); color: var(--text-main);">
+                    ${optionsSelect}
+                </select>
+                <span style="font-size: 0.85rem; font-weight: bold;">(Pág. ${paginaAtualFinanciamento}/${totalPaginas})</span>
+            </div>
+            <button type="button" class="btn-secundario" ${paginaAtualFinanciamento === totalPaginas ? 'disabled style="opacity:0.5;"' : ''} onclick="mudarPaginaFinanciamento(${paginaAtualFinanciamento + 1})">Próxima →</button>
+        `;
+    };
+
+    const htmlPaginacao = renderizarPaginacaoHtml();
+    document.getElementById('paginacaoTopoFinanciamento').innerHTML = htmlPaginacao;
+    document.getElementById('paginacaoRodapeFinanciamento').innerHTML = htmlPaginacao;
+
+    const tbody = document.getElementById('tabelaParcelasFinanciamento');
+    if (!tbody) return;
+    tbody.innerHTML = '';
+    if (!parcelas.length) {
+        tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;">Nenhuma parcela encontrada.</td></tr>';
+        return;
+    }
+
+    parcelasPagina.forEach(l => {
+        const cat = (dados.categorias || []).find(c => String(c.id) === String(l.categoriaId));
+        const tr = document.createElement('tr');
+        const parcela = `${l.parcelaAtual || '-'} / ${l.totalParcelas || '-'}`;
+        tr.innerHTML = `
+            <td><strong>${escaparHTML(parcela)}</strong></td>
+            <td>${escaparHTML(formatarDataBR(l.vencimento || ''))}</td>
+            <td>${escaparHTML(cat?.nome || 'Geral')}</td>
+            <td>${escaparHTML(formatarMoeda(l.valor || 0))}</td>
+            <td>${statusBadge(l)}</td>
+            <td class="action-cell">
+                <button type="button" onclick="editarValorParcelaFinanciamento(${Number(l.id)})" class="btn-acao-icone editar" title="Editar valor">✎</button>
+                <button type="button" onclick="alternarStatusPagamentoFin(${Number(l.id)})" class="btn-acao-icone ${l.pago ? 'desfazer' : 'pagar'}" title="Alterar status">${l.pago ? '↩' : '✓'}</button>
+            </td>`;
+        tbody.appendChild(tr);
+    });
+}
 
         async function salvarEdicaoFinanciamentoCompleto(event) {
             event.preventDefault();

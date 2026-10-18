@@ -150,63 +150,77 @@
         }
 
         function renderizarCartoes() {
-            const dados = obterDados();
-            const gridCredito = document.getElementById('gridCartoesCredito');
-            const gridBeneficio = document.getElementById('gridCartoesBeneficio');
-            if (!gridCredito || !gridBeneficio) return;
+    const dados = obterDados();
+    const gridCredito = document.getElementById('gridCartoesCredito');
+    const gridBeneficio = document.getElementById('gridCartoesBeneficio');
+    if (!gridCredito || !gridBeneficio) return;
 
-            gridCredito.innerHTML = '';
-            gridBeneficio.innerHTML = '';
+    // [MODO DISCRETO]
+    if (document.body.classList.contains('privacidade-ativa')) {
+        const ph = `<div class="empty-state" style="grid-column: span 3; padding: 32px;">
+            <div style="display:flex;flex-direction:column;align-items:center;gap:8px;color:var(--text-muted);">
+                <span style="font-size:2rem;opacity:.6;">🔒</span>
+                <strong style="color:var(--text-main);">Cartões ocultos</strong>
+                <span style="font-size:.82rem;">Toque no banner de privacidade para revelar.</span>
+            </div>
+        </div>`;
+        gridCredito.innerHTML = ph;
+        gridBeneficio.innerHTML = ph;
+        return;
+    }
 
-            const cartoesPermitidos = filtrarDadosPorPermissao(dados.cartoes || [], dados, 'casal').filter(c => c.ativo !== false);
-            const creditos = cartoesPermitidos.filter(c => !c.isBeneficio);
-            const beneficios = cartoesPermitidos.filter(c => c.isBeneficio);
-            
-            const uId = Number(obterUsuarioAtualId());
+    gridCredito.innerHTML = '';
+    gridBeneficio.innerHTML = '';
 
-            if (creditos.length === 0) {
-                gridCredito.innerHTML = `<div class="empty-state" style="grid-column: span 3;"><strong>Nenhum cartão de crédito cadastrado.</strong></div>`;
-            } else {
-                creditos.forEach(c => {
-                    const div = document.createElement('div');
-                    div.className = 'form-card card-visual';
-                    div.style.marginBottom = '0';
-                    div.innerHTML = `
-                        <span class="status-badge status-pendente" style="margin-bottom: 8px; display: inline-block;">CRÉDITO</span>
-                        <h3 style="margin-bottom: 6px;">${escaparHTML(c.nome)}</h3>
-                        <p class="muted small">Limite: <strong>R$ ${Number(c.limite || 0).toLocaleString('pt-BR', {minimumFractionDigits: 2})}</strong></p>
-                        <p class="muted small" style="margin-top: 2px;">Fechamento: Dia ${c.fechamento} | Vencimento: Dia ${c.vencimento}</p>
-                        ${Number(c.usuarioId) === uId && usuarioPode('criarMovimento') ? `<div style="margin-top: 14px; display: flex; gap: 6px;"><button onclick="prepararEdicaoCartao(${Number(c.id)})" class="btn-secundario small" style="padding: 6px 12px;">Editar</button></div>` : ''}
-                    `;
-                    gridCredito.appendChild(div);
-                });
-            }
+    const cartoesPermitidos = filtrarDadosPorPermissao(dados.cartoes || [], dados, 'casal').filter(c => c.ativo !== false);
+    const creditos = cartoesPermitidos.filter(c => !c.isBeneficio);
+    const beneficios = cartoesPermitidos.filter(c => c.isBeneficio);
 
-            if (beneficios.length === 0) {
-                gridBeneficio.innerHTML = `<div class="empty-state" style="grid-column: span 3;"><strong>Nenhum cartão de benefício (VR/VA) cadastrado.</strong></div>`;
-            } else {
-                beneficios.forEach(c => {
-                    const lancamentos = dados.lancamentos || [];
-                    const saldoAtual = lancamentos.reduce((acc, l) => {
-                        if (Number(l.cartaoId) === Number(c.id)) {
-                            return l.tipo === 'entrada' ? acc + Number(l.valor) : acc - Number(l.valor);
-                        }
-                        return acc;
-                    }, Number(c.limite || 0));
+    const uId = Number(obterUsuarioAtualId());
 
-                    const div = document.createElement('div');
-                    div.className = 'form-card card-visual';
-                    div.style.marginBottom = '0';
-                    div.innerHTML = `
-                        <span class="status-badge status-pago" style="margin-bottom: 8px; display: inline-block;">BENEFÍCIO (VR/VA)</span>
-                        <h3 style="margin-bottom: 6px;">${escaparHTML(c.nome)}</h3>
-                        <p class="muted small">Saldo Atual: <strong class="positivo">R$ ${saldoAtual.toLocaleString('pt-BR', {minimumFractionDigits: 2})}</strong></p>
-                        ${Number(c.usuarioId) === uId && usuarioPode('criarMovimento') ? `<div style="margin-top: 14px; display: flex; gap: 6px;"><button onclick="prepararEdicaoCartao(${Number(c.id)})" class="btn-secundario small" style="padding: 6px 12px;">Editar</button></div>` : ''}
-                    `;
-                    gridBeneficio.appendChild(div);
-                });
-            }
-        }
+    if (creditos.length === 0) {
+        gridCredito.innerHTML = `<div class="empty-state" style="grid-column: span 3;"><strong>Nenhum cartão de crédito cadastrado.</strong></div>`;
+    } else {
+        creditos.forEach(c => {
+            const div = document.createElement('div');
+            div.className = 'form-card card-visual';
+            div.style.marginBottom = '0';
+            div.innerHTML = `
+                <span class="status-badge status-pendente" style="margin-bottom: 8px; display: inline-block;">CRÉDITO</span>
+                <h3 style="margin-bottom: 6px;">${escaparHTML(c.nome)}</h3>
+                <p class="muted small">Limite: <strong>R$ ${Number(c.limite || 0).toLocaleString('pt-BR', {minimumFractionDigits: 2})}</strong></p>
+                <p class="muted small" style="margin-top: 2px;">Fechamento: Dia ${c.fechamento} | Vencimento: Dia ${c.vencimento}</p>
+                ${Number(c.usuarioId) === uId && usuarioPode('criarMovimento') ? `<div style="margin-top: 14px; display: flex; gap: 6px;"><button onclick="prepararEdicaoCartao(${Number(c.id)})" class="btn-secundario small" style="padding: 6px 12px;">Editar</button></div>` : ''}
+            `;
+            gridCredito.appendChild(div);
+        });
+    }
+
+    if (beneficios.length === 0) {
+        gridBeneficio.innerHTML = `<div class="empty-state" style="grid-column: span 3;"><strong>Nenhum cartão de benefício (VR/VA) cadastrado.</strong></div>`;
+    } else {
+        beneficios.forEach(c => {
+            const lancamentos = dados.lancamentos || [];
+            const saldoAtual = lancamentos.reduce((acc, l) => {
+                if (Number(l.cartaoId) === Number(c.id)) {
+                    return l.tipo === 'entrada' ? acc + Number(l.valor) : acc - Number(l.valor);
+                }
+                return acc;
+            }, Number(c.limite || 0));
+
+            const div = document.createElement('div');
+            div.className = 'form-card card-visual';
+            div.style.marginBottom = '0';
+            div.innerHTML = `
+                <span class="status-badge status-pago" style="margin-bottom: 8px; display: inline-block;">BENEFÍCIO (VR/VA)</span>
+                <h3 style="margin-bottom: 6px;">${escaparHTML(c.nome)}</h3>
+                <p class="muted small">Saldo Atual: <strong class="positivo">R$ ${saldoAtual.toLocaleString('pt-BR', {minimumFractionDigits: 2})}</strong></p>
+                ${Number(c.usuarioId) === uId && usuarioPode('criarMovimento') ? `<div style="margin-top: 14px; display: flex; gap: 6px;"><button onclick="prepararEdicaoCartao(${Number(c.id)})" class="btn-secundario small" style="padding: 6px 12px;">Editar</button></div>` : ''}
+            `;
+            gridBeneficio.appendChild(div);
+        });
+    }
+}
 
         function prepararEdicaoCartao(id) {
             const dados = obterDados();

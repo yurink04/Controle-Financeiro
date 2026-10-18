@@ -3,7 +3,7 @@
 // ============================================================================
 const DB_KEY = 'sistemaFinanceiroCompartilhado';
 const BACKUP_TESTE_KEY = 'sistemaFinanceiroBackupTeste';
-const API_URL = "https://script.google.com/macros/s/AKfycbzEjNFP0Fbn_hYATL2OTfuoB8eW33O6PxsgGupkHz6uQ_vcUlIYp2KmMgJ3EeWZGLI4/exec";
+const API_URL = "https://script.google.com/macros/s/AKfycbwLVip6omCnVPNqiE63G8ZeDxAYH6FHOj2YAP01fd94jv9CqD_TwXxFYXbBHpCgwkUh/exec";
 const TOKEN_API = "PLANOF1NALPRAS4AIRD@MERDA";
 const SCHEMA_VERSION = 5;
 const SYNC_DEBOUNCE_MS = 1500;
@@ -19,7 +19,6 @@ let processandoSaidaSistema = false;
 let memoriaSistema = null;
 let verificacaoAutenticacaoPromise = null;
 
-// [FIX #10] Cache da migração
 let _migracaoCacheRef = null;
 let _migracaoCacheDados = null;
 
@@ -28,6 +27,19 @@ const charts = {
     relatorioES: null, relatorioCat: null, servicosEssenciais: null, servicosEssenciaisRel: null
 };
 
+// Modo Discreto: helpers de mascaramento reativo
+function privacidadeAtiva() {
+    return document.body.classList.contains('privacidade-ativa');
+}
+function formatarMoedaPrivada(v) {
+    if (privacidadeAtiva()) return 'R$ •••,••';
+    return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(numeroSeguro(v));
+}
+function formatarPercentualPrivado(v, casas = 0) {
+    if (privacidadeAtiva()) return '••%';
+    return Number(v).toFixed(casas) + '%';
+}
+
 // ============================================================================
 // 2. UTILITÁRIOS BASE
 // ============================================================================
@@ -35,7 +47,15 @@ const numeroSeguro = (v, p = 0) => Number.isFinite(Number(v)) ? Number(v) : p;
 const inteiroSeguro = (v, p = 0) => Number.isFinite(parseInt(v, 10)) ? parseInt(v, 10) : p;
 const paraCentavos = v => Math.round(numeroSeguro(v) * 100);
 const deCentavos = c => numeroSeguro(c) / 100;
-const formatarMoeda = v => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(numeroSeguro(v));
+
+// [MODO DISCRETO] formatarMoeda é reativo: respeita o estado de privacidade do body.
+const formatarMoeda = v => {
+    if (typeof document !== 'undefined' && document.body && document.body.classList.contains('privacidade-ativa')) {
+        return 'R$ •••,••';
+    }
+    return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(numeroSeguro(v));
+};
+
 const normalizarTexto = t => String(t || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLowerCase();
 const escaparHTML = v => { const d = document.createElement('div'); d.textContent = v == null ? '' : String(v); return d.innerHTML; };
 const clonarDados = d => JSON.parse(JSON.stringify(d));
@@ -407,8 +427,10 @@ function verificarAutenticacao() {
                     atualizarIndicadorSyncUI('error');
                 } else if (localStorage.getItem('syncPendente') === 'true') {
                     await inicializarBanco();
-                } else if (dadosL && Date.now() - Number(localStorage.getItem('ultimoSyncMs') || 0) < 60000) {
+                } else if (dadosL && Array.isArray(dadosL.usuarios) && dadosL.usuarios.length) {
+                    // Cache persistente: abre instantaneamente; a revalidação ocorre em segundo plano.
                     memoriaSistema = migrarDados(dadosL).dados;
+                    window.revisaoServidorAtual = Number(memoriaSistema._revision) || 0;
                 } else {
                     const json = await buscarDadosServidor();
                     gravarSnapshotLocal(migrarDados(json).dados, true);
@@ -425,6 +447,7 @@ function verificarAutenticacao() {
                 await mostrarAlertaModal('Acesso restrito.');
                 window.location.href = 'dashboard.html'; return false;
             }
+            iniciarSincronizacaoSegundoPlano();
             return true;
         })().catch(() => false).finally(() => verificacaoAutenticacaoPromise = null);
     }
@@ -588,6 +611,67 @@ async function buscarDadosServidor() {
     return json;
 }
 
+// ---- Sincronização única em segundo plano (todas as páginas) ----
+const SYNC_CHECK_MIN_MS = 30000;      // não consulta o servidor mais de 1x a cada 30s (somando todas as páginas)
+const SYNC_CHECK_INTERVAL_MS = 60000; // checagem periódica enquanto a aba está visível
+const SYNC_FALLBACK_FULL_MS = 300000; // se o servidor ainda não tem a ação 'revisao'
+let _syncBgIniciado = false;
+let _syncBgEmAndamento = false;
+
+async function consultarRevisaoServidor() {
+    const res = await fetch(`${API_URL}?action=revisao&token=${encodeURIComponent(TOKEN_API)}`, { cache: 'no-store' });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const json = await res.json();
+    if (json.status !== 'sucesso' || !Number.isFinite(Number(json._revision))) return null; // Code.gs antigo
+    return Number(json._revision);
+}
+
+async function verificarAtualizacaoServidor(forcar = false) {
+    if (_syncBgEmAndamento || syncInFlight || syncPendingData || syncTimer) return;
+    if (localStorage.getItem('syncPendente') === 'true' || localStorage.getItem(SYNC_CONFLICT_KEY)) return;
+    if (!localStorage.getItem('usuarioLogado') || !navigator.onLine) return;
+    const u = obterUsuarioAtual();
+    if (u && normalizarTexto(u.nome) === 'teste') return;
+    const agora = Date.now();
+    if (!forcar && agora - Number(localStorage.getItem('ultimaChecagemMs') || 0) < SYNC_CHECK_MIN_MS) return;
+
+    _syncBgEmAndamento = true;
+    localStorage.setItem('ultimaChecagemMs', String(agora));
+    try {
+        const revRemota = await consultarRevisaoServidor();
+        const revLocal = Number(window.revisaoServidorAtual ?? memoriaSistema?._revision) || 0;
+        if (revRemota !== null) {
+            if (revRemota === revLocal) { localStorage.setItem('ultimoSyncMs', String(Date.now())); return; }
+        } else if (agora - Number(localStorage.getItem('ultimoSyncMs') || 0) < SYNC_FALLBACK_FULL_MS) {
+            return;
+        }
+        const json = await buscarDadosServidor();
+        // Houve edição local durante o download? Então não sobrescreve.
+        if (syncInFlight || syncPendingData || syncTimer || localStorage.getItem('syncPendente') === 'true' || localStorage.getItem(SYNC_CONFLICT_KEY)) return;
+        if (revRemota === null && Number(json._revision) === revLocal) { localStorage.setItem('ultimoSyncMs', String(Date.now())); return; }
+        _migracaoCacheRef = null; _migracaoCacheDados = null;
+        gravarSnapshotLocal(migrarDados(json).dados, true);
+        const ae = document.activeElement;
+        const digitando = ae && /^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName);
+        const modalAberto = [...document.querySelectorAll('.modal-overlay')].some(m => m.style.display && m.style.display !== 'none');
+        if (!digitando && !modalAberto) rerenderizarTelaAtual();
+        atualizarIndicadorSyncUI('success');
+    } catch (e) {
+        console.warn('Checagem em segundo plano falhou:', e);
+    } finally {
+        _syncBgEmAndamento = false;
+    }
+}
+
+function iniciarSincronizacaoSegundoPlano() {
+    if (_syncBgIniciado) return;
+    _syncBgIniciado = true;
+    setTimeout(() => verificarAtualizacaoServidor(), 500);
+    setInterval(() => { if (!document.hidden) verificarAtualizacaoServidor(); }, SYNC_CHECK_INTERVAL_MS);
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) verificarAtualizacaoServidor(); });
+    window.addEventListener('online', () => verificarAtualizacaoServidor(true));
+}
+
 async function sincronizarComServidor() {
     if (syncInFlight || !syncPendingData || localStorage.getItem(SYNC_CONFLICT_KEY)) return;
     syncInFlight = true; let payloadAtual = null, tentativas = 0;
@@ -633,8 +717,10 @@ async function sincronizarComServidor() {
 }
 
 async function inicializarBanco() {
+    window.ultimaOrigemBanco = 'indefinida';
     const local = lerJSONLocal(DB_KEY, null);
     if (local && localStorage.getItem('syncPendente') === 'true') {
+        window.ultimaOrigemBanco = 'local-pendente';
         memoriaSistema = migrarDados(local).dados;
         syncPendingData = clonarDados(memoriaSistema);
         if (!localStorage.getItem(SYNC_CONFLICT_KEY)) {
@@ -649,12 +735,17 @@ async function inicializarBanco() {
     try {
         const json = await buscarDadosServidor();
         const norm = migrarDados(json).dados;
+        window.ultimaOrigemBanco = 'remoto';
         memoriaSistema = norm; window.revisaoServidorAtual = Number(norm._revision) || 0;
         gravarSnapshotLocal(norm, true);
         localStorage.removeItem('syncPendente'); localStorage.removeItem(SYNC_CONFLICT_KEY);
         atualizarIndicadorSyncUI('success'); return norm;
     } catch (e) {
-        if (local) return memoriaSistema = migrarDados(local).dados;
+        if (local) {
+            window.ultimaOrigemBanco = 'local-offline';
+            console.warn('Dados locais usados porque a atualização remota falhou:', e);
+            return memoriaSistema = migrarDados(local).dados;
+        }
         throw e;
     }
 }
@@ -712,7 +803,6 @@ function migrarDados(dados) {
         if (f.dataLiberacao == null) { f.dataLiberacao = ''; alterou = true; }
         if (!f.escopoContrato) { f.escopoContrato = 'individual'; alterou = true; }
 
-        // [FIX #7] Normaliza valores que a planilha devolve como '' (string vazia).
         if (f.valorCompra === '' || f.valorCompra === undefined) { f.valorCompra = null; alterou = true; }
         else if (f.valorCompra !== null && !Number.isFinite(Number(f.valorCompra))) { f.valorCompra = null; alterou = true; }
 
@@ -821,7 +911,7 @@ function migrarDados(dados) {
 }
 
 // ============================================================================
-// 6. UI — MODAIS, HEADER, TEMA
+// 6. UI — MODAIS, HEADER, TEMA, PRIVACIDADE
 // ============================================================================
 function criarModalBase({ titulo, mensagem, htmlExtra = '', classe = '' }) {
     const o = document.createElement('div');
@@ -833,7 +923,6 @@ function criarModalBase({ titulo, mensagem, htmlExtra = '', classe = '' }) {
     const box = o.querySelector('.modal-box');
     setTimeout(() => box?.focus(), 10);
 
-    // [FIX #11] Focus trap
     o.addEventListener('keydown', function trap(e) {
         if (e.key !== 'Tab') return;
         const focaveis = Array.from(box.querySelectorAll(
@@ -1105,15 +1194,52 @@ function atualizarHeaderUsuario() {
 }
 
 function inicializarPrivacidade() {
-    if (localStorage.getItem('privacidadeAtiva') !== 'false') { document.body.classList.add('privacidade-ativa'); localStorage.setItem('privacidadeAtiva', 'true'); }
-    else document.body.classList.remove('privacidade-ativa');
+    if (localStorage.getItem('privacidadeAtiva') !== 'false') {
+        document.body.classList.add('privacidade-ativa');
+        localStorage.setItem('privacidadeAtiva', 'true');
+    } else {
+        document.body.classList.remove('privacidade-ativa');
+    }
     atualizarIconePrivacidade();
+}
+
+function injetarBannerPrivacidade() {
+    if (document.getElementById('bannerPrivacidade')) return;
+    const b = document.createElement('button');
+    b.id = 'bannerPrivacidade';
+    b.type = 'button';
+    b.className = 'privacy-banner';
+    b.innerHTML = '🔒 Modo Discreto ativo — <u>revelar valores</u>';
+    b.title = 'Clique para mostrar os valores';
+    b.onclick = alternarPrivacidade;
+    document.body.appendChild(b);
 }
 
 function alternarPrivacidade() {
     const ativa = document.body.classList.toggle('privacidade-ativa');
     localStorage.setItem('privacidadeAtiva', ativa.toString());
     atualizarIconePrivacidade();
+
+    rerenderizarTelaAtual();
+
+    // Feedback visual rápido
+    const icone = document.getElementById('imgPrivacidade');
+    if (icone) { icone.animate([{ transform: 'scale(1)' }, { transform: 'scale(1.25)' }, { transform: 'scale(1)' }], { duration: 260 }); }
+}
+
+function rerenderizarTelaAtual() {
+    try {
+        if (typeof carregarDashboard === 'function' && document.getElementById('filtroMesAno')) carregarDashboard();
+        if (typeof carregarRelatorioMensal === 'function' && document.getElementById('filtroMesRelatorio')) carregarRelatorioMensal();
+        if (typeof carregarCentralPagamentos === 'function' && document.getElementById('tabela-pagamentos-body')) carregarCentralPagamentos();
+        if (typeof carregarTabelaFinanciamentosGeral === 'function' && document.getElementById('tabelaFinanciamentosGeral')) carregarTabelaFinanciamentosGeral();
+        if (typeof carregarTabelaBensGeral === 'function' && document.getElementById('tabelaBensGeral')) carregarTabelaBensGeral();
+        if (typeof renderizarCartoes === 'function' && document.getElementById('gridCartoesCredito')) renderizarCartoes();
+        if (typeof carregarDetalhesFinanciamentoPagina === 'function' && document.getElementById('tabelaParcelasFinanciamento')) carregarDetalhesFinanciamentoPagina();
+        if (typeof carregarDetalhesParceladaPagina === 'function' && document.getElementById('tabelaParcelasGrupo')) carregarDetalhesParceladaPagina();
+        if (typeof carregarGraficoDetalhado === 'function' && document.getElementById('tabelaGraficoDetalhado')) carregarGraficoDetalhado();
+        if (typeof renderizarCategorias === 'function' && document.getElementById('listaCategorias')) renderizarCategorias();
+    } catch (e) { console.warn('Falha ao re-renderizar:', e); }
 }
 
 function atualizarIconePrivacidade() {
@@ -1269,13 +1395,11 @@ async function adicionarLancamentoComParcelas(form) {
     processandoAcaoModal = true; mostrarLoading("Salvando...");
     try {
         const d = obterDados(), uId = Number(obterUsuarioAtualId(d)), vt = numeroSeguro(form.valorTotal);
-        // [FIX #5] Respeita o total de parcelas escolhido pelo usuário, sem forçar 12 em "Conta fixa".
         const q = Math.min(48, Math.max(1, inteiroSeguro(form.qtdParcelas, 1)));
         if (!form.descricao?.trim() || vt <= 0 || !form.vencimento) throw new Error('Preencha corretamente.');
         const b = form.bemId ? d.bens.find(x => String(x.id) === String(form.bemId)) : null;
         let esc = form.tipo === 'saida' ? (form.escopo || 'casal') : 'casal';
         if (b) esc = b.compartilhado ? 'casal' : esc;
-        // [FIX #5] Distribuição exata em centavos, independente da forma de pagamento.
         const valP = dividirValorExato(vt, q);
         const heP = form.horaExtra ? dividirValorExato(form.horaExtra, q) : Array(q).fill(0);
         const dB = criarDataLocal(form.vencimento);
@@ -1310,7 +1434,7 @@ async function adicionarLancamentoComParcelas(form) {
                     remetenteId: uId,
                     tipo: 'lancamento_casal',
                     titulo: tituloNotif,
-                    mensagem: `${primeiroNome} registou ${tipoAcaoTxt} de casal: ${form.descricao} no valor de ${formatarMoeda(vt)}.`,
+                    mensagem: `${primeiroNome} registou ${tipoAcaoTxt} de casal: ${form.descricao} no valor de ${formatarMoedaPrivada(vt)}.`,
                     lida: false,
                     statusAprovacao: '',
                     createdAt: new Date().toISOString()
@@ -1400,7 +1524,6 @@ async function removerLancamentoInteligente(id) {
     await salvarDados(d); esconderLoading(); await mostrarAlertaModal("Sucesso!"); return true;
 }
 
-// [FIX #3] Descreve a origem de um lançamento (para badge na tabela).
 function descreverOrigemLancamento(l, dados = obterDados()) {
     if (!l) return null;
     const finId = resolverFinanciamentoIdPorLancamento(l, dados);
@@ -1423,7 +1546,6 @@ function descreverOrigemLancamento(l, dados = obterDados()) {
     return null;
 }
 
-// [FIX #4] Modal de histórico individual por lançamento.
 function abrirHistoricoLancamento(lancamentoId) {
     const dados = obterDados();
     const lanc = (dados.lancamentos || []).find(l => String(l.id) === String(lancamentoId));
@@ -1554,10 +1676,7 @@ async function atualizarLancamentoNoBanco(id, novosDados) {
             l.servicoEssencial = novosDados.tipo === 'saida' ? (novosDados.servicoEssencial || 'nao') : 'nao';
             l.escopo = novosDados.tipo === 'saida' ? (novosDados.escopo || 'casal') : 'casal';
 
-            // [NOVO] Persiste hora extra (só faz sentido em entradas)
             l.horaExtra = novosDados.tipo === 'entrada' ? numeroSeguro(novosDados.horaExtra) : 0;
-
-            // [NOVO] Persiste vínculo com bem patrimonial (só faz sentido em saídas)
             l.bemId = (novosDados.tipo === 'saida' && novosDados.bemId != null && novosDados.bemId !== '')
                 ? Number(novosDados.bemId) : null;
 
@@ -1565,7 +1684,6 @@ async function atualizarLancamentoNoBanco(id, novosDados) {
             if (novosDados.formaPagamento === 'CARTAO' && novosDados.tipo === 'saida') {
                 l.cartaoId = novosDados.cartaoId || l.cartaoId || null;
                 l.dataCompra = novosDados.dataCompra || l.dataCompra || null;
-                // Se trocou de cartão, recalcula vencimento pelo ciclo do novo cartão.
                 if (String(l.cartaoId) !== String(cartaoAnteriorGrupo) && l.dataCompra) {
                     const novoCartao = (dados.cartoes || []).find(c => String(c.id) === String(l.cartaoId));
                     if (novoCartao) l.vencimento = calcularPrimeiroVencimentoCartao(novoCartao, l.dataCompra);
@@ -1598,10 +1716,7 @@ async function atualizarLancamentoNoBanco(id, novosDados) {
         lancamento.vencimento = novosDados.vencimento;
         lancamento.updatedAt = new Date().toISOString();
 
-        // [NOVO] Persiste hora extra (só faz sentido em entradas)
         lancamento.horaExtra = novosDados.tipo === 'entrada' ? numeroSeguro(novosDados.horaExtra) : 0;
-
-        // [NOVO] Persiste vínculo com bem patrimonial (só faz sentido em saídas)
         lancamento.bemId = (novosDados.tipo === 'saida' && novosDados.bemId != null && novosDados.bemId !== '')
             ? Number(novosDados.bemId) : null;
 
@@ -1609,7 +1724,6 @@ async function atualizarLancamentoNoBanco(id, novosDados) {
         if (novosDados.formaPagamento === 'CARTAO' && novosDados.tipo === 'saida') {
             lancamento.cartaoId = novosDados.cartaoId || lancamento.cartaoId || null;
             lancamento.dataCompra = novosDados.dataCompra || lancamento.dataCompra || null;
-            // Recalcula vencimento quando o cartão muda.
             if (String(lancamento.cartaoId) !== String(cartaoAnterior) && lancamento.dataCompra) {
                 const novoCartao = (dados.cartoes || []).find(c => String(c.id) === String(lancamento.cartaoId));
                 if (novoCartao) lancamento.vencimento = calcularPrimeiroVencimentoCartao(novoCartao, lancamento.dataCompra);
@@ -2028,20 +2142,34 @@ function carregarDashboard() {
             else if (reUber.test(c)) tUb += v;
         } else { tS += v; if (l.formaPagamento === 'CARTAO') tCart += v; }
     });
+
+    const priv = document.body.classList.contains('privacidade-ativa');
     const safeHTML = (id, html) => { const e = document.getElementById(id); if (e) e.innerHTML = html; };
+
     safeHTML('totalEntradas', formatarMoeda(tE)); safeHTML('totalSaidas', formatarMoeda(tS));
     const eS = document.getElementById('saldoGeral'); if (eS) { eS.textContent = formatarMoeda(tE - tS); eS.className = `stat-value saldo-destaque ${tE - tS >= 0 ? 'positivo' : 'negativo'}`; }
-    safeHTML('subDetalhesEntradas', `<strong>Salário:</strong> ${formatarMoeda(tSal)}<br><strong>Uber:</strong> ${formatarMoeda(tUb)}<br><strong>Empréstimos:</strong> ${formatarMoeda(tEmprestimos)}<br><strong>Outros:</strong> ${formatarMoeda(Math.max(0, tE - tSal - tUb - tEmprestimos))}`);
-    safeHTML('subDetalhesSaidas', `<strong>Cartão:</strong> ${formatarMoeda(tCart)}<br><strong>Outras:</strong> ${formatarMoeda(Math.max(0, tS - tCart))}`);
-    const saidas = lns.filter(l => l.tipo !== 'entrada');
-    const topo = somarPor(saidas, l => nomeCat(l.categoriaId))[0];
-    safeHTML('maiorFocoValor', formatarMoeda(topo ? topo[1] : 0));
-    safeHTML('maiorFocoDetalhe', topo ? `${escaparHTML(topo[0])} — ${tS > 0 ? Math.round(topo[1] / tS * 100) : 0}% das saídas` : 'Nenhum gasto registrado');
+
+    // Modo Discreto: os sub-detalhes (Salário/Cartão/etc.) são informação sensível.
+    // Não são apenas mascarados, são completamente removidos quando privacidade está ativa.
+    if (priv) {
+        safeHTML('subDetalhesEntradas', '');
+        safeHTML('subDetalhesSaidas', '');
+        safeHTML('maiorFocoDetalhe', '');
+        const elFoco = document.getElementById('maiorFocoValor');
+        if (elFoco) elFoco.textContent = formatarMoeda(0); // já é 0, mas garante
+    } else {
+        safeHTML('subDetalhesEntradas', `<strong>Salário:</strong> ${formatarMoeda(tSal)}<br><strong>Uber:</strong> ${formatarMoeda(tUb)}<br><strong>Empréstimos:</strong> ${formatarMoeda(tEmprestimos)}<br><strong>Outros:</strong> ${formatarMoeda(Math.max(0, tE - tSal - tUb - tEmprestimos))}`);
+        safeHTML('subDetalhesSaidas', `<strong>Cartão:</strong> ${formatarMoeda(tCart)}<br><strong>Outras:</strong> ${formatarMoeda(Math.max(0, tS - tCart))}`);
+        const saidas = lns.filter(l => l.tipo !== 'entrada');
+        const topo = somarPor(saidas, l => nomeCat(l.categoriaId))[0];
+        safeHTML('maiorFocoValor', formatarMoeda(topo ? topo[1] : 0));
+        safeHTML('maiorFocoDetalhe', topo ? `${escaparHTML(topo[0])} — ${Math.round((topo[1] / (tS || 1)) * 100)}% das saídas` : 'Nenhum gasto registrado');
+    }
+
     atualizarGraficosDashboard(tE, tS, d, lns);
     renderizarTabelaUltimosLancamentos(lns, d, nomeCat);
     renderizarCentralLembretes(lns, d, mes);
 
-    // Hook: se a página define renderização extra (ex: dashboard → pulso + top categorias), chama
     if (typeof renderizarSessoesDashboardExtras === 'function') {
         try { renderizarSessoesDashboardExtras(); } catch (e) { console.warn('[Extras Dashboard]', e); }
     }
@@ -2049,6 +2177,7 @@ function carregarDashboard() {
 
 function atualizarGraficosDashboard(tE, tS, dados, lns) {
     if (typeof Chart === 'undefined') return;
+    const priv = document.body.classList.contains('privacidade-ativa');
     const isDashboard = String(window.location.pathname).split('/').pop().toLowerCase() === 'dashboard.html';
     const val = id => document.getElementById(id)?.value;
     const nomeCat = id => (dados.categorias.find(x => String(x.id) === String(id)) || {}).nome || 'Sem categoria';
@@ -2069,6 +2198,37 @@ function atualizarGraficosDashboard(tE, tS, dados, lns) {
             onHover: (evt, els) => { if (evt?.native?.target) evt.native.target.style.cursor = els.length ? 'pointer' : 'default'; }
         };
     };
+
+    // [MODO DISCRETO] — injeta placeholder consistente em cada gráfico
+    const gerenciarPlaceholder = (canvasId, mensagem) => {
+        const canvas = document.getElementById(canvasId);
+        if (!canvas) return;
+        const container = canvas.parentElement;
+        if (!container) return;
+        const existente = container.querySelector('.privacy-section-placeholder');
+        if (priv) {
+            canvas.style.visibility = 'hidden';
+            canvas.style.position = 'absolute';
+            if (!existente) {
+                const ph = document.createElement('div');
+                ph.className = 'privacy-section-placeholder';
+                ph.style.cssText = 'position:absolute;inset:0;margin:0;height:100%;';
+                ph.innerHTML = `<div><strong>${escaparHTML(mensagem)}</strong></div><div style="font-size:0.82rem;font-weight:500;">Toque no banner de privacidade para revelar.</div>`;
+                container.appendChild(ph);
+            }
+        } else {
+            canvas.style.visibility = '';
+            canvas.style.position = '';
+            if (existente) existente.remove();
+        }
+    };
+
+    gerenciarPlaceholder('graficoEntradasSaidas', 'Entradas x saídas oculto');
+    gerenciarPlaceholder('graficoGastosCategorias', 'Gastos por categoria oculto');
+    gerenciarPlaceholder('graficoServicosEssenciais', 'Essenciais x não essenciais oculto');
+    gerenciarPlaceholder('graficoCartoesLimite', 'Limite dos cartões oculto');
+
+    if (priv) return;
 
     const draw = (chave, canvasId, type, labels, data, colors, extra = {}) => {
         const c = document.getElementById(canvasId); if (!c) return;
@@ -2154,6 +2314,19 @@ function atualizarGraficosDashboard(tE, tS, dados, lns) {
 
 function renderizarTabelaUltimosLancamentos(lns, d, nomeCat) {
     const tb = document.getElementById('tabelaUltimosLancamentos'); if (!tb) return;
+
+    // Modo Discreto: esconde toda a tabela — descrições, categorias e valores são sensíveis
+    if (document.body.classList.contains('privacidade-ativa')) {
+        tb.innerHTML = `<tr><td colspan="7" style="text-align:center;padding:32px 12px;">
+            <div style="display:flex;flex-direction:column;align-items:center;gap:8px;color:var(--text-muted);">
+                <span style="font-size:2rem;opacity:.6;">🔒</span>
+                <strong style="color:var(--text-main);">Últimos lançamentos ocultos</strong>
+                <span style="font-size:.82rem;">Toque no banner de privacidade para ver o histórico.</span>
+            </div>
+        </td></tr>`;
+        return;
+    }
+
     const f = document.getElementById('filtroTipoUltimosLancamentos')?.value || 'todos';
     const lista = lns.filter(l => f === 'todos' || l.tipo === f)
         .sort((a, b) => String(b.vencimento || b.dataCompra || '').localeCompare(String(a.vencimento || a.dataCompra || ''))).slice(0, 20);
@@ -2162,20 +2335,14 @@ function renderizarTabelaUltimosLancamentos(lns, d, nomeCat) {
     tb.innerHTML = lista.map(l => {
         const u = (d.usuarios || []).find(x => String(x.id) === String(l.usuarioId));
         const ent = l.tipo === 'entrada';
-
-        // [FIX #3] Badge de origem (financiamento, parcelamento ou fatura).
         const origem = descreverOrigemLancamento(l, d);
         const badgeOrigem = origem
             ? ` <span title="${escaparHTML(origem.detalhe)}" style="font-size:.85rem;opacity:.85;cursor:help;">${origem.icone}</span>` : '';
-
         const fId = l.faturaId || (l.formaPagamento === 'CARTAO' && l.cartaoId && l.vencimento ? `fat_${l.cartaoId}_${String(l.vencimento).slice(0, 7)}` : null);
         const podeAlternar = !fId && l.formaPagamento !== 'CARTAO';
-
         const acao = podeAlternar
             ? `<button class="btn-acao-icone ${l.pago ? 'desfazer' : 'pagar'}" title="${l.pago ? 'Desfazer pagamento' : 'Marcar como pago'}" onclick="alternarStatusPagamento(${Number(l.id)})"><img src="imagens/${l.pago ? 'desfazer' : 'pagar'}.png" style="width:20px;" alt=""></button>`
             : `<a href="grafico.html?tipo=cartao&cartaoId=${l.cartaoId}&mes=${String(l.vencimento).slice(0, 7)}" class="btn-acao-icone" title="Gerenciar Fatura" style="display:inline-flex; align-items:center; justify-content:center; text-decoration:none;"><span style="font-size:16px;">💳</span></a>`;
-
-        // [FIX #4] Botão de histórico/auditoria por lançamento.
         const btnHist = `<button class="btn-acao-icone" title="Histórico / auditoria" onclick="abrirHistoricoLancamento(${Number(l.id)})" style="background:color-mix(in srgb,var(--primary) 20%,transparent);border-color:var(--primary);">🕘</button>`;
 
         return `<tr>
@@ -2216,6 +2383,19 @@ function redirecionarNovoLancamento(tipoAcao) {
 function renderizarCentralLembretes(lns, dados, mes) {
     const lst = document.getElementById('listaCentralLembretes'), cnt = document.getElementById('contadorLembretes');
     if (!lst) return;
+
+    // [MODO DISCRETO] — oculta os lembretes e o contador de pendências
+    if (document.body.classList.contains('privacidade-ativa')) {
+        if (cnt) cnt.style.display = 'none';
+        lst.innerHTML = `<li style="list-style:none;padding:0;">
+            <div class="privacy-section-placeholder" style="padding:26px 18px;margin:6px 0;">
+                <div><strong>Lembretes ocultos</strong></div>
+                <div style="font-size:0.82rem;font-weight:500;">Toque no banner de privacidade para revelar os compromissos financeiros.</div>
+            </div>
+        </li>`;
+        return;
+    }
+
     const hj = dataLocalYYYYMMDD(), fats = {}, lms = [];
     lns.forEach(l => {
         if (l.tipo !== 'saida') return;
@@ -2276,10 +2456,10 @@ function carregarRelatorios() {
         if (Number(l.usuarioId) === 1) l.tipo === 'entrada' ? eS += v : sS += v;
         else if (Number(l.usuarioId) === 2) l.tipo === 'entrada' ? eM += v : sM += v;
     });
-    setTxt('relatorioEntradaSamuel', `R$ ${eS.toFixed(2)}`);
-    setTxt('relatorioSaidaSamuel', `R$ ${sS.toFixed(2)}`);
-    setTxt('relatorioEntradaMariana', `R$ ${eM.toFixed(2)}`);
-    setTxt('relatorioSaidaMariana', `R$ ${sM.toFixed(2)}`);
+    setTxt('relatorioEntradaSamuel', formatarMoeda(eS));
+    setTxt('relatorioSaidaSamuel', formatarMoeda(sS));
+    setTxt('relatorioEntradaMariana', formatarMoeda(eM));
+    setTxt('relatorioSaidaMariana', formatarMoeda(sM));
     let tE = 0, tS = 0;
     periodo.forEach(l => {
         if (uFiltro !== 'todos' && Number(l.usuarioId) !== Number(uFiltro)) return;
@@ -2329,6 +2509,18 @@ function renderizarCategorias() {
     const dados = obterDados();
     const lista = document.getElementById('listaCategorias');
     if (!lista) return;
+
+    // [MODO DISCRETO] — oculta a lista de categorias
+    if (document.body.classList.contains('privacidade-ativa')) {
+        lista.innerHTML = `<li style="list-style:none;padding:0;">
+            <div class="privacy-section-placeholder">
+                <div><strong>Categorias ocultas</strong></div>
+                <div style="font-size:0.82rem;font-weight:500;">Toque no banner de privacidade para revelar.</div>
+            </div>
+        </li>`;
+        return;
+    }
+
     lista.replaceChildren();
     const filtro = document.getElementById('filtroTipoCategoria');
     const fVal = filtro ? filtro.value : 'todos';
@@ -2435,7 +2627,7 @@ function abrirDetalhamentoParcelamento(lancamentoId, paginaAtual = 1) {
     document.querySelectorAll('.modal-overlay-detalhe-parcelas').forEach(el => el.remove());
     const overlay = document.createElement('div');
     overlay.className = 'modal-overlay modal-overlay-detalhe-parcelas';
-    overlay.innerHTML = `<div class="modal-box" style="max-width:650px;width:95%;"><h3>${finRelacionado?.tipoContrato === 'emprestimo' ? 'Detalhes do Empréstimo / Consignado' : 'Detalhes do Financiamento / Parcelamento'}</h3><div style="text-align:left;display:flex;flex-direction:column;gap:6px;margin-bottom:12px;font-size:.9rem;"><p><strong>Descrição:</strong> ${escaparHTML(descricaoBaseParcelamento(lanc.descricao))}</p><p><strong>Valor Total:</strong> R$ ${valTot.toLocaleString('pt-BR', {minimumFractionDigits: 2})} (${total}x de R$ ${valParc.toFixed(2)})</p><p><strong>${formaInfo}</strong> | <strong>Responsável:</strong> ${escaparHTML(resp)}</p></div><h4 style="margin:10px 0 6px 0;font-size:.95rem;text-align:left;">Parcelas (${ini + 1} a ${Math.min(fim, total)} de ${total}):</h4>${pag}<div class="tabela-container" style="max-height:240px;overflow-y:auto;border:1px solid var(--border);border-radius:8px;"><table class="tabela" style="width:100%;font-size:.85rem;"><thead><tr><th style="text-align:center;">Parcela</th><th>Vencimento</th><th style="text-align:right;">Valor</th><th style="text-align:center;">Status</th></tr></thead><tbody>${linhas}</tbody></table></div>${pag}<div class="modal-buttons modal-buttons-center" style="margin-top:15px;"><button type="button" data-fechar style="background-color:var(--primary);width:100%;">Fechar</button></div></div>`;
+    overlay.innerHTML = `<div class="modal-box" style="max-width:650px;width:95%;"><h3>${finRelacionado?.tipoContrato === 'emprestimo' ? 'Detalhes do Empréstimo / Consignado' : 'Detalhes do Financiamento / Parcelamento'}</h3><div style="text-align:left;display:flex;flex-direction:column;gap:6px;margin-bottom:12px;font-size:.9rem;"><p><strong>Descrição:</strong> ${escaparHTML(descricaoBaseParcelamento(lanc.descricao))}</p><p><strong>Valor Total:</strong> ${formatarMoeda(valTot)} (${total}x de ${formatarMoeda(valParc)})</p><p><strong>${formaInfo}</strong> | <strong>Responsável:</strong> ${escaparHTML(resp)}</p></div><h4 style="margin:10px 0 6px 0;font-size:.95rem;text-align:left;">Parcelas (${ini + 1} a ${Math.min(fim, total)} de ${total}):</h4>${pag}<div class="tabela-container" style="max-height:240px;overflow-y:auto;border:1px solid var(--border);border-radius:8px;"><table class="tabela" style="width:100%;font-size:.85rem;"><thead><tr><th style="text-align:center;">Parcela</th><th>Vencimento</th><th style="text-align:right;">Valor</th><th style="text-align:center;">Status</th></tr></thead><tbody>${linhas}</tbody></table></div>${pag}<div class="modal-buttons modal-buttons-center" style="margin-top:15px;"><button type="button" data-fechar style="background-color:var(--primary);width:100%;">Fechar</button></div></div>`;
     document.body.appendChild(overlay);
     overlay.querySelector('[data-fechar]').onclick = () => fecharModal(overlay);
     overlay.addEventListener('click', e => { if (e.target === overlay) fecharModal(overlay); });
@@ -2576,6 +2768,16 @@ function criarNotificacao(usuarioDestinoId, titulo, mensagem, tipo = 'info') {
 // 9.5 PRIMEIRO ACESSO (index.html)
 // ============================================================================
 async function abrirModalPrimeiroAcesso() {
+    if (localStorage.getItem('syncPendente') === 'true' || localStorage.getItem(SYNC_CONFLICT_KEY)) {
+        await mostrarAlertaModal('Existem alterações locais aguardando sincronização. Resolva a pendência antes de cadastrar outro usuário.');
+        return;
+    }
+    try {
+        await buscarDadosServidor();
+    } catch (erro) {
+        await mostrarAlertaModal('Não foi possível consultar os usuários no servidor. Verifique a conexão antes de iniciar um cadastro.');
+        return;
+    }
     const { overlay } = criarModalBase({
         titulo: 'Primeiro Acesso - Cadastro',
         mensagem: 'Cadastre suas informações para começar a usar o sistema.',
@@ -2606,26 +2808,52 @@ async function abrirModalPrimeiroAcesso() {
     setTimeout(() => inputUsuario?.focus(), 0);
     overlay.querySelector('[data-cancelar]').onclick = () => fecharModal(overlay);
     overlay.querySelector('[data-confirmar]').onclick = async () => {
+        const confirmar = overlay.querySelector('[data-confirmar]');
+        if (confirmar.disabled) return;
         const usuario = inputUsuario.value.trim();
         const nome = inputNome.value.trim();
         const senha = inputSenha.value.trim();
         if (!usuario || !nome || !senha) { await mostrarAlertaModal('Preencha todos os campos para continuar.'); return; }
         if (!validarComplexidadeSenha(senha)) { await mostrarAlertaModal('A senha informada não cumpre os requisitos mínimos. Tente novamente.'); return; }
-        const dados = obterDados();
-        if (!Array.isArray(dados.usuarios)) dados.usuarios = [];
-        const jaExiste = dados.usuarios.some(u => normalizarTexto(u.usuario || u.nome) === normalizarTexto(usuario));
-        if (jaExiste) { await mostrarAlertaModal('Este nome de usuário já está cadastrado.'); return; }
-        const novoId = dados.usuarios.reduce((max, u) => Math.max(max, Number(u.id) || 0), 0) + 1;
-        const hashSenha = await gerarHash(senha);
-        const primeiroUsuario = dados.usuarios.length === 0;
-        const permissoes = primeiroUsuario
-            ? { perfil: 'admin', paginas: { dashboard: true, relatorios: true, lancamentos: true, cartoes: true, categorias: true, configuracoes: true }, acoes: { criarMovimento: true, excluirMovimento: true, financiamentos: true, lotes: true, usuarios: true, logs: true } }
-            : { perfil: 'usuario', paginas: { dashboard: true, relatorios: true, lancamentos: true, cartoes: true, categorias: true, configuracoes: false }, acoes: { criarMovimento: false, excluirMovimento: false, financiamentos: false, lotes: false, usuarios: false, logs: false } };
-        dados.usuarios.push({ id: novoId, usuario, nome, pin: hashSenha, senha: hashSenha, ativo: true, permissoes, preferenciasNotificacao: { ativo: true, diasAntecedencia: 3 } });
-        registrarLog(dados, "CADASTRO USUÁRIO", `Novo usuário via Primeiro Acesso: ${nome} (${usuario})`);
-        await salvarDados(dados);
-        fecharModal(overlay);
-        await mostrarAlertaModal('Cadastro realizado com sucesso! Agora você já pode fazer o login.');
+        confirmar.disabled = true;
+        const textoAnterior = confirmar.textContent;
+        confirmar.textContent = 'Salvando no servidor...';
+        try {
+            if (localStorage.getItem('syncPendente') === 'true' || localStorage.getItem(SYNC_CONFLICT_KEY)) {
+                throw new Error('Há uma sincronização pendente. Conclua-a antes de cadastrar outro usuário.');
+            }
+            const dados = migrarDados(await buscarDadosServidor()).dados;
+            const jaExiste = dados.usuarios.some(u =>
+                normalizarTexto(u.usuario || u.nome) === normalizarTexto(usuario));
+            if (jaExiste) throw new Error('Este nome de usuário já está cadastrado.');
+            const novoId = dados.usuarios.reduce((max, u) => Math.max(max, Number(u.id) || 0), 0) + 1;
+            const hashSenha = await gerarHash(senha);
+            const primeiroUsuario = dados.usuarios.length === 0;
+            const permissoes = primeiroUsuario
+                ? { perfil: 'admin', paginas: { dashboard: true, relatorios: true, lancamentos: true, cartoes: true, categorias: true, configuracoes: true }, acoes: { criarMovimento: true, excluirMovimento: true, financiamentos: true, lotes: true, usuarios: true, logs: true } }
+                : { perfil: 'usuario', paginas: { dashboard: true, relatorios: true, lancamentos: true, cartoes: true, categorias: true, configuracoes: false }, acoes: { criarMovimento: false, excluirMovimento: false, financiamentos: false, lotes: false, usuarios: false, logs: false } };
+            dados.usuarios.push({ id: novoId, usuario, nome, pin: hashSenha, ativo: true, permissoes, preferenciasNotificacao: { ativo: true, diasAntecedencia: 3 } });
+            registrarLog(dados, 'CADASTRO USUÁRIO', `Novo usuário via Primeiro Acesso: ${nome} (${usuario})`);
+            const resposta = await fetch(API_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                body: JSON.stringify({ action: 'salvarDados', token: TOKEN_API, dados })
+            });
+            if (!resposta.ok) throw new Error('Servidor indisponível para salvar o cadastro.');
+            const resultado = await resposta.json();
+            if (resultado.status !== 'sucesso') throw new Error(resultado.status === 'conflito'
+                ? 'Os dados mudaram durante o cadastro. Tente novamente.'
+                : resultado.mensagem || 'O servidor não confirmou o cadastro.');
+            dados._revision = Number(resultado._revision);
+            gravarSnapshotLocal(dados, true);
+            fecharModal(overlay);
+            await mostrarAlertaModal('Cadastro confirmado no servidor! Agora você pode entrar.');
+        } catch (erro) {
+            await mostrarAlertaModal(erro.message || 'Não foi possível salvar o cadastro.');
+        } finally {
+            confirmar.disabled = false;
+            confirmar.textContent = textoAnterior;
+        }
     };
 }
 
@@ -2633,7 +2861,6 @@ async function abrirModalPrimeiroAcesso() {
 // 10. INICIALIZAÇÃO
 // ============================================================================
 
-// [FIX #9] Sincronização entre abas abertas no mesmo navegador.
 window.addEventListener('storage', (e) => {
     if (e.key === DB_KEY && e.newValue && !syncInFlight && !syncPendingData) {
         try {

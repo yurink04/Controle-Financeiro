@@ -7,11 +7,6 @@
     <link rel="stylesheet" href="style.css">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
-        /* ============================================================
-           NOVOS COMPONENTES EXCLUSIVOS DO PAINEL (dashboard.html)
-           ============================================================ */
-
-        /* Par de botões: secundário (Relatórios) + primário (Novo Lançamento) */
         .btn-acao-secundario {
             display: inline-flex;
             align-items: center;
@@ -28,179 +23,59 @@
             transition: var(--transition-fast);
             white-space: nowrap;
         }
-        .btn-acao-secundario:hover {
-            background: var(--primary-soft);
-            transform: translateY(-1px);
-        }
-        body.dark-mode .btn-acao-secundario {
-            color: var(--primary);
-            border-color: var(--primary);
-        }
-        body.dark-mode .btn-acao-secundario:hover {
-            background: var(--primary-soft);
+        .btn-acao-secundario:hover { background: var(--primary-soft); transform: translateY(-1px); }
+        body.dark-mode .btn-acao-secundario { color: var(--primary); border-color: var(--primary); }
+        body.dark-mode .btn-acao-secundario:hover { background: var(--primary-soft); }
+        body.privacidade-ativa .btn-acao-secundario {
+            pointer-events: none;
+            opacity: 0.35;
+            filter: grayscale(1);
+            cursor: not-allowed;
         }
 
-        /* Pulso do mês — banner de veredito */
         .pulso-card {
-            display: flex;
-            align-items: center;
-            gap: 18px;
-            padding: 22px 26px;
-            border-radius: 16px;
-            border: 1px solid var(--border);
-            border-left-width: 6px;
+            display: flex; align-items: center; gap: 18px;
+            padding: 22px 26px; border-radius: 16px;
+            border: 1px solid var(--border); border-left-width: 6px;
             margin-bottom: 18px;
             animation: pulsoIn 0.35s cubic-bezier(.22, 1, .36, 1) both;
-            position: relative;
-            overflow: hidden;
+            position: relative; overflow: hidden;
         }
-        .pulso-card::after {
-            content: '';
-            position: absolute;
-            inset: 0;
-            background: radial-gradient(circle at right center, rgba(255,255,255,0.06), transparent 60%);
-            pointer-events: none;
-        }
-        .pulso-card.perigo {
-            background: linear-gradient(135deg, var(--danger-soft) 0%, transparent 80%);
-            border-left-color: var(--danger);
-        }
-        .pulso-card.atencao {
-            background: linear-gradient(135deg, var(--warning-soft) 0%, transparent 80%);
-            border-left-color: var(--warning);
-        }
-        .pulso-card.saudavel {
-            background: linear-gradient(135deg, var(--success-soft) 0%, transparent 80%);
-            border-left-color: var(--success);
-        }
-        .pulso-card.neutro {
-            background: linear-gradient(135deg, var(--surface-2) 0%, transparent 80%);
-            border-left-color: var(--text-muted);
-        }
-        .pulso-icone {
-            font-size: 2.6rem;
-            line-height: 1;
-            flex-shrink: 0;
-            filter: drop-shadow(0 3px 6px rgba(0, 0, 0, 0.12));
-        }
+        .pulso-card::after { content: ''; position: absolute; inset: 0; background: radial-gradient(circle at right center, rgba(255,255,255,0.06), transparent 60%); pointer-events: none; }
+        .pulso-card.perigo { background: linear-gradient(135deg, var(--danger-soft) 0%, transparent 80%); border-left-color: var(--danger); }
+        .pulso-card.atencao { background: linear-gradient(135deg, var(--warning-soft) 0%, transparent 80%); border-left-color: var(--warning); }
+        .pulso-card.saudavel { background: linear-gradient(135deg, var(--success-soft) 0%, transparent 80%); border-left-color: var(--success); }
+        .pulso-card.neutro { background: linear-gradient(135deg, var(--surface-2) 0%, transparent 80%); border-left-color: var(--text-muted); }
+        .pulso-icone { font-size: 2.6rem; line-height: 1; flex-shrink: 0; filter: drop-shadow(0 3px 6px rgba(0, 0, 0, 0.12)); }
         .pulso-conteudo { flex: 1; min-width: 0; }
-        .pulso-eyebrow {
-            font-size: 0.68rem;
-            font-weight: 850;
-            letter-spacing: 0.1em;
-            text-transform: uppercase;
-            margin-bottom: 4px;
-            opacity: 0.7;
-        }
-        .pulso-card.perigo .pulso-eyebrow,
-        .pulso-card.perigo .pulso-titulo { color: var(--danger); }
-        .pulso-card.atencao .pulso-eyebrow,
-        .pulso-card.atencao .pulso-titulo { color: var(--warning); }
-        .pulso-card.saudavel .pulso-eyebrow,
-        .pulso-card.saudavel .pulso-titulo { color: var(--success); }
-        .pulso-titulo {
-            font-size: clamp(1.1rem, 2.2vw, 1.35rem);
-            font-weight: 850;
-            letter-spacing: -0.02em;
-            line-height: 1.25;
-            margin-bottom: 4px;
-        }
-        .pulso-detalhe {
-            font-size: 0.88rem;
-            color: var(--text-muted);
-            line-height: 1.45;
-        }
+        .pulso-eyebrow { font-size: 0.68rem; font-weight: 850; letter-spacing: 0.1em; text-transform: uppercase; margin-bottom: 4px; opacity: 0.7; }
+        .pulso-card.perigo .pulso-eyebrow, .pulso-card.perigo .pulso-titulo { color: var(--danger); }
+        .pulso-card.atencao .pulso-eyebrow, .pulso-card.atencao .pulso-titulo { color: var(--warning); }
+        .pulso-card.saudavel .pulso-eyebrow, .pulso-card.saudavel .pulso-titulo { color: var(--success); }
+        .pulso-titulo { font-size: clamp(1.1rem, 2.2vw, 1.35rem); font-weight: 850; letter-spacing: -0.02em; line-height: 1.25; margin-bottom: 4px; }
+        .pulso-detalhe { font-size: 0.88rem; color: var(--text-muted); line-height: 1.45; }
 
-        /* Onde o dinheiro foi — barras horizontais */
-        .categoria-barra {
-            padding: 12px 0;
-            border-bottom: 1px solid var(--border);
-        }
+        .categoria-barra { padding: 12px 0; border-bottom: 1px solid var(--border); }
         .categoria-barra:first-child { padding-top: 0; }
         .categoria-barra:last-child { border-bottom: 0; padding-bottom: 0; }
-        .categoria-barra-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: baseline;
-            gap: 10px;
-            margin-bottom: 8px;
-            flex-wrap: wrap;
-        }
-        .categoria-barra-info {
-            display: flex;
-            align-items: baseline;
-            gap: 8px;
-            min-width: 0;
-        }
-        .categoria-barra-pos {
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            width: 22px;
-            height: 22px;
-            border-radius: 50%;
-            background: var(--primary-soft);
-            color: var(--primary);
-            font-size: 0.72rem;
-            font-weight: 900;
-            flex-shrink: 0;
-        }
-        .categoria-barra-nome {
-            font-weight: 700;
-            font-size: 0.92rem;
-            color: var(--text-main);
-            overflow: hidden;
-            text-overflow: ellipsis;
-            white-space: nowrap;
-        }
-        .categoria-barra-valores {
-            display: flex;
-            align-items: baseline;
-            gap: 8px;
-            flex-shrink: 0;
-        }
-        .categoria-barra-valor {
-            font-weight: 850;
-            font-size: 0.95rem;
-            color: var(--text-main);
-        }
-        .categoria-barra-pct {
-            font-size: 0.75rem;
-            color: var(--text-muted);
-            font-weight: 600;
-        }
-        .categoria-barra-track {
-            height: 10px;
-            background: var(--surface-2);
-            border-radius: 99px;
-            overflow: hidden;
-            border: 1px solid var(--border);
-        }
-        .categoria-barra-fill {
-            height: 100%;
-            border-radius: 99px;
-            background: linear-gradient(90deg, var(--primary), color-mix(in srgb, var(--primary) 60%, var(--warning)));
-            transition: width 0.55s cubic-bezier(0.22, 1, 0.36, 1);
-        }
-        .categoria-barra-fill.essencial {
-            background: linear-gradient(90deg, var(--danger), color-mix(in srgb, var(--danger) 55%, var(--warning)));
-        }
+        .categoria-barra-header { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; margin-bottom: 8px; flex-wrap: wrap; }
+        .categoria-barra-info { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+        .categoria-barra-pos { display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; border-radius: 50%; background: var(--primary-soft); color: var(--primary); font-size: 0.72rem; font-weight: 900; flex-shrink: 0; }
+        .categoria-barra-nome { font-weight: 700; font-size: 0.92rem; color: var(--text-main); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .categoria-barra-valores { display: flex; align-items: baseline; gap: 8px; flex-shrink: 0; }
+        .categoria-barra-valor { font-weight: 850; font-size: 0.95rem; color: var(--text-main); }
+        .categoria-barra-pct { font-size: 0.75rem; color: var(--text-muted); font-weight: 600; }
+        .categoria-barra-track { height: 10px; background: var(--surface-2); border-radius: 99px; overflow: hidden; border: 1px solid var(--border); }
+        .categoria-barra-fill { height: 100%; border-radius: 99px; background: linear-gradient(90deg, var(--primary), color-mix(in srgb, var(--primary) 60%, var(--warning))); transition: width 0.55s cubic-bezier(0.22, 1, 0.36, 1); }
+        .categoria-barra-fill.essencial { background: linear-gradient(90deg, var(--danger), color-mix(in srgb, var(--danger) 55%, var(--warning))); }
 
-        @keyframes pulsoIn {
-            from { opacity: 0; transform: translateY(-6px); }
-            to { opacity: 1; transform: translateY(0); }
-        }
+        @keyframes pulsoIn { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: translateY(0); } }
 
-        /* Mobile */
         @media (max-width: 760px) {
             .toolbar-actions { display: flex; flex-direction: column; width: 100%; gap: 8px !important; }
             .toolbar-actions > * { width: 100% !important; }
             .btn-acao-secundario { justify-content: center; padding: 12px 16px; }
-            .pulso-card {
-                padding: 16px 18px;
-                gap: 12px;
-                border-left-width: 5px;
-            }
+            .pulso-card { padding: 16px 18px; gap: 12px; border-left-width: 5px; }
             .pulso-icone { font-size: 2rem; }
             .pulso-titulo { font-size: 1rem; }
             .pulso-detalhe { font-size: 0.82rem; }
@@ -219,7 +94,7 @@
             </div>
 
             <div class="toolbar-actions" style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
-                <a href="relatorios.html" class="btn-acao-secundario" title="Ver análise completa do mês">
+                <a href="relatorios.html" id="btnRelatorios" class="btn-acao-secundario" title="Ver análise completa do mês">
                     📊 Relatórios
                 </a>
                 <div class="dropdown-acao">
@@ -242,7 +117,6 @@
             </div>
         </div>
 
-        <!-- Filtros -->
         <section class="form-card filter-bar">
             <div>
                 <div class="section-title" style="margin-bottom: 2px;"><h2>Resumo mensal</h2></div>
@@ -263,10 +137,8 @@
             </div>
         </section>
 
-        <!-- 🚦 NOVO: Pulso do Mês -->
         <section id="pulsoDashboard"></section>
 
-        <!-- KPI Mestre (mantido) -->
         <section class="stat-grid" aria-label="Indicadores financeiros do mês">
             <div class="stat-box kpi-card card-mestre">
                 <span class="kpi-accent" style="background: var(--primary);"></span>
@@ -299,7 +171,6 @@
             </div>
         </section>
 
-        <!-- 💸 NOVO: Onde o dinheiro foi -->
         <section class="form-card" id="cardTopCategorias" style="margin-top: 16px;">
             <div class="section-title">
                 <div>
@@ -310,7 +181,6 @@
             <div id="topCategoriasDashboard"></div>
         </section>
 
-        <!-- Central de Lembretes (mantida) -->
         <section class="form-card" id="cardCentralLembretes" style="margin-top: 16px; padding: 18px 24px; transition: var(--transition);">
             <div class="section-title" style="cursor: pointer; user-select: none; margin-bottom: 0;" onclick="toggleCentralLembretes()">
                 <div style="display: flex; align-items: center; justify-content: space-between; width: 100%;">
@@ -328,7 +198,6 @@
             </div>
         </section>
 
-        <!-- Gráficos (mantidos) -->
         <section class="grid-2" style="margin-top:16px;">
             <article class="form-card chart-card">
                 <div class="chart-head">
@@ -370,8 +239,7 @@
             </article>
         </section>
 
-        <!-- Últimos lançamentos (mantido) -->
-        <section class="form-card" style="margin-top: 16px;">
+        <section class="form-card" id="cardUltimosLancamentos" style="margin-top: 16px;">
             <div class="section-title">
                 <div><h2>Últimos lançamentos do mês</h2><p>Histórico recente para conferência rápida.</p></div>
                 <div class="filter-group">
@@ -397,7 +265,6 @@
     </main>
 
     <script>
-    // Define mês/ano atual imediatamente, antes de qualquer requisição
     (function () {
         const el = document.getElementById('filtroMesAno');
         if (el && !el.value) {
@@ -409,9 +276,7 @@
     <script src="script.js"></script>
     <script>
     /* ============================================================
-       FUNÇÕES EXTRAS DO PAINEL (Pulso + Top Categorias)
-       Estas funções são chamadas por `carregarDashboard` (script.js)
-       através do hook `renderizarSessoesDashboardExtras`.
+       FUNÇÕES EXTRAS DO PAINEL
        ============================================================ */
 
     function renderizarSessoesDashboardExtras() {
@@ -430,19 +295,26 @@
         }
     }
 
-    /* 🚦 PULSO DO MÊS — 1 veredito colorido, prioriza o que mais importa */
+    /* 🚦 PULSO DO MÊS — totalmente oculto no modo discreto */
     function renderizarPulsoDashboard(lns, dados, mes) {
         const cont = document.getElementById('pulsoDashboard');
         if (!cont) return;
+
+        // Modo Discreto: substitui por placeholder neutro
+        if (document.body.classList.contains('privacidade-ativa')) {
+            cont.innerHTML = `
+                <div class="privacy-section-placeholder">
+                    <div><strong>Pulso do mês oculto</strong></div>
+                    <div style="font-size:0.82rem;font-weight:500;">Toque no banner de privacidade para revelar o veredito.</div>
+                </div>`;
+            return;
+        }
 
         let ent = 0, sai = 0, ess = 0;
         lns.forEach(l => {
             const v = Number(l.valor || 0);
             if (l.tipo === 'entrada') ent += v;
-            else {
-                sai += v;
-                if (l.servicoEssencial === 'sim') ess += v;
-            }
+            else { sai += v; if (l.servicoEssencial === 'sim') ess += v; }
         });
 
         const hoje = dataLocalYYYYMMDD();
@@ -473,7 +345,7 @@
         } else if (taxaPoup < 10 && ent > 0) {
             nivel = 'atencao'; icone = '📉';
             titulo = `Poupança baixa: ${taxaPoup.toFixed(0)}%`;
-            detalhe = `Ideal é guardar 20% ou mais. Veja em Relatórios onde reduzir.`;
+            detalhe = 'Ideal é guardar 20% ou mais. Veja em Relatórios onde reduzir.';
         } else {
             nivel = 'saudavel'; icone = '✅';
             titulo = `Boa saúde financeira — ${taxaPoup.toFixed(0)}% poupado`;
@@ -491,10 +363,20 @@
             </div>`;
     }
 
-    /* 💸 ONDE O DINHEIRO FOI — Top 5 em barras horizontais */
+    /* 💸 ONDE O DINHEIRO FOI — totalmente oculto no modo discreto */
     function renderizarTopCategoriasDashboard(dados, lns) {
         const cont = document.getElementById('topCategoriasDashboard');
         if (!cont) return;
+
+        // Modo Discreto: substitui por placeholder neutro
+        if (document.body.classList.contains('privacidade-ativa')) {
+            cont.innerHTML = `
+                <div class="privacy-section-placeholder">
+                    <div><strong>Distribuição de gastos oculta</strong></div>
+                    <div style="font-size:0.82rem;font-weight:500;">Categorias ficam protegidas no modo discreto.</div>
+                </div>`;
+            return;
+        }
 
         const saidas = lns.filter(l => l.tipo !== 'entrada');
         const totalSaidas = saidas.reduce((a, l) => a + Number(l.valor || 0), 0);
@@ -539,13 +421,9 @@
         }).join('');
     }
 
-    /* ============================================================
-       Inicialização da página
-       ============================================================ */
     document.addEventListener('DOMContentLoaded', async () => {
         injetarHeader();
 
-        // Menu "Novo Lançamento": abre por clique (funciona no celular) e fecha ao clicar fora
         const dd = document.querySelector('.dropdown-acao');
         if (dd) {
             dd.querySelector('.btn-acao-principal').addEventListener('click', e => {
@@ -555,12 +433,10 @@
             document.addEventListener('click', () => dd.classList.remove('aberto'));
         }
 
-        // Desenha com snapshot local antes da rede
         if (localStorage.getItem('usuarioLogado') && localStorage.getItem(DB_KEY)) {
             try { carregarDashboard(); } catch (e) { console.warn(e); }
         }
 
-        // Valida a sessão e re-renderiza
         if (await verificarAutenticacao()) carregarDashboard();
     });
     </script>

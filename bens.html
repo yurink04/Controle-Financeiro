@@ -206,50 +206,62 @@ function prepararEdicaoBem(id) {
 }
 
         function carregarTabelaBensGeral() {
-            const dados = obterDados();
-            const tbody = document.getElementById('tabelaBensGeral');
-            if (!tbody) return;
-            tbody.innerHTML = '';
+    const dados = obterDados();
+    const tbody = document.getElementById('tabelaBensGeral');
+    if (!tbody) return;
+    tbody.innerHTML = '';
 
-            const usuarioId = Number(obterUsuarioAtualId());
-            const usuario = dados.usuarios.find(u => Number(u.id) === usuarioId) || {};
+    // [MODO DISCRETO]
+    if (document.body.classList.contains('privacidade-ativa')) {
+        tbody.innerHTML = `<tr><td colspan="5" style="text-align:center;padding:32px 12px;">
+            <div style="display:flex;flex-direction:column;align-items:center;gap:8px;color:var(--text-muted);">
+                <span style="font-size:2rem;opacity:.6;">🔒</span>
+                <strong style="color:var(--text-main);">Bens ocultos</strong>
+                <span style="font-size:.82rem;">Toque no banner de privacidade para ver os bens.</span>
+            </div>
+        </td></tr>`;
+        return;
+    }
 
-            const bens = (dados.bens || []).filter(b => {
-                if (b.ativo === false) return false;
-                const eSeu = Number(b.usuarioId) === usuarioId || !b.usuarioId;
-                const eCompartilhado = b.compartilhado && usuario.parceiroId;
-                return eSeu || eCompartilhado;
-            });
+    const usuarioId = Number(obterUsuarioAtualId());
+    const usuario = dados.usuarios.find(u => Number(u.id) === usuarioId) || {};
 
-            if (bens.length === 0) {
-                tbody.innerHTML = `<tr><td colspan="5" style="text-align: center;">Nenhum bem cadastrado.</td></tr>`;
-                return;
-            }
+    const bens = (dados.bens || []).filter(b => {
+        if (b.ativo === false) return false;
+        const eSeu = Number(b.usuarioId) === usuarioId || !b.usuarioId;
+        const eCompartilhado = b.compartilhado && usuario.parceiroId;
+        return eSeu || eCompartilhado;
+    });
 
-            bens.forEach(b => {
-                const financiamentoVinculado = (dados.financiamentos || []).find(f => Number(f.bemId) === Number(b.id) && f.ativo !== false);
+    if (bens.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="5" style="text-align: center;">Nenhum bem cadastrado.</td></tr>`;
+        return;
+    }
 
-                let statusHtml = '';
-                if (financiamentoVinculado) {
-                    statusHtml = `<a href="detalhes-financiamento.html?id=${financiamentoVinculado.id}" class="text-link">Financiado (${financiamentoVinculado.nome})</a>`;
-                } else if (b.statusBem === 'financiado') {
-                    statusHtml = `<a href="financiamentos.html" class="text-link" style="color: var(--warning);">Financiado (Sem contrato atrelado)</a>`;
-                } else {
-                    statusHtml = `<span class="status-badge status-pago">Quitado</span>`;
-                }
+    bens.forEach(b => {
+        const financiamentoVinculado = (dados.financiamentos || []).find(f => Number(f.bemId) === Number(b.id) && f.ativo !== false);
 
-                const infoExtra = b.identificadorEspecifico ? `<br><small style="color: var(--text-muted);">${b.tipo === 'veiculo' ? 'Placa:' : 'CEP:'} ${b.identificadorEspecifico}</small>` : '';
-
-                const tr = document.createElement('tr');
-                tr.innerHTML = `
-                    <td>
-                        <button onclick="prepararEdicaoBem(${b.id})" class="btn-acao-icone editar" title="Editar"><img src="imagens/editar.png" alt="Editar"></button>
-                        <button onclick="excluirBemGeral(${b.id})" class="btn-acao-icone excluir" title="Excluir"><img src="imagens/excluir.png" alt="Excluir"></button>
-                    </td>
-                `;
-                tbody.appendChild(tr);
-            });
+        let statusHtml = '';
+        if (financiamentoVinculado) {
+            statusHtml = `<a href="detalhes-financiamento.html?id=${financiamentoVinculado.id}" class="text-link">Financiado (${financiamentoVinculado.nome})</a>`;
+        } else if (b.statusBem === 'financiado') {
+            statusHtml = `<a href="financiamentos.html" class="text-link" style="color: var(--warning);">Financiado (Sem contrato atrelado)</a>`;
+        } else {
+            statusHtml = `<span class="status-badge status-pago">Quitado</span>`;
         }
+
+        const infoExtra = b.identificadorEspecifico ? `<br><small style="color: var(--text-muted);">${b.tipo === 'veiculo' ? 'Placa:' : 'CEP:'} ${b.identificadorEspecifico}</small>` : '';
+
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+            <td>
+                <button onclick="prepararEdicaoBem(${b.id})" class="btn-acao-icone editar" title="Editar"><img src="imagens/editar.png" alt="Editar"></button>
+                <button onclick="excluirBemGeral(${b.id})" class="btn-acao-icone excluir" title="Excluir"><img src="imagens/excluir.png" alt="Excluir"></button>
+            </td>
+        `;
+        tbody.appendChild(tr);
+    });
+}
 
         async function excluirBemGeral(id) {
             if (!await verificarSenhaAdmin("excluir bem")) return;
