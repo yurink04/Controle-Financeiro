@@ -48,26 +48,31 @@
             <div class="wizard-step-content active" data-step="1">
                 <p class="muted small" style="margin-bottom:14px;">O que você quer lançar?</p>
                 <div class="tipo-cards">
-                    <div class="tipo-card" data-intent="entrada" onclick="escolherIntent('entrada')">
-                        <div class="tipo-icone">💰</div>
-                        <div class="tipo-titulo">Entrada</div>
-                        <div class="tipo-descricao">Recebi dinheiro (salário, Pix, uber...)</div>
-                    </div>
-                    <div class="tipo-card" data-intent="saida" onclick="escolherIntent('saida')">
-                        <div class="tipo-icone">💸</div>
-                        <div class="tipo-titulo">Saída à vista</div>
-                        <div class="tipo-descricao">Pix, débito, boleto ou dinheiro</div>
-                    </div>
-                    <div class="tipo-card" data-intent="cartao" onclick="escolherIntent('cartao')">
-                        <div class="tipo-icone">💳</div>
-                        <div class="tipo-titulo">Compra no Cartão</div>
-                        <div class="tipo-descricao">Crédito, à vista ou parcelado</div>
-                    </div>
-                    <div class="tipo-card" data-intent="fixo" onclick="escolherIntent('fixo')">
-                        <div class="tipo-icone">🔁</div>
-                        <div class="tipo-titulo">Conta Fixa</div>
-                        <div class="tipo-descricao">Aluguel, assinatura, mensalidade</div>
-                    </div>
+                    <button type="button" class="tipo-card" data-intent="entrada" onclick="escolherIntent('entrada')">
+                        <span class="tipo-icone">💰</span>
+                        <span class="tipo-titulo">Entrada</span>
+                        <span class="tipo-descricao">Recebi dinheiro (salário, Pix, uber...)</span>
+                    </button>
+                    <button type="button" class="tipo-card" data-intent="saida" onclick="escolherIntent('saida')">
+                        <span class="tipo-icone">💸</span>
+                        <span class="tipo-titulo">Saída à vista</span>
+                        <span class="tipo-descricao">Pix, débito, boleto ou dinheiro</span>
+                    </button>
+                    <button type="button" class="tipo-card" data-intent="cartao" onclick="escolherIntent('cartao')">
+                        <span class="tipo-icone">💳</span>
+                        <span class="tipo-titulo">Compra no Cartão</span>
+                        <span class="tipo-descricao">Crédito, à vista ou parcelado</span>
+                    </button>
+                    <button type="button" class="tipo-card" data-intent="fixo" onclick="escolherIntent('fixo')">
+                        <span class="tipo-icone">🔁</span>
+                        <span class="tipo-titulo">Conta Fixa</span>
+                        <span class="tipo-descricao">Aluguel, assinatura, mensalidade</span>
+                    </button>
+                    <button type="button" class="tipo-card" data-intent="lote" onclick="escolherIntent('lote')">
+                        <span class="tipo-icone">🗓️</span>
+                        <span class="tipo-titulo">Contas em lote</span>
+                        <span class="tipo-descricao">Uma conta por mês em um período</span>
+                    </button>
                 </div>
             </div>
 
@@ -86,13 +91,47 @@
 
                 <div class="form-grid-2" style="margin-top:12px;">
                     <div class="form-group">
-                        <label for="valorTotalLancamento">Valor total (R$) <span style="color:var(--danger);">*</span></label>
+                        <label id="labelValorLancamento" for="valorTotalLancamento">Valor total (R$) <span style="color:var(--danger);">*</span></label>
                         <input type="number" step="0.01" min="0.01" id="valorTotalLancamento" placeholder="0,00" required oninput="atualizarPreviewValor()">
                     </div>
                     <div class="form-group" id="blocoVencimento">
                         <label id="labelDataReferencia" for="vencimentoLancamento">Data <span style="color:var(--danger);">*</span></label>
                         <input type="date" id="vencimentoLancamento" required>
                     </div>
+                </div>
+
+                <!-- Lote: usa categoria, descrição e valor do próprio assistente. -->
+                <div id="blocoPeriodoLote" class="lote-wizard-section" hidden>
+                    <div class="lote-section-heading">
+                        <strong>Como essas contas serão lançadas?</strong>
+                        <span>Uma cobrança em cada mês do período selecionado.</span>
+                    </div>
+                    <div class="form-grid-2">
+                        <div class="form-group">
+                            <label for="formaPagamentoLote">Forma de pagamento</label>
+                            <select id="formaPagamentoLote" onchange="tratarMudancaFormaLote()">
+                                <option value="BOLETO">Boleto / Conta</option>
+                                <option value="DINHEIRO">Dinheiro / Pix / Débito</option>
+                                <option value="FIXO">Conta fixa / mensal</option>
+                                <option value="CARTAO">Cartão de crédito</option>
+                            </select>
+                        </div>
+                        <div class="form-group" id="blocoCartaoLote" hidden>
+                            <label for="cartaoLote">Cartão de crédito</label>
+                            <select id="cartaoLote"></select>
+                        </div>
+                    </div>
+                    <div class="form-grid-2 lote-date-grid">
+                        <div class="form-group">
+                            <label id="labelInicioLote" for="primeiroVencimentoLote">Primeiro vencimento</label>
+                            <input type="date" id="primeiroVencimentoLote" onchange="atualizarPreviewValor()">
+                        </div>
+                        <div class="form-group">
+                            <label id="labelFimLote" for="ultimoVencimentoLote">Último mês de vencimento</label>
+                            <input type="date" id="ultimoVencimentoLote" onchange="atualizarPreviewValor()">
+                        </div>
+                    </div>
+                    <p class="lote-help">O dia do primeiro vencimento será repetido mensalmente, respeitando o último dia de cada mês. Na segunda data, apenas o mês e o ano são considerados. Limite de 120 meses.</p>
                 </div>
 
                 <div class="valor-preview" id="valorPreview" style="display:none;"></div>
@@ -160,6 +199,8 @@
                 <div class="resumo-final" id="resumoFinal"></div>
             </div>
 
+            <div class="wizard-inline-feedback" id="wizardFeedback" role="status" aria-live="polite" hidden></div>
+
             <div class="wizard-nav">
                 <button type="button" class="btn-voltar" id="btnVoltarWizard" onclick="etapaAnterior()" style="visibility:hidden;">← Voltar</button>
                 <button type="button" id="btnProximoWizard" onclick="proximaEtapa()">Continuar →</button>
@@ -167,40 +208,6 @@
             </div>
         </section>
 
-        <!-- ══════════ CONTAS EM LOTE ══════════ -->
-        <section class="form-card">
-            <div class="section-title"><div><h2>Contas em lote</h2><p>Gera uma conta por mês entre as datas informadas.</p></div></div>
-            <form id="formContaLote" onsubmit="salvarContaLoteForm(event)">
-                <div class="form-grid-2">
-                    <div class="form-group"><label for="descricaoLote">Descrição</label><input type="text" id="descricaoLote" maxlength="120" placeholder="Ex.: Seguro do carro" required></div>
-                    <div class="form-group"><label for="valorParcelaLote">Valor mensal (R$)</label><input type="number" step="0.01" min="0.01" id="valorParcelaLote" placeholder="150,00" required></div>
-                </div>
-                <div class="form-grid-2" style="margin-top: 12px;">
-                    <div class="form-group"><label for="categoriaLote">Categoria</label><select id="categoriaLote" required></select></div>
-                    <div class="form-group">
-                        <label for="formaPagamentoLote">Forma de pagamento</label>
-                        <select id="formaPagamentoLote" onchange="tratarMudancaFormaLote()">
-                            <option value="BOLETO">Boleto / Conta</option>
-                            <option value="DINHEIRO">Dinheiro / Pix / Débito</option>
-                            <option value="FIXO">Conta fixa / mensal</option>
-                            <option value="CARTAO">Cartão de crédito</option>
-                        </select>
-                    </div>
-                </div>
-                <div id="blocoCartaoLote" class="form-card nested-card" style="display:none; margin-top:12px; margin-bottom:0; background:var(--surface); box-shadow:none;">
-                    <div class="form-group"><label for="cartaoLote">Cartão de Crédito</label><select id="cartaoLote"></select></div>
-                </div>
-                <div class="form-group" style="margin-top: 12px;">
-                    <label for="bemLote">Vincular a Bem Patrimonial</label>
-                    <select id="bemLote"><option value="">Nenhum bem vinculado</option></select>
-                </div>
-                <div class="form-grid-2" style="margin-top: 12px;">
-                    <div class="form-group"><label id="labelInicioLote" for="primeiroVencimentoLote">Primeiro vencimento</label><input type="date" id="primeiroVencimentoLote" required></div>
-                    <div class="form-group"><label id="labelFimLote" for="ultimoVencimentoLote">Último vencimento</label><input type="date" id="ultimoVencimentoLote" required></div>
-                </div>
-                <button type="submit" class="btn-success btn-full" style="margin-top:16px;">Gerar contas em lote</button>
-            </form>
-        </section>
     </main>
 
     <script src="script.js"></script>
@@ -208,7 +215,32 @@
         // ═══════════════════════════════════════════════════════════════════
         // ESTADO DO WIZARD
         // ═══════════════════════════════════════════════════════════════════
-        const wizardState = { step: 1, intent: null };
+        const wizardState = { step: 1, intent: null, saving: false, avancoPendente: null };
+
+        function mensagemWizard(texto, estado = 'error', campo = null) {
+            const aviso = document.getElementById('wizardFeedback');
+            aviso.textContent = texto;
+            aviso.dataset.state = estado;
+            aviso.hidden = false;
+            if (campo) document.getElementById(campo)?.focus();
+        }
+
+        function limparMensagemWizard() {
+            const aviso = document.getElementById('wizardFeedback');
+            aviso.hidden = true;
+            aviso.textContent = '';
+        }
+
+        function obterPeriodoLote() {
+            const inicio = criarDataLocal(document.getElementById('primeiroVencimentoLote').value);
+            const fim = criarDataLocal(document.getElementById('ultimoVencimentoLote').value);
+            const diferencaMeses = inicio && fim
+                ? (fim.getFullYear() - inicio.getFullYear()) * 12 + fim.getMonth() - inicio.getMonth() : -1;
+            const quantidade = diferencaMeses >= 0 ? diferencaMeses + 1 : 0;
+            const forma = document.getElementById('formaPagamentoLote').value;
+            const cartaoId = forma === 'CARTAO' ? document.getElementById('cartaoLote').value : null;
+            return { inicio, fim, quantidade, forma, cartaoId };
+        }
 
         document.addEventListener('DOMContentLoaded', async () => {
             injetarHeader();
@@ -217,18 +249,17 @@
 
             popularSelectsBens();
             popularSelectsCartoesLote();
-            popularSelectCategoriaLote();
 
             const hojeStr = dataLocalYYYYMMDD();
             ['vencimentoLancamento', 'dataCompraCartao'].forEach(id => {
                 const el = document.getElementById(id);
                 if (el) el.value = hojeStr;
             });
-            const doisMeses = adicionarMesesClamped(criarDataLocal(hojeStr), -2);
             const el1 = document.getElementById('primeiroVencimentoLote');
-            if (el1) el1.value = dataParaString(doisMeses);
+            if (el1) el1.value = hojeStr;
             const el2 = document.getElementById('ultimoVencimentoLote');
             if (el2) el2.value = hojeStr;
+            tratarMudancaFormaLote();
 
             // Suporta deep-link: lancamentos.html?tipo=entrada&forma=CARTAO&cartaoId=5
             const params = new URLSearchParams(window.location.search);
@@ -240,6 +271,7 @@
                 if (qsTipo === 'entrada') intent = 'entrada';
                 else if (qsForma === 'CARTAO') intent = 'cartao';
                 else if (qsForma === 'FIXO') intent = 'fixo';
+                else if (qsForma === 'LOTE' || qsTipo === 'lote') intent = 'lote';
                 setTimeout(() => {
                     escolherIntent(intent);
                     if (qsCartaoId) {
@@ -267,16 +299,21 @@
             voltar.style.visibility = wizardState.step === 1 ? 'hidden' : 'visible';
             document.getElementById('btnProximoWizard').style.display = wizardState.step === 4 ? 'none' : 'inline-block';
             document.getElementById('btnSalvarWizard').style.display = wizardState.step === 4 ? 'inline-block' : 'none';
+            document.getElementById('btnSalvarWizard').textContent = wizardState.intent === 'lote' ? '✓ Gerar contas em lote' : '✓ Salvar lançamento';
         }
 
         function proximaEtapa() {
+            if (wizardState.saving) return;
             if (!validarEtapa(wizardState.step)) return;
+            limparMensagemWizard();
             if (wizardState.step === 3) renderizarResumoFinal();
             wizardState.step = Math.min(4, wizardState.step + 1);
             atualizarWizard();
         }
 
         function etapaAnterior() {
+            if (wizardState.saving) return;
+            limparMensagemWizard();
             wizardState.step = Math.max(1, wizardState.step - 1);
             atualizarWizard();
         }
@@ -284,7 +321,7 @@
         function validarEtapa(step) {
             if (step === 1) {
                 if (!wizardState.intent) {
-                    mostrarAlertaModal('Escolha o tipo de lançamento antes de continuar.');
+                    mensagemWizard('Escolha o tipo de lançamento antes de continuar.');
                     return false;
                 }
                 return true;
@@ -294,17 +331,41 @@
                 const cat = document.getElementById('categoriaLancamento').value;
                 const val = numeroSeguro(document.getElementById('valorTotalLancamento').value);
                 if (!desc || !cat || val <= 0) {
-                    mostrarAlertaModal('Preencha descrição, categoria e um valor maior que zero.');
+                    mensagemWizard('Preencha descrição, categoria e um valor maior que zero.', 'error', !cat ? 'categoriaLancamento' : !desc ? 'descricaoLancamento' : 'valorTotalLancamento');
                     return false;
+                }
+                if (wizardState.intent === 'lote') {
+                    const periodo = obterPeriodoLote();
+                    if (!periodo.inicio || !periodo.fim) {
+                        mensagemWizard('Informe a primeira data e o último mês do lote.', 'error', !periodo.inicio ? 'primeiroVencimentoLote' : 'ultimoVencimentoLote');
+                        return false;
+                    }
+                    if (periodo.quantidade === 0) {
+                        mensagemWizard('O último mês não pode ser anterior ao primeiro vencimento.', 'error', 'ultimoVencimentoLote');
+                        return false;
+                    }
+                    if (periodo.quantidade < 1 || periodo.quantidade > 120) {
+                        mensagemWizard('O período precisa ter entre 1 e 120 meses.', 'error', 'ultimoVencimentoLote');
+                        return false;
+                    }
+                    if (periodo.forma === 'CARTAO') {
+                        const usuarioId = Number(obterUsuarioAtualId());
+                        const cartao = (obterDados().cartoes || []).find(c => String(c.id) === String(periodo.cartaoId) && c.ativo !== false && !c.isBeneficio && Number(c.usuarioId) === usuarioId);
+                        if (!cartao) {
+                            mensagemWizard('Selecione um cartão de crédito ativo.', 'error', 'cartaoLote');
+                            return false;
+                        }
+                    }
+                    return true;
                 }
                 if (wizardState.intent === 'cartao') {
                     const cart = document.getElementById('cartaoLancamento').value;
                     const data = document.getElementById('dataCompraCartao').value;
-                    if (!cart) { mostrarAlertaModal('Selecione um cartão.'); return false; }
-                    if (!data) { mostrarAlertaModal('Informe a data da compra.'); return false; }
+                    if (!cart) { mensagemWizard('Selecione um cartão.', 'error', 'cartaoLancamento'); return false; }
+                    if (!data) { mensagemWizard('Informe a data da compra.', 'error', 'dataCompraCartao'); return false; }
                 } else {
                     if (!document.getElementById('vencimentoLancamento').value) {
-                        mostrarAlertaModal('Informe a data.');
+                        mensagemWizard('Informe a data.', 'error', 'vencimentoLancamento');
                         return false;
                     }
                 }
@@ -317,6 +378,9 @@
         // ESCOLHA DE TIPO E CONFIGURAÇÃO DE CAMPOS
         // ═══════════════════════════════════════════════════════════════════
         function escolherIntent(intent) {
+            if (wizardState.saving) return;
+            clearTimeout(wizardState.avancoPendente);
+            limparMensagemWizard();
             wizardState.intent = intent;
             document.querySelectorAll('.tipo-card').forEach(c => c.classList.remove('selected'));
             document.querySelector(`.tipo-card[data-intent="${intent}"]`)?.classList.add('selected');
@@ -326,25 +390,32 @@
 
             const ehCartao = intent === 'cartao';
             const ehFixo = intent === 'fixo';
+            const ehLote = intent === 'lote';
             const ehEntrada = intent === 'entrada';
             const ehSaida = tipo === 'saida';
 
             document.getElementById('blocoCartao').style.display = ehCartao ? 'block' : 'none';
             document.getElementById('blocoQtdParcelasFixo').style.display = ehFixo ? 'block' : 'none';
-            document.getElementById('blocoVencimento').style.display = ehCartao ? 'none' : 'block';
+            document.getElementById('blocoVencimento').style.display = (ehCartao || ehLote) ? 'none' : 'block';
+            document.getElementById('blocoPeriodoLote').hidden = !ehLote;
+            document.getElementById('labelValorLancamento').innerHTML = ehLote ? 'Valor de cada mês (R$) <span class="campo-obrigatorio">*</span>' : 'Valor total (R$) <span class="campo-obrigatorio">*</span>';
 
             document.getElementById('blocoServicoEssencial').style.display = ehSaida ? 'block' : 'none';
             document.getElementById('blocoEscopo').style.display = ehSaida ? 'block' : 'none';
             document.getElementById('blocoBemLancamento').style.display = ehSaida ? 'block' : 'none';
-            document.getElementById('blocoStatusPagamento').style.display = (ehEntrada || ehCartao) ? 'none' : 'block';
+            document.getElementById('blocoStatusPagamento').style.display = (ehEntrada || ehCartao || ehLote) ? 'none' : 'block';
 
             const labelData = document.getElementById('labelDataReferencia');
             if (labelData) labelData.textContent = ehEntrada ? 'Data de recebimento' : 'Data de vencimento';
 
             tratarMudancaCategoria();
+            if (ehLote) tratarMudancaFormaLote();
             atualizarPreviewValor();
 
-            setTimeout(() => proximaEtapa(), 180);
+            wizardState.avancoPendente = setTimeout(() => {
+                if (wizardState.step === 1) proximaEtapa();
+                wizardState.avancoPendente = null;
+            }, 180);
         }
 
         function tratarMudancaCategoria() {
@@ -382,6 +453,12 @@
                 const qtd = Math.min(48, Math.max(1, inteiroSeguro(document.getElementById('qtdParcelasFixo').value, 12)));
                 preview.style.display = 'block';
                 preview.innerHTML = `<strong>${qtd} cobranças de ${formatarMoeda(valor)}</strong> — Total previsto: ${formatarMoeda(valor * qtd)}`;
+            } else if (intent === 'lote') {
+                const periodo = obterPeriodoLote();
+                preview.style.display = 'block';
+                preview.innerHTML = periodo.quantidade > 0 && periodo.quantidade <= 120
+                    ? `<strong>${periodo.quantidade} ${periodo.quantidade === 1 ? 'conta' : 'contas'} de ${formatarMoeda(valor)}</strong> — Total previsto: ${formatarMoeda(valor * periodo.quantidade)}`
+                    : '<strong>Escolha o primeiro e o último mês</strong> para calcular o total do lote.';
             } else {
                 preview.style.display = 'none';
             }
@@ -397,6 +474,43 @@
             const cat = dados.categorias.find(c => String(c.id) === String(catId));
             const valor = numeroSeguro(document.getElementById('valorTotalLancamento').value);
             const desc = document.getElementById('descricaoLancamento').value.trim();
+
+            if (intent === 'lote') {
+                const periodo = obterPeriodoLote();
+                const bemId = document.getElementById('bemLancamento').value;
+                const bem = (dados.bens || []).find(b => String(b.id) === String(bemId));
+                const cartao = (dados.cartoes || []).find(c => String(c.id) === String(periodo.cartaoId));
+                const formas = { BOLETO: 'Boleto / Conta', DINHEIRO: 'Dinheiro / Pix / Débito', FIXO: 'Conta fixa / mensal', CARTAO: 'Cartão de crédito' };
+                const escopo = bem ? (bem.compartilhado ? 'Casal / Casa' : 'Individual')
+                    : document.getElementById('escopoLancamento').value === 'individual' ? 'Individual' : 'Casal / Casa';
+                const linhasLote = [
+                    ['Tipo', '🗓️ Contas em lote'],
+                    ['Categoria', escaparHTML(cat?.nome || '—')],
+                    ['Descrição', escaparHTML(desc)],
+                    ['Forma de pagamento', escaparHTML(formas[periodo.forma] || periodo.forma)],
+                    [periodo.forma === 'CARTAO' ? 'Primeira compra' : 'Primeiro vencimento', formatarDataBR(dataParaString(periodo.inicio))],
+                    ['Último mês', periodo.fim.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })],
+                    ['Quantidade', `${periodo.quantidade} ${periodo.quantidade === 1 ? 'conta' : 'contas'}`],
+                    ['Valor por mês', formatarMoeda(valor)],
+                    ['Status inicial', 'A pagar (vencidas ficam atrasadas)'],
+                    ['Escopo', escopo]
+                ];
+                if (cartao && periodo.forma === 'CARTAO') linhasLote.push(['Cartão', escaparHTML(cartao.nome)]);
+                if (bem) linhasLote.push(['Bem vinculado', escaparHTML(bem.nome)]);
+                if (document.getElementById('servicoEssencial').value === 'sim') linhasLote.push(['Despesa essencial', 'Sim']);
+                const observacao = document.getElementById('observacaoLancamento').value.trim();
+                if (observacao) linhasLote.push(['Observação', escaparHTML(observacao)]);
+
+                document.getElementById('resumoFinal').innerHTML = `
+                    <div class="resumo-titulo">📋 Confira antes de gerar</div>
+                    <div class="resumo-valor-destaque">${formatarMoeda(valor * periodo.quantidade)}
+                        <small class="lote-resumo-subtotal">Total de ${periodo.quantidade} ${periodo.quantidade === 1 ? 'conta' : 'contas'} de ${formatarMoeda(valor)}</small>
+                    </div>
+                    ${linhasLote.map(([k, v]) => `<div class="resumo-linha"><span>${k}</span><strong>${v}</strong></div>`).join('')}
+                    <p class="lote-resumo-nota">As contas serão criadas sem baixa de pagamento. As vencidas aparecerão como atrasadas; as compras no cartão serão vinculadas às faturas correspondentes.</p>
+                `;
+                return;
+            }
 
             const labelsIntent = {
                 entrada: '💰 Entrada',
@@ -454,8 +568,81 @@
         // ═══════════════════════════════════════════════════════════════════
         // SALVAR
         // ═══════════════════════════════════════════════════════════════════
+        function reiniciarWizard() {
+            clearTimeout(wizardState.avancoPendente);
+            document.querySelectorAll('.tipo-card').forEach(c => c.classList.remove('selected'));
+            document.querySelectorAll('.wizard-step-content input, .wizard-step-content select').forEach(el => {
+                if (el.type === 'number') el.value = el.id === 'qtdParcelasFixo' ? '12' : el.id === 'qtdParcelas' ? '1' : el.id === 'valorHoraExtra' ? '0' : '';
+                else if (el.tagName === 'SELECT') el.selectedIndex = 0;
+                else el.value = '';
+            });
+            const hoje = dataLocalYYYYMMDD();
+            ['vencimentoLancamento', 'dataCompraCartao', 'primeiroVencimentoLote', 'ultimoVencimentoLote'].forEach(id => {
+                const campo = document.getElementById(id);
+                if (campo) campo.value = hoje;
+            });
+            document.getElementById('blocoPeriodoLote').hidden = true;
+            document.getElementById('blocoCartaoLote').hidden = true;
+            document.getElementById('valorPreview').style.display = 'none';
+            wizardState.intent = null;
+            wizardState.step = 1;
+            atualizarWizard();
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+
+        async function salvarContasLoteWizard() {
+            const periodo = obterPeriodoLote();
+            const quantidade = periodo.quantidade;
+            const descricao = document.getElementById('descricaoLancamento').value.trim();
+            const valor = numeroSeguro(document.getElementById('valorTotalLancamento').value);
+            const categoriaId = document.getElementById('categoriaLancamento').value;
+            const bemId = document.getElementById('bemLancamento').value || null;
+            const opcoes = {
+                observacao: document.getElementById('observacaoLancamento').value.trim(),
+                servicoEssencial: document.getElementById('servicoEssencial').value,
+                escopo: document.getElementById('escopoLancamento').value,
+                silencioso: true,
+                onError: mensagem => mensagemWizard(mensagem, 'error')
+            };
+            const botao = document.getElementById('btnSalvarWizard');
+            wizardState.saving = true;
+            botao.disabled = true;
+            botao.textContent = 'Gerando contas...';
+            mensagemWizard(`Registrando ${quantidade} ${quantidade === 1 ? 'conta' : 'contas'} com segurança...`, 'loading');
+            try {
+                const salvo = await adicionarContaLotePorPeriodo(descricao, valor, periodo.inicio, quantidade,
+                    categoriaId, bemId, periodo.forma, periodo.cartaoId, opcoes);
+                if (!salvo) {
+                    if (document.getElementById('wizardFeedback').dataset.state !== 'error') {
+                        mensagemWizard('Não foi possível concluir o lote. Confira as informações e tente novamente.');
+                    }
+                    return;
+                }
+                reiniciarWizard();
+                mensagemWizard(`${quantidade} ${quantidade === 1 ? 'conta criada' : 'contas criadas'} com sucesso! Os lançamentos já estão disponíveis na Central de Pagamentos.`, 'success');
+                document.getElementById('wizardFeedback').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            } catch (erro) {
+                console.error('Falha ao gerar contas em lote:', erro);
+                mensagemWizard(erro.message || 'Não foi possível concluir o lote. Tente novamente.');
+            } finally {
+                wizardState.saving = false;
+                botao.disabled = false;
+                atualizarWizard();
+            }
+        }
+
         async function salvarLancamentoWizard(event) {
             event.preventDefault();
+            if (wizardState.saving) return;
+            if (!validarEtapa(2)) {
+                wizardState.step = 2;
+                atualizarWizard();
+                return;
+            }
+            if (wizardState.intent === 'lote') {
+                await salvarContasLoteWizard();
+                return;
+            }
             const intent = wizardState.intent;
             const tipo = intent === 'entrada' ? 'entrada' : 'saida';
             const forma = intent === 'entrada' ? 'DINHEIRO'
@@ -496,27 +683,11 @@
             });
             if (!salvo) return;
 
-            // Reset
-            document.querySelectorAll('.tipo-card').forEach(c => c.classList.remove('selected'));
-            document.querySelectorAll('.wizard-step-content input, .wizard-step-content select').forEach(el => {
-                if (el.type === 'number') el.value = el.id === 'qtdParcelasFixo' ? '12' : el.id === 'qtdParcelas' ? '1' : el.id === 'valorHoraExtra' ? '0' : '';
-                else if (el.tagName === 'SELECT') el.selectedIndex = 0;
-                else el.value = '';
-            });
-            const hojeStr = dataLocalYYYYMMDD();
-            ['vencimentoLancamento', 'dataCompraCartao'].forEach(id => {
-                const el = document.getElementById(id);
-                if (el) el.value = hojeStr;
-            });
-            document.getElementById('valorPreview').style.display = 'none';
-            wizardState.intent = null;
-            wizardState.step = 1;
-            atualizarWizard();
-            window.scrollTo({ top: 0, behavior: 'smooth' });
+            reiniciarWizard();
         }
 
         // ═══════════════════════════════════════════════════════════════════
-        // FORMULÁRIO DE LOTE (mantido)
+        // SELECTS COMPARTILHADOS ENTRE O LANÇAMENTO E O LOTE
         // ═══════════════════════════════════════════════════════════════════
         function popularSelectsBens() {
             const dados = obterDados();
@@ -524,7 +695,7 @@
             const usuarioId = String(usuario?.id ?? '');
             const parceiroId = String(usuario?.parceiroId ?? '');
             const bensAtivos = (dados.bens || []).filter(b => b.ativo !== false && (b.usuarioId == null || String(b.usuarioId) === usuarioId || (b.compartilhado === true && String(b.usuarioId) === parceiroId)));
-            ['bemLancamento', 'bemLote'].forEach(idSelect => {
+            ['bemLancamento'].forEach(idSelect => {
                 const select = document.getElementById(idSelect);
                 if (!select) return;
                 select.innerHTML = '<option value="">Nenhum bem vinculado</option>';
@@ -546,48 +717,13 @@
             });
         }
 
-        function popularSelectCategoriaLote() {
-            const dados = obterDados();
-            const select = document.getElementById('categoriaLote');
-            if (!select) return;
-            select.innerHTML = '';
-            (dados.categorias || []).filter(c => c.tipo === 'saida').forEach(c => {
-                const option = document.createElement('option'); option.value = c.id; option.textContent = c.nome; select.appendChild(option);
-            });
-            if (!select.options.length) select.innerHTML = '<option value="">Cadastre uma categoria de saída primeiro</option>';
-        }
-
         function tratarMudancaFormaLote() {
             const forma = document.getElementById('formaPagamentoLote').value;
             const usaCartao = forma === 'CARTAO';
-            document.getElementById('blocoCartaoLote').style.display = usaCartao ? 'block' : 'none';
+            document.getElementById('blocoCartaoLote').hidden = !usaCartao;
             document.getElementById('labelInicioLote').textContent = usaCartao ? 'Data da primeira compra' : 'Primeiro vencimento';
-            document.getElementById('labelFimLote').textContent = usaCartao ? 'Data da última compra' : 'Último vencimento';
-        }
-
-        async function salvarContaLoteForm(event) {
-            event.preventDefault();
-            const descricao = document.getElementById('descricaoLote').value.trim();
-            const valor = numeroSeguro(document.getElementById('valorParcelaLote').value);
-            const categoriaId = document.getElementById('categoriaLote').value;
-            const formaPagamento = document.getElementById('formaPagamentoLote').value;
-            const cartaoId = formaPagamento === 'CARTAO' ? (document.getElementById('cartaoLote').value || null) : null;
-            const bemId = document.getElementById('bemLote').value || null;
-            const inicio = document.getElementById('primeiroVencimentoLote').value;
-            const fim = document.getElementById('ultimoVencimentoLote').value;
-            const dataInicio = criarDataLocal(inicio), dataFim = criarDataLocal(fim);
-            if (!descricao || valor <= 0 || !dataInicio || !dataFim) { await mostrarAlertaModal('Preencha os dados do lote.'); return; }
-            if (dataInicio > dataFim) { await mostrarAlertaModal('Data inicial posterior à final.'); return; }
-            const qtdMeses = (dataFim.getFullYear() - dataInicio.getFullYear()) * 12 + (dataFim.getMonth() - dataInicio.getMonth()) + 1;
-            if (qtdMeses < 1 || qtdMeses > 120) { await mostrarAlertaModal('O intervalo deve ter entre 1 e 120 meses.'); return; }
-            if (formaPagamento === 'CARTAO' && !cartaoId) { await mostrarAlertaModal('Selecione um cartão.'); return; }
-            const salvo = await adicionarContaLotePorPeriodo(descricao, valor, dataInicio, qtdMeses, categoriaId, bemId, formaPagamento, cartaoId);
-            if (!salvo) return;
-            document.getElementById('formContaLote').reset();
-            document.getElementById('ultimoVencimentoLote').value = dataLocalYYYYMMDD();
-            document.getElementById('primeiroVencimentoLote').value = dataParaString(adicionarMesesClamped(criarDataLocal(dataLocalYYYYMMDD()), -2));
-            document.getElementById('blocoCartaoLote').style.display = 'none';
-            popularSelectCategoriaLote(); popularSelectsBens(); popularSelectsCartoesLote();
+            document.getElementById('labelFimLote').textContent = usaCartao ? 'Último mês de compra' : 'Último mês de vencimento';
+            atualizarPreviewValor();
         }
     </script>
 </body>

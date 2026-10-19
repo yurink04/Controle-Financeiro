@@ -181,10 +181,31 @@
             if (!tbody) return;
             tbody.innerHTML = '';
 
-            let totalGeral = 0, totalPago = 0, totalPendente = 0;
-
             const labelStatTotal = document.getElementById('labelStatTotal');
             if (labelStatTotal) labelStatTotal.textContent = visaoAtualPagamentos === 'listagem' ? 'Total Filtrado' : 'Total do Período';
+
+            // [MODO DISCRETO] — esconde cabeçalho, mascara totais e substitui tabela por placeholder
+            if (document.body.classList.contains('privacidade-ativa')) {
+                if (cabecalho) cabecalho.style.display = 'none';
+                const colspan = visaoAtualPagamentos === 'parcelada' ? 6 : 7;
+                const elTotalMes = document.getElementById('total-mes');
+                if (elTotalMes) elTotalMes.textContent = formatarMoeda(0);
+                const elTotalPago = document.getElementById('total-pago');
+                if (elTotalPago) elTotalPago.textContent = formatarMoeda(0);
+                const elTotalPendente = document.getElementById('total-pendente');
+                if (elTotalPendente) elTotalPendente.textContent = formatarMoeda(0);
+                tbody.innerHTML = `<tr><td colspan="${colspan}" style="text-align:center;padding:32px 12px;">
+                    <div style="display:flex;flex-direction:column;align-items:center;gap:8px;color:var(--text-muted);">
+                        <span style="font-size:2rem;opacity:.6;">🔒</span>
+                        <strong style="color:var(--text-main);">Pagamentos ocultos</strong>
+                        <span style="font-size:.82rem;">Use o botão de privacidade na barra superior para revelar.</span>
+                    </div>
+                </td></tr>`;
+                return;
+            }
+            if (cabecalho) cabecalho.style.display = '';
+
+            let totalGeral = 0, totalPago = 0, totalPendente = 0;
 
             if (visaoAtualPagamentos === 'parcelada') {
                 const lancamentosSaida = filtrarDadosPorPermissao(dados.lancamentos || [], dados, 'casal').filter(l => {
@@ -310,7 +331,6 @@
                             formaTexto = 'Conta fixa';
                         }
 
-                        // [FIX #3 + #4] Rastreabilidade: badge de origem e botão de histórico
                         const origem = (typeof descreverOrigemLancamento === 'function') ? descreverOrigemLancamento(l, dados) : null;
                         const badgeOrigem = origem
                             ? ` <span title="${escaparHTML(origem.detalhe)}" style="font-size:.85rem;opacity:.85;cursor:help;">${origem.icone}</span>`
@@ -387,7 +407,6 @@
                         const statusTexto = (l.pago === true || l.status === 'pago') ? 'Pago' : (l.status === 'atrasado' ? 'Atrasado' : 'Pendente');
                         const statusClasse = (l.pago === true || l.status === 'pago') ? 'status-pago' : (l.status === 'atrasado' ? 'status-atrasado' : 'status-pendente');
 
-                        // [FIX #3 + #4] Rastreabilidade: badge de origem e botão de histórico
                         const origem = (typeof descreverOrigemLancamento === 'function') ? descreverOrigemLancamento(l, dados) : null;
                         const badgeOrigem = origem
                             ? ` <span title="${escaparHTML(origem.detalhe)}" style="font-size:.85rem;opacity:.85;cursor:help;">${origem.icone}</span>`

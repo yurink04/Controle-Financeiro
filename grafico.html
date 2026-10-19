@@ -295,90 +295,106 @@
         }
 
         function carregarGraficoDetalhado() {
-            const dados = obterDados();
-            const cfg = _graficoConfig || { tipo: 'todos' };
-            const mes = document.getElementById('filtroMesGrafico')?.value || '';
-            const escopo = document.getElementById('filtroEscopoGrafico')?.value || 'casal';
-            const statusFiltro = document.getElementById('filtroStatusGrafico')?.value || 'todos';
-            const busca = normalizarTexto(document.getElementById('filtroBusca')?.value || '');
+    const dados = obterDados();
+    const cfg = _graficoConfig || { tipo: 'todos' };
+    const mes = document.getElementById('filtroMesGrafico')?.value || '';
+    const escopo = document.getElementById('filtroEscopoGrafico')?.value || 'casal';
+    const statusFiltro = document.getElementById('filtroStatusGrafico')?.value || 'todos';
+    const busca = normalizarTexto(document.getElementById('filtroBusca')?.value || '');
 
-            let lista = filtrarDadosPorPermissao(dados.lancamentos || [], dados, escopo);
+    // [MODO DISCRETO] — esconde KPIs e tabela detalhada
+    if (document.body.classList.contains('privacidade-ativa')) {
+        const grid = document.getElementById('containerStatGrid');
+        if (grid) grid.innerHTML = `
+            <div class="stat-box" style="grid-column: 1 / -1;">
+                <div class="privacy-section-placeholder">
+                    <div><strong>Indicadores ocultos</strong></div>
+                    <div style="font-size:0.82rem;font-weight:500;">Toque no banner de privacidade para revelar.</div>
+                </div>
+            </div>`;
+        const tb = document.getElementById('tabelaGraficoDetalhado');
+        if (tb) tb.innerHTML = `<tr><td colspan="7" style="text-align:center;padding:32px 12px;">
+            <div style="display:flex;flex-direction:column;align-items:center;gap:8px;color:var(--text-muted);">
+                <span style="font-size:2rem;opacity:.6;">🔒</span>
+                <strong style="color:var(--text-main);">Movimentações ocultas</strong>
+                <span style="font-size:.82rem;">Toque no banner de privacidade para ver os lançamentos.</span>
+            </div>
+        </td></tr>`;
+        return;
+    }
 
-            // Filtros contextuais vindos do dashboard
-            if (cfg.tipo === 'entradas') lista = lista.filter(l => l.tipo === 'entrada');
-            else if (cfg.tipo === 'saidas') lista = lista.filter(l => l.tipo === 'saida');
-            else if (cfg.tipo === 'categoria' && cfg.categoriaId) lista = lista.filter(l => String(l.categoriaId) === String(cfg.categoriaId));
-            else if (cfg.tipo === 'essencial' && cfg.filtroEss) {
-                lista = lista.filter(l => l.tipo === 'saida');
-                if (cfg.filtroEss === 'sim') lista = lista.filter(l => normalizarTexto(l.servicoEssencial) === 'sim');
-                else if (cfg.filtroEss === 'nao') lista = lista.filter(l => normalizarTexto(l.servicoEssencial) !== 'sim');
-            }
-            else if (cfg.tipo === 'cartao' && cfg.cartaoId) lista = lista.filter(l => String(l.cartaoId) === String(cfg.cartaoId));
+    let lista = filtrarDadosPorPermissao(dados.lancamentos || [], dados, escopo);
 
-            // Filtro por mês
-            if (mes) lista = lista.filter(l => String(l.vencimento || l.dataCompra || '').startsWith(mes));
+    if (cfg.tipo === 'entradas') lista = lista.filter(l => l.tipo === 'entrada');
+    else if (cfg.tipo === 'saidas') lista = lista.filter(l => l.tipo === 'saida');
+    else if (cfg.tipo === 'categoria' && cfg.categoriaId) lista = lista.filter(l => String(l.categoriaId) === String(cfg.categoriaId));
+    else if (cfg.tipo === 'essencial' && cfg.filtroEss) {
+        lista = lista.filter(l => l.tipo === 'saida');
+        if (cfg.filtroEss === 'sim') lista = lista.filter(l => normalizarTexto(l.servicoEssencial) === 'sim');
+        else if (cfg.filtroEss === 'nao') lista = lista.filter(l => normalizarTexto(l.servicoEssencial) !== 'sim');
+    }
+    else if (cfg.tipo === 'cartao' && cfg.cartaoId) lista = lista.filter(l => String(l.cartaoId) === String(cfg.cartaoId));
 
-            // Filtro por Status
-            if (statusFiltro !== 'todos') {
-                lista = lista.filter(l => {
-                    const st = l.pago ? 'pago' : (l.status === 'atrasado' ? 'atrasado' : 'pendente');
-                    return st === statusFiltro;
-                });
-            }
+    if (mes) lista = lista.filter(l => String(l.vencimento || l.dataCompra || '').startsWith(mes));
 
-            // Busca livre
-            if (busca) {
-                const nomeCatBusca = id => (dados.categorias.find(x => String(x.id) === String(id)) || {}).nome || '';
-                lista = lista.filter(l => {
-                    const txt = `${l.descricao || ''} ${nomeCatBusca(l.categoriaId)} ${l.formaPagamento || ''} ${l.observacao || ''}`;
-                    return normalizarTexto(txt).includes(busca);
-                });
-            }
+    if (statusFiltro !== 'todos') {
+        lista = lista.filter(l => {
+            const st = l.pago ? 'pago' : (l.status === 'atrasado' ? 'atrasado' : 'pendente');
+            return st === statusFiltro;
+        });
+    }
 
-            lista.sort((a, b) => String(b.vencimento || b.dataCompra || '').localeCompare(String(a.vencimento || a.dataCompra || '')));
+    if (busca) {
+        const nomeCatBusca = id => (dados.categorias.find(x => String(x.id) === String(id)) || {}).nome || '';
+        lista = lista.filter(l => {
+            const txt = `${l.descricao || ''} ${nomeCatBusca(l.categoriaId)} ${l.formaPagamento || ''} ${l.observacao || ''}`;
+            return normalizarTexto(txt).includes(busca);
+        });
+    }
 
-            // Atualiza os cards dinâmicos do topo
-            renderizarCardsDinamicos(lista, cfg, dados);
+    lista.sort((a, b) => String(b.vencimento || b.dataCompra || '').localeCompare(String(a.vencimento || a.dataCompra || '')));
 
-            const tb = document.getElementById('tabelaGraficoDetalhado');
-            if (!tb) return;
+    renderizarCardsDinamicos(lista, cfg, dados);
 
-            if (!lista.length) {
-                tb.innerHTML = '<tr><td colspan="7" class="muted" style="text-align:center; padding: 30px;">Nenhuma movimentação encontrada para os filtros selecionados.</td></tr>';
-                return;
-            }
+    const tb = document.getElementById('tabelaGraficoDetalhado');
+    if (!tb) return;
 
-            const nomeCat = id => (dados.categorias.find(x => String(x.id) === String(id)) || {}).nome || 'Sem categoria';
-            tb.innerHTML = lista.map(l => {
-                const ent = l.tipo === 'entrada';
-                const st = l.pago ? 'Pago' : (l.status === 'atrasado' ? 'Atrasado' : 'Pendente');
-                const stCls = l.pago ? 'status-pago' : (l.status === 'atrasado' ? 'status-atrasado' : 'status-pendente');
-                
-                const fId = l.faturaId || (l.formaPagamento === 'CARTAO' && l.cartaoId && l.vencimento ? `fat_${l.cartaoId}_${String(l.vencimento).slice(0, 7)}` : null);
-                const podeAlternar = !fId && l.formaPagamento !== 'CARTAO';
-                
-                let acaoPagar;
-                if (podeAlternar) {
-                    acaoPagar = `<button class="btn-acao-icone ${l.pago ? 'desfazer' : 'pagar'}" title="${l.pago ? 'Desfazer pagamento' : 'Marcar como pago'}" onclick="alternarStatusPagamento('${escaparHTML(l.id)}').then(function(ok){ if(ok) carregarGraficoDetalhado(); })"><img src="imagens/${l.pago ? 'desfazer' : 'pagar'}.png" style="width:18px;" alt="Ação"></button>`;
-                } else {
-                    const mesFat = String(l.vencimento).slice(0, 7);
-                    acaoPagar = `<a href="grafico.html?tipo=cartao&cartaoId=${l.cartaoId}&mes=${mesFat}" class="btn-acao-icone ver-fatura" title="Ir para o espelho da Fatura" style="display:inline-flex; align-items:center; justify-content:center; text-decoration:none;"><span style="font-size:16px;">💳</span></a>`;
-                }
+    if (!lista.length) {
+        tb.innerHTML = '<tr><td colspan="7" class="muted" style="text-align:center; padding: 30px;">Nenhuma movimentação encontrada para os filtros selecionados.</td></tr>';
+        return;
+    }
 
-                return `<tr>
-                    <td>${formatarDataBR(l.vencimento || l.dataCompra)}</td>
-                    <td><strong>${escaparHTML(l.descricao || '-')}</strong></td>
-                    <td>${escaparHTML(nomeCat(l.categoriaId))}</td>
-                    <td>${escaparHTML(l.formaPagamento || '-')}</td>
-                    <td><span class="status-badge ${stCls}">${st}</span></td>
-                    <td class="${ent ? 'positivo' : 'negativo'}">${ent ? '+' : '-'} ${formatarMoeda(l.valor)}</td>
-                    <td style="text-align:center;">
-                        <a href="editar-lancamento.html?id=${encodeURIComponent(String(l.id))}&returnUrl=grafico.html" class="btn-acao-icone editar" title="Editar"><img src="imagens/editar.png" style="width:18px;" alt="Editar"></a>
-                        ${acaoPagar}
-                    </td>
-                </tr>`;
-            }).join('');
+    const nomeCat = id => (dados.categorias.find(x => String(x.id) === String(id)) || {}).nome || 'Sem categoria';
+    tb.innerHTML = lista.map(l => {
+        const ent = l.tipo === 'entrada';
+        const st = l.pago ? 'Pago' : (l.status === 'atrasado' ? 'Atrasado' : 'Pendente');
+        const stCls = l.pago ? 'status-pago' : (l.status === 'atrasado' ? 'status-atrasado' : 'status-pendente');
+
+        const fId = l.faturaId || (l.formaPagamento === 'CARTAO' && l.cartaoId && l.vencimento ? `fat_${l.cartaoId}_${String(l.vencimento).slice(0, 7)}` : null);
+        const podeAlternar = !fId && l.formaPagamento !== 'CARTAO';
+
+        let acaoPagar;
+        if (podeAlternar) {
+            acaoPagar = `<button class="btn-acao-icone ${l.pago ? 'desfazer' : 'pagar'}" title="${l.pago ? 'Desfazer pagamento' : 'Marcar como pago'}" onclick="alternarStatusPagamento('${escaparHTML(l.id)}').then(function(ok){ if(ok) carregarGraficoDetalhado(); })"><img src="imagens/${l.pago ? 'desfazer' : 'pagar'}.png" style="width:18px;" alt="Ação"></button>`;
+        } else {
+            const mesFat = String(l.vencimento).slice(0, 7);
+            acaoPagar = `<a href="grafico.html?tipo=cartao&cartaoId=${l.cartaoId}&mes=${mesFat}" class="btn-acao-icone ver-fatura" title="Ir para o espelho da Fatura" style="display:inline-flex; align-items:center; justify-content:center; text-decoration:none;"><span style="font-size:16px;">💳</span></a>`;
         }
+
+        return `<tr>
+            <td>${formatarDataBR(l.vencimento || l.dataCompra)}</td>
+            <td><strong>${escaparHTML(l.descricao || '-')}</strong></td>
+            <td>${escaparHTML(nomeCat(l.categoriaId))}</td>
+            <td>${escaparHTML(l.formaPagamento || '-')}</td>
+            <td><span class="status-badge ${stCls}">${st}</span></td>
+            <td class="${ent ? 'positivo' : 'negativo'}">${ent ? '+' : '-'} ${formatarMoeda(l.valor)}</td>
+            <td style="text-align:center;">
+                <a href="editar-lancamento.html?id=${encodeURIComponent(String(l.id))}&returnUrl=grafico.html" class="btn-acao-icone editar" title="Editar"><img src="imagens/editar.png" style="width:18px;" alt="Editar"></a>
+                ${acaoPagar}
+            </td>
+        </tr>`;
+    }).join('');
+}
     </script>
 </body>
 </html>

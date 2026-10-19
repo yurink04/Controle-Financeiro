@@ -7,115 +7,24 @@
     <title>Controle Financeiro | Acesso</title>
 
     <link rel="stylesheet" href="style.css">
-    <style>
-        /* Tela de carregamento imersiva pós-login */
-        #loginLoadingScreen {
-            position: fixed;
-            inset: 0;
-            background: var(--bg-primary);
-            z-index: 9999;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            opacity: 0;
-            pointer-events: none;
-            transition: opacity 0.5s ease;
-        }
-        #loginLoadingScreen.ativo {
-            opacity: 1;
-            pointer-events: auto;
-        }
-        .loading-profile-img {
-            width: 300px;
-            height: 300px;
-            border-radius: 50%;
-            object-fit: cover;
-            border: 6px solid var(--primary);
-            box-shadow: 0 25px 60px rgba(0,0,0,0.35);
-            animation: pulseProfile 1.8s infinite ease-in-out;
-            background: var(--surface-2);
-        }
-        @keyframes pulseProfile {
-            0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(139, 94, 60, 0.4); }
-            70% { transform: scale(1.05); box-shadow: 0 0 0 32px rgba(139, 94, 60, 0); }
-            100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(139, 94, 60, 0); }
-        }
-        .btn-voltar-usuario {
-            background: none;
-            border: none;
-            color: var(--primary);
-            font-size: 0.85rem;
-            font-weight: 600;
-            cursor: pointer;
-            padding: 0;
-            margin-top: 4px;
-            display: inline-flex;
-            align-items: center;
-            gap: 4px;
-            text-decoration: underline;
-            transition: opacity 0.2s;
-        }
-        .btn-voltar-usuario:hover {
-            opacity: 0.8;
-        }
-        /* Transição de esmaecimento para os textos dinâmicos */
-        .loading-fade-text {
-            transition: opacity 0.35s ease-in-out;
-            opacity: 1;
-        }
-        .loading-fade-text.esmaecendo {
-            opacity: 0;
-        }
-        /* Barra de progresso da tela de carregamento */
-        .loading-progress-bar-container {
-            width: 280px;
-            height: 8px;
-            background: var(--surface-2);
-            border-radius: 99px;
-            overflow: hidden;
-            border: 1px solid var(--border);
-            margin-top: 18px;
-        }
-        .loading-progress-bar-fill {
-            height: 100%;
-            width: 0%;
-            background: var(--primary);
-            border-radius: 99px;
-            transition: width 0.1s linear;
-        }
-        /* Durante a validação, use somente o GIF como indicador de carregamento.
-           Desativa spinners/dots antigos criados por pseudo-elementos no CSS global. */
-        .login-submit.loading::before,
-        .login-submit.loading::after,
-        .login-submit.loading *::before,
-        .login-submit.loading *::after {
-            content: none !important;
-            display: none !important;
-            visibility: hidden !important;
-            animation: none !important;
-            transform: none !important;
-        }
-
-        .login-submit.loading #loginSubmitLoadingGif {
-            display: inline-block !important;
-            width: 24px !important;
-            height: 24px !important;
-            object-fit: contain;
-            vertical-align: middle;
-        }
-    </style>
 </head>
 
 <body class="login-page">
 
-    <!-- TELA DE CARREGAMENTO COM FOTO 50% MAIOR E TEXTOS COM ESMAECIMENTO -->
-    <div id="loginLoadingScreen">
-        <div style="display: flex; flex-direction: column; align-items: center; text-align: center; max-width: 520px; padding: 24px;">
-            <img id="loadingUserAvatar" src="" alt="Perfil" class="loading-profile-img" style="margin-bottom: 26px;">
-            <h3 id="loadingWelcomeText" class="loading-fade-text" style="font-size: 1.65rem; color: var(--text-main); margin-bottom: 8px; font-weight: 850; line-height: 1.3;">Bem-vindo!</h3>
-            <p id="loadingSubtext" class="loading-fade-text" style="font-size: 1rem; color: var(--text-muted); margin-bottom: 6px; line-height: 1.6; min-height: 32px; display: flex; align-items: center; justify-content: center;">Iniciando sessão...</p>
-            <div id="loadingPercentageText" class="loading-fade-text" style="font-size: 0.9rem; font-weight: 700; color: var(--primary);">0%</div>
+    <!-- Abertura breve: o teste da API acontece ao mesmo tempo. -->
+    <div class="login-intro" id="loginIntro" aria-hidden="true">
+        <div class="login-intro-mark">R<span>$</span></div>
+        <div class="login-intro-copy">
+            <span>CONTROLE FINANCEIRO</span>
+            <strong>Seu dia, mais leve.</strong>
+        </div>
+    </div>
+
+    <div id="loginLoadingScreen" role="status" aria-live="polite">
+        <div class="loading-profile-wrap">
+            <img id="loadingUserAvatar" src="" alt="Perfil" class="loading-profile-img">
+            <h3 id="loadingWelcomeText" class="loading-fade-text">Tudo certo com sua conta.</h3>
+            <p id="loadingSubtext" class="loading-fade-text">Carregando seus dados...</p>
             <div class="loading-progress-bar-container">
                 <div id="loadingProgressBarFill" class="loading-progress-bar-fill"></div>
             </div>
@@ -123,53 +32,23 @@
     </div>
 
     <button type="button" class="login-theme-toggle" onclick="alternarTemaVisual(event)" title="Alternar tema">
-        <img id="themeImage" class="theme-icon" src="imagens/modo_escuro.jpg" alt="Tema" style="width: 22px; height: 22px; border-radius: 50%; object-fit: contain;">
+        <img id="themeImage" class="theme-icon" src="imagens/modo_escuro.jpg" alt="Tema">
     </button>
 
     <main class="login-screen">
 
-        <section class="login-brand-panel">
-            <div class="login-brand-content">
-                <div class="login-brand-logo">R$</div>
-                <div class="login-brand-label">CONTROLE FINANCEIRO</div>
-                <h1>Seu dinheiro.<br><span>Sob controle.</span></h1>
-                <p class="login-brand-description">Organize suas receitas, despesas, cartões e financiamentos em um só lugar.</p>
-
-                <!-- CARDS DECORATIVOS -->
-                <div class="login-finance-preview">
-                    <div class="finance-preview-card">
-                        <span>Receitas</span>
-                        <strong class="finance-positive">R$ 4.850,00</strong>
-                        <small>Este mês</small>
-                    </div>
-                    <div class="finance-preview-card">
-                        <span>Despesas</span>
-                        <strong class="finance-negative">R$ 2.730,00</strong>
-                        <small>Este mês</small>
-                    </div>
-                    <div class="finance-preview-card finance-preview-highlight">
-                        <span>Saldo disponível</span>
-                        <strong>R$ 2.120,00</strong>
-                        <small>Controle em dia</small>
-                    </div>
-                </div>
-
-                <div class="login-brand-footer">
-                    <span class="login-footer-dot"></span>
-                    Sistema de controle pessoal
-                </div>
-            </div>
-        </section>
-
         <!-- PAINEL DIREITO -->
-        <section class="login-form-panel">
+        <section class="login-form-panel" aria-label="Entrar no sistema">
             <div class="login-form-wrapper">
-                <div class="login-mobile-logo">R$</div>
+                <div class="login-brand-head">
+                    <div class="login-mobile-logo">R<span>$</span></div>
+                    <div class="login-brand-label">CONTROLE<br>FINANCEIRO</div>
+                </div>
 
                 <div class="login-heading" id="loginHeadingContainer">
-                    <span class="login-eyebrow" id="loginEyebrowText">BEM-VINDO DE VOLTA</span>
-                    <h2 id="loginTitleText">Acesse sua conta</h2>
-                    <p id="loginSubtitleText">Digite o seu nome de usuário para continuar.</p>
+                    <span class="login-eyebrow" id="loginEyebrowText">SEU ESPAÇO FINANCEIRO</span>
+                    <h2 id="loginTitleText">Vamos entrar?</h2>
+                    <p id="loginSubtitleText">Informe seu usuário para continuar.</p>
                 </div>
 
                 <form id="formLogin" onsubmit="realizarLogin(event)">
@@ -177,7 +56,7 @@
                     <!-- Campo usuário -->
                     <div class="login-field" id="blocoUsuarioContainer">
                         <label for="inputUsuario">Usuário</label>
-                        <div class="login-select-wrapper" id="wrapperInputUsuario" style="padding: 0 12px; display: flex; align-items: center; gap: 10px;">
+                        <div class="login-select-wrapper" id="wrapperInputUsuario">
                             <span class="login-field-icon" id="iconeUsuarioPadrao">👤</span>
                             <input
                                 type="text"
@@ -185,22 +64,22 @@
                                 placeholder="Digite seu nome de usuário"
                                 autocomplete="username"
                                 required
-                                style="border: none; background: transparent; width: 100%; outline: none; font-size: 0.96rem; color: var(--text-main);"
+                                class="login-input"
                             >
                         </div>
                     </div>
 
                     <!-- Campo de senha oculto inicialmente -->
-                    <div class="login-field" id="blocoSenha" style="display: none; margin-top: 15px;">
-                        <label for="inputSenha">Palavra-passe</label>
-                        <div class="login-select-wrapper" style="padding: 0 12px;">
+                    <div class="login-field" id="blocoSenha" hidden>
+                        <label for="inputSenha">Senha</label>
+                        <div class="login-select-wrapper">
                             <span class="login-field-icon">🔒</span>
                             <input
                                 type="password"
                                 id="inputSenha"
                                 placeholder="Digite sua senha"
                                 autocomplete="current-password"
-                                style="border: none; background: transparent; width: 100%; outline: none; font-size: 0.96rem; color: var(--text-main);"
+                                class="login-input"
                             >
                         </div>
                     </div>
@@ -209,24 +88,25 @@
                         <span class="login-submit-content">
                             <span class="login-submit-text">Continuar</span>
                             <span class="login-submit-arrow" id="loginSubmitArrow">→</span>
-                            <img id="loginSubmitLoadingGif" src="imagens/loading1.gif" alt="Carregando..." style="width: 24px; height: 24px; object-fit: contain; display: none; margin-left: 8px; vertical-align: middle;">
+                            <img id="loginSubmitLoadingGif" src="imagens/loading1.gif" alt="" aria-hidden="true">
                         </span>
                     </button>
 
                 </form>
 
-                <div class="login-security" id="cardPrimeiroAcesso" style="cursor: pointer;" onclick="abrirModalPrimeiroAcesso()" title="Clique para cadastrar sua conta">
-                    <div class="login-security-icon">👤+</div>
-                    <div>
-                        <strong>Primeiro acesso</strong>
-                        <p>Clique aqui para cadastrar seu usuário, nome e senha.</p>
-                    </div>
+                <div class="login-new-user" id="cardPrimeiroAcesso">
+                    <span>É novo por aqui?</span>
+                    <button type="button" id="btnPrimeiroAcesso" onclick="abrirModalPrimeiroAcesso()">Criar acesso <span aria-hidden="true">↗</span></button>
                 </div>
 
-                <div class="login-form-footer">
-                    <span>Controle Financeiro</span>
-                    <span>•</span>
-                    <span>Acesso seguro</span>
+                <div class="login-connection" id="loginConnection" data-state="loading" role="status" aria-live="polite">
+                    <div class="login-connection-main">
+                        <span class="login-connection-dot" aria-hidden="true"></span>
+                        <span id="loginStatusText">Conectando ao servidor...</span>
+                        <img class="login-status-gif" src="imagens/loading1.gif" alt="" aria-hidden="true">
+                        <button type="button" class="login-retry" id="loginRetry" onclick="tentarConexaoNovamente()" hidden>Tentar novamente</button>
+                    </div>
+                    <div class="login-status-track" aria-hidden="true"><div class="login-status-fill"></div></div>
                 </div>
             </div>
         </section>
@@ -237,28 +117,94 @@
 
     <script>
         let bancoInicializado = false;
+        let primeiroCadastroDisponivel = false;
+        let loginOcupado = false;
         let usuarioSelecionadoParaLogin = null;
         const AVATAR_PADRAO = 'data:image/svg+xml;charset=UTF-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22%23a89586%22%3E%3Cpath%20d%3D%22M12%2012c2.21%200%204-1.79%204-4s-1.79-4-4-4-4%201.79-4%204%201.79%204%204%204zm0%202c-2.67%200-8%201.34-8%204v2h16v-2c0-2.66-5.33-4-8-4z%22%2F%3E%3C%2Fsvg%3E';
 
-        document.addEventListener("DOMContentLoaded", async () => {
+        function atualizarStatusLogin(mensagem, estado = 'loading') {
+            const painel = document.getElementById('loginConnection');
+            const texto = document.getElementById('loginStatusText');
+            if (texto) texto.textContent = mensagem;
+            if (painel) painel.dataset.state = estado;
+            const retry = document.getElementById('loginRetry');
+            if (retry) retry.hidden = estado !== 'error' || bancoInicializado;
+        }
+
+        async function testarConexaoInicial() {
             const botao = document.getElementById("loginSubmit");
+            const retry = document.getElementById('loginRetry');
+            if (retry) retry.disabled = true;
             if (botao) botao.disabled = true;
+            bancoInicializado = false;
+            atualizarStatusLogin('Verificando conexão...', 'loading');
+            const controle = new AbortController();
+            const limite = setTimeout(() => controle.abort(), 12000);
             try {
-                const resposta = await fetch(`${API_URL}?action=ping&token=${encodeURIComponent(TOKEN_API)}`, { cache: 'no-store' });
+                const resposta = await fetch(`${API_URL}?action=ping&token=${encodeURIComponent(TOKEN_API)}`, {
+                    cache: 'no-store', signal: controle.signal
+                });
                 if (!resposta.ok) throw new Error("A API não está acessível.");
                 const json = await resposta.json();
-                if (json.status !== 'sucesso') throw new Error("Erro na resposta da API.");
+                if (json.status !== 'sucesso') throw new Error(json.mensagem || 'Servidor não autorizado.');
                 bancoInicializado = true;
+                atualizarStatusLogin('Servidor conectado. Pronto para entrar.', 'success');
+                try {
+                    const statusResposta = await fetch(`${API_URL}?action=statusCadastro&token=${encodeURIComponent(TOKEN_API)}`, { cache: 'no-store', signal: controle.signal });
+                    const statusCadastro = await statusResposta.json();
+                    primeiroCadastroDisponivel = statusCadastro.status === 'sucesso' && statusCadastro.primeiroCadastroDisponivel === true;
+                } catch (_) { primeiroCadastroDisponivel = false; }
+                const acessoInicial = document.getElementById('cardPrimeiroAcesso');
+                if (acessoInicial) acessoInicial.style.display = primeiroCadastroDisponivel ? 'flex' : 'none';
             } catch (erro) {
-                console.warn("Aviso de conexão inicial:", erro);
-                bancoInicializado = Boolean(localStorage.getItem("sistemaFinanceiroCompartilhado"));
-                if (!bancoInicializado) {
-                    await mostrarAlertaModal("Não foi possível conectar com o servidor. Verifique a URL da API e a conexão com a internet.");
-                }
+                console.warn('Conexão inicial indisponível:', erro);
+                const mensagem = erro.name === 'AbortError'
+                    ? 'Servidor demorou a responder.'
+                    : erro.message === 'Acesso não autorizado'
+                        ? 'Credencial da API não autorizada. Confira a configuração.'
+                        : erro.message.includes('SENHA_')
+                            ? 'Configuração do Apps Script pendente.'
+                            : !navigator.onLine
+                                ? 'Sem conexão com a internet.'
+                                : 'Não foi possível alcançar o servidor.';
+                atualizarStatusLogin(mensagem, 'error');
             } finally {
+                clearTimeout(limite);
                 if (botao) botao.disabled = !bancoInicializado;
+                if (retry) retry.disabled = false;
             }
+        }
+
+        function tentarConexaoNovamente() { return testarConexaoInicial(); }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            testarConexaoInicial();
+            // A animação acolhe sem segurar a interação por causa da rede.
+            const intro = document.getElementById('loginIntro');
+            setTimeout(() => {
+                intro?.classList.add('saindo');
+                setTimeout(() => intro?.remove(), 550);
+            }, window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : 950);
         });
+
+        async function consultarLoginServidor(payload) {
+            const controle = new AbortController();
+            const limite = setTimeout(() => controle.abort(), 18000);
+            try {
+                const resposta = await fetch(API_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                    body: JSON.stringify({ action: 'verificarCredenciaisLogin', token: TOKEN_API, ...payload }),
+                    signal: controle.signal
+                });
+                if (!resposta.ok) throw new Error(`Servidor não respondeu (HTTP ${resposta.status}).`);
+                const dados = await resposta.json();
+                if (!dados || typeof dados.status !== 'string') throw new Error('Resposta inesperada da autenticação.');
+                return dados;
+            } finally {
+                clearTimeout(limite);
+            }
+        }
 
         async function realizarLogin(event) {
             if (event) event.preventDefault();
@@ -278,11 +224,14 @@
             const loginSubtitleText = document.getElementById("loginSubtitleText");
             const cardPrimeiroAcesso = document.getElementById("cardPrimeiroAcesso");
 
+            if (loginOcupado) return;
             if (!bancoInicializado) {
-                await mostrarAlertaModal("Aguarde a conexão com o servidor ser estabelecida.");
+                atualizarStatusLogin('Conexão necessária para entrar. Tente novamente.', 'error');
                 return;
             }
 
+            loginOcupado = true;
+            if (botao) botao.disabled = true;
             try {
                 // PASSO 1: IDENTIFICAR O USUÁRIO DIGITADO E BUSCAR APENAS OS DADOS DELE NO SERVIDOR
                 if (!usuarioSelecionadoParaLogin) {
@@ -293,24 +242,14 @@
                     if (spanTextoBotao) spanTextoBotao.textContent = "Validando usuário...";
                     if (setaBotao) setaBotao.style.display = "none";
                     if (gifLoadingBotao) gifLoadingBotao.style.display = "inline-block";
+                    atualizarStatusLogin('Procurando seu usuário...', 'loading');
 
-                    const respostaCheck = await fetch(API_URL, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-                        body: JSON.stringify({
-                            action: 'verificarCredenciaisLogin',
-                            token: TOKEN_API,
-                            usuario: usuarioDigitado,
-                            senhaHash: 'CHECK_APENAS_USUARIO'
-                        })
+                    const resultadoCheck = await consultarLoginServidor({
+                        usuario: usuarioDigitado,
+                        senhaHash: 'CHECK_APENAS_USUARIO'
                     });
-
-                    if (!respostaCheck.ok) throw new Error("Erro de comunicação com o servidor.");
-                    const resultadoCheck = await respostaCheck.json();
-
-                    if (resultadoCheck.status === 'erro' && resultadoCheck.mensagem === 'Palavra-passe incorreta.') {
-                        // Usuário existe
-                    } else if (resultadoCheck.status !== 'sucesso' && !resultadoCheck.usuario) {
+                    if (resultadoCheck.status !== 'sucesso' || !resultadoCheck.usuario) {
+                        atualizarStatusLogin(resultadoCheck.mensagem || 'Usuário não encontrado.', 'error');
                         await mostrarAlertaModal(resultadoCheck.mensagem || "Usuário não encontrado no sistema.");
                         if (botao) botao.classList.remove("loading");
                         if (spanTextoBotao) spanTextoBotao.textContent = "Continuar";
@@ -359,11 +298,13 @@
 
                     if (cardPrimeiroAcesso) cardPrimeiroAcesso.style.display = 'none';
 
+                    blocoSenha.hidden = false;
                     blocoSenha.style.display = 'block';
                     if (botao) botao.classList.remove("loading");
                     if (spanTextoBotao) spanTextoBotao.textContent = "Entrar no Sistema";
                     if (setaBotao) setaBotao.style.display = "inline";
                     if (gifLoadingBotao) gifLoadingBotao.style.display = "none";
+                    atualizarStatusLogin('Usuário localizado. Informe sua senha.', 'success');
                     
                     setTimeout(() => inputSenha.focus(), 50);
                     return;
@@ -380,24 +321,16 @@
                 if (spanTextoBotao) spanTextoBotao.textContent = "Validando senha...";
                 if (setaBotao) setaBotao.style.display = "none";
                 if (gifLoadingBotao) gifLoadingBotao.style.display = "inline-block";
+                atualizarStatusLogin('Conferindo suas credenciais...', 'loading');
 
                 const hashDigitado = await gerarHash(senhaDigitada);
-
-                const respostaAuth = await fetch(API_URL, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-                    body: JSON.stringify({
-                        action: 'verificarCredenciaisLogin',
-                        token: TOKEN_API,
-                        usuario: usuarioSelecionadoParaLogin.usuario || usuarioSelecionadoParaLogin.nome,
-                        senhaHash: hashDigitado
-                    })
+                const resultadoAuth = await consultarLoginServidor({
+                    usuario: usuarioSelecionadoParaLogin.usuario || usuarioSelecionadoParaLogin.nome,
+                    senhaHash: hashDigitado
                 });
 
-                if (!respostaAuth.ok) throw new Error("Erro de comunicação com o servidor.");
-                const resultadoAuth = await respostaAuth.json();
-
-                if (resultadoAuth.status !== 'sucesso') {
+                if (resultadoAuth.status !== 'sucesso' || !resultadoAuth.usuario?.id) {
+                    atualizarStatusLogin(resultadoAuth.mensagem || 'Senha incorreta.', 'error');
                     await mostrarAlertaModal(resultadoAuth.mensagem || "Palavra-passe incorreta.");
                     inputSenha.value = '';
                     inputSenha.focus();
@@ -408,12 +341,19 @@
                     return;
                 }
 
-                // EXIBIR TELA DE CARREGAMENTO IMERSIVA COM FOTO AMPLIADA E PROGRESSO
+                if (!resultadoAuth.sessao) throw new Error('O servidor não retornou uma sessão de acesso. Atualize também o Code.gs implantado.');
+                const donoPendente = localStorage.getItem(CHAVE_DONO_PENDENCIAS);
+                if (localStorage.getItem('syncPendente') === 'true' && donoPendente && donoPendente !== String(resultadoAuth.usuario.id)) {
+                    throw new Error('Existem alterações financeiras não sincronizadas de outra conta neste navegador. Entre primeiro na conta anterior para sincronizá-las.');
+                }
+                sessionStorage.setItem(CHAVE_SESSAO_API, resultadoAuth.sessao);
+                sessionStorage.setItem(CHAVE_USUARIO_SESSAO, String(resultadoAuth.usuario.id));
+
+                // Login confirmado: o progresso agora representa etapas reais.
                 const telaCarregamento = document.getElementById("loginLoadingScreen");
                 const avatarCarregamento = document.getElementById("loadingUserAvatar");
                 const textoBoasVindas = document.getElementById("loadingWelcomeText");
                 const subtextoCarregamento = document.getElementById("loadingSubtext");
-                const textoPorcentagem = document.getElementById("loadingPercentageText");
                 const barraPreenchimento = document.getElementById("loadingProgressBarFill");
 
                 if (avatarCarregamento) {
@@ -425,74 +365,35 @@
                 if (telaCarregamento) {
                     telaCarregamento.classList.add("ativo");
                 }
+                if (barraPreenchimento) barraPreenchimento.classList.add('indeterminado');
+                if (subtextoCarregamento) subtextoCarregamento.textContent = 'Sincronizando seus dados...';
+                atualizarStatusLogin('Carregando informações da conta...', 'loading');
 
-                // Grava a sessão localmente
+                await inicializarBanco();
+                const dadosCarregados = obterDados();
+                if (!dadosCarregados.usuarios.some(u => String(u.id) === String(resultadoAuth.usuario.id) && u.ativo !== false)) {
+                    throw new Error('A conta autenticada não foi encontrada nos dados carregados.');
+                }
+                // A sessão só é gravada após os dados essenciais estarem disponíveis.
                 localStorage.setItem('usuarioLogado', String(resultadoAuth.usuario.id));
                 localStorage.setItem('privacidadeAtiva', 'true');
-
-                // Função auxiliar para trocar o texto com transição de esmaecimento (fade)
-                function atualizarTextoComFade(elemento, novoTexto) {
-                    if (!elemento) return;
-                    elemento.classList.add("esmaecendo");
-                    setTimeout(() => {
-                        elemento.textContent = novoTexto;
-                        elemento.classList.remove("esmaecendo");
-                    }, 175);
+                if (barraPreenchimento) {
+                    barraPreenchimento.classList.remove('indeterminado');
+                    barraPreenchimento.style.width = '100%';
                 }
-
-                // Execução paralela: Sincronização completa do banco + simulação fluida de progresso 1-100% (2.8 segundos)
-                let progressoAtual = 0;
-                let bancoPronto = false;
-                const duracaoTotalMs = 1200;
-                const intervaloMs = 30;
-                const incrementoPorPasso = (100 / (duracaoTotalMs / intervaloMs));
-                let ultimaMensagemStatus = "";
-
-                const promessaProgresso = new Promise((resolve) => {
-                    const timer = setInterval(() => {
-                        progressoAtual += incrementoPorPasso;
-                        // Segura em 95% até o banco terminar de baixar de verdade
-                        const teto = bancoPronto ? 100 : 95;
-                        if (progressoAtual >= teto) {
-                            progressoAtual = teto;
-                            if (teto === 100) { clearInterval(timer); resolve(); }
-                        }
-
-                        const porcentagemInteira = Math.round(progressoAtual);
-                        if (textoPorcentagem) textoPorcentagem.textContent = `${porcentagemInteira}%`;
-                        if (barraPreenchimento) barraPreenchimento.style.width = `${progressoAtual}%`;
-
-                        // Mensagens dinâmicas com fade
-                        let mensagemDesejada = "";
-                        if (porcentagemInteira < 30) {
-                            mensagemDesejada = "Estabelecendo conexão segura...";
-                        } else if (porcentagemInteira < 65) {
-                            mensagemDesejada = "Baixando base de dados financeira...";
-                        } else if (porcentagemInteira < 96) {
-                            mensagemDesejada = "Organizando dados e período atual...";
-                        } else {
-                            mensagemDesejada = "Tudo pronto! Entrando no sistema...";
-                        }
-
-                        if (subtextoCarregamento && mensagemDesejada !== ultimaMensagemStatus) {
-                            ultimaMensagemStatus = mensagemDesejada;
-                            atualizarTextoComFade(subtextoCarregamento, mensagemDesejada);
-                        }
-                    }, intervaloMs);
-                });
-
-                // Baixa o banco completo, inicializa o estado de memória E pré-carrega as variáveis do período
-                await Promise.all([
-                    inicializarBanco().then(() => {
-                        const dadosCarregados = obterDados();
-                        if (dadosCarregados && typeof migrarDados === 'function') {
-                            migrarDados(dadosCarregados);
-                        }
-                    }).finally(() => { bancoPronto = true; }),
-                    promessaProgresso
-                ]);
-
-                window.location.href = 'dashboard.html';
+                if (subtextoCarregamento) {
+                    subtextoCarregamento.textContent = window.ultimaOrigemBanco === 'local-pendente'
+                        ? 'Alterações locais pendentes de sincronização.'
+                        : window.ultimaOrigemBanco === 'local-offline'
+                            ? 'Dados locais disponíveis; servidor temporariamente indisponível.'
+                            : 'Tudo pronto! Abrindo seu painel...';
+                }
+                atualizarStatusLogin('Conta pronta. Abrindo o painel...', 'success');
+                if (window.ultimaOrigemBanco === 'local-offline') {
+                    telaCarregamento?.classList.remove('ativo');
+                    await mostrarAlertaModal('A autenticação funcionou, mas a atualização dos dados falhou. Você entrará com os dados locais, que podem estar desatualizados.');
+                }
+                window.location.href = resultadoAuth.trocaSenhaObrigatoria ? 'perfil.html' : 'dashboard.html';
                 return true;
 
             } catch (erro) {
@@ -503,6 +404,14 @@
                 if (spanTextoBotao) spanTextoBotao.textContent = usuarioSelecionadoParaLogin ? "Entrar no Sistema" : "Continuar";
                 if (setaBotao) setaBotao.style.display = "inline";
                 if (gifLoadingBotao) gifLoadingBotao.style.display = "none";
+                localStorage.removeItem('usuarioLogado');
+                sessionStorage.removeItem(CHAVE_SESSAO_API);
+                sessionStorage.removeItem(CHAVE_USUARIO_SESSAO);
+                atualizarStatusLogin(erro.name === 'AbortError' ? 'Tempo de conexão esgotado. Tente novamente.' : 'Não foi possível concluir o acesso. Verifique a conexão e tente novamente.', 'error');
+                await mostrarAlertaModal(erro.message || 'Não foi possível concluir o acesso.');
+            } finally {
+                loginOcupado = false;
+                if (botao) botao.disabled = !bancoInicializado;
             }
         }
 
@@ -539,15 +448,18 @@
             }
 
             blocoSenha.style.display = 'none';
+            blocoSenha.hidden = true;
             inputSenha.value = '';
 
             if (spanTextoBotao) spanTextoBotao.textContent = "Continuar";
             if (setaBotao) setaBotao.style.display = "inline";
             if (gifLoadingBotao) gifLoadingBotao.style.display = "none";
-            if (loginEyebrowText) loginEyebrowText.textContent = "BEM-VINDO DE VOLTA";
-            if (loginTitleText) loginTitleText.textContent = "Acesse sua conta";
-            if (loginSubtitleText) loginSubtitleText.textContent = "Digite o seu nome de usuário para continuar.";
-            if (cardPrimeiroAcesso) cardPrimeiroAcesso.style.display = 'flex';
+            if (loginEyebrowText) loginEyebrowText.textContent = "SEU ESPAÇO FINANCEIRO";
+            if (loginTitleText) loginTitleText.textContent = "Vamos entrar?";
+            if (loginSubtitleText) loginSubtitleText.textContent = "Informe seu usuário para continuar.";
+            if (cardPrimeiroAcesso) cardPrimeiroAcesso.style.display = primeiroCadastroDisponivel ? 'flex' : 'none';
+
+            atualizarStatusLogin(bancoInicializado ? 'Servidor conectado. Pronto para entrar.' : 'Sem conexão com o servidor.', bancoInicializado ? 'success' : 'error');
 
             inputUsuario.focus();
         }

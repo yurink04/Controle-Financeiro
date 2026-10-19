@@ -6,152 +6,85 @@
     <title>Meu Perfil | Controle Financeiro</title>
     <link rel="stylesheet" href="style.css">
 </head>
-<body>
-
-    <main class="container">
-        <div class="page-heading">
+<body class="account-page profile-page">
+    <main class="container account-container">
+        <header class="account-hero">
             <div>
-                <h2>Meu Perfil e Rendimentos</h2>
-                <p>Gerencie suas informações pessoais, preferências de alertas e acompanhe seu patrimônio.</p>
+                <span class="account-eyebrow">ÁREA PESSOAL <span class="account-eyebrow-dot"></span> SUA CONTA</span>
+                <h1>Seu espaço, do seu jeito.</h1>
+                <p>Informações pessoais, rendimentos e patrimônio reunidos em um só lugar.</p>
             </div>
-        </div>
+            <a class="account-hero-home" href="dashboard.html" aria-label="Voltar ao painel">↗ <span>Meu painel</span></a>
+        </header>
 
-        <!-- Cards de Resumo de Renda -->
-        <div class="stat-grid" style="margin-bottom: 18px; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));">
-            <div class="stat-box">
-                <span class="stat-label">Renda Fixa Base</span>
-                <div style="display: flex; align-items: center; justify-content: space-between; margin-top: 5px;">
-                    <div class="stat-value" id="cardRendaFixaValor" style="color: var(--success); margin-top: 0;">R$ 0,00</div>
-                    <button type="button" class="btn-acao-icone editar" onclick="abrirModalEdicaoRenda()" title="Editar Renda Fixa" style="margin: 0;">
-                        <img src="imagens/editar.png" alt="Editar">
-                    </button>
-                </div>
-            </div>
-            <div class="stat-box">
-                <span class="stat-label">Média de Ganhos Variáveis</span>
-                <div class="stat-value" id="cardMediaVariavel" style="color: var(--accent);">R$ 0,00</div>
-                <div class="stat-detail">Baseado no histórico de entradas</div>
-            </div>
-            <div class="stat-box">
-                <span class="stat-label">Renda Total Estimada</span>
-                <div class="stat-value positivo" id="cardRendaTotal">R$ 0,00</div>
-                <div class="stat-detail" style="margin-top: 6px;">
-                    <button type="button" id="btnDetalhesRenda" style="background: transparent; color: var(--primary); border: none; padding: 0; font-size: 0.85rem; cursor: pointer; text-decoration: underline; font-weight: bold;">Ver detalhes do cálculo</button>
-                </div>
-            </div>
-        </div>
+        <nav class="account-nav" aria-label="Navegação da conta">
+            <a class="active" href="perfil.html" aria-current="page">◉ <span>Meu perfil</span></a>
+            <a href="configuracoes.html" data-account-settings hidden>⚙ <span>Configurações</span></a>
+            <a href="admin-logs.html" data-account-logs hidden>▤ <span>Auditoria</span></a>
+        </nav>
 
-        <!-- Cards de Indicadores e Atalhos de Vínculos -->
-        <div class="stat-grid" style="margin-bottom: 18px; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));">
-            <div class="stat-box" style="cursor: pointer;" onclick="window.location.href='financiamentos.html'" title="Ver Financiamentos">
-                <span class="stat-label">Financiamentos Ativos</span>
-                <div class="stat-value" id="qtdFinanciamentos" style="color: var(--primary);">0</div>
-                <div class="stat-detail">Clique para gerenciar contratos ↗</div>
+        <section class="account-section" id="resumo-perfil" aria-labelledby="tituloRendaPerfil">
+            <div class="account-section-heading">
+                <div><span class="account-overline">VISÃO GERAL</span><h2 id="tituloRendaPerfil">Seus rendimentos</h2><p>Uma visão rápida de como sua renda está composta.</p></div>
             </div>
-            <div class="stat-box" style="cursor: pointer;" onclick="window.location.href='bens.html'" title="Ver Bens">
-                <span class="stat-label">Bens Patrimoniais</span>
-                <div class="stat-value" id="qtdeBens" style="color: var(--primary);">0</div>
-                <div class="stat-detail">Clique para gerenciar bens ↗</div>
+            <div class="account-kpis">
+                <article class="account-kpi"><div class="account-kpi-label"><span>Renda fixa mensal</span><span class="account-kpi-icon">↗</span></div><div class="account-kpi-value" id="cardRendaFixaValor">R$ 0,00</div><button type="button" class="account-text-button" onclick="abrirModalEdicaoRenda()">✎ Ajustar renda</button></article>
+                <article class="account-kpi"><div class="account-kpi-label"><span>Média de ganhos variáveis</span><span class="account-kpi-icon">≋</span></div><div class="account-kpi-value" id="cardMediaVariavel">R$ 0,00</div><p>Baseada no histórico de entradas elegíveis</p></article>
+                <article class="account-kpi account-kpi-featured"><div class="account-kpi-label"><span>Renda total estimada</span><span class="account-kpi-icon">✧</span></div><div class="account-kpi-value" id="cardRendaTotal">R$ 0,00</div><button type="button" id="btnDetalhesRenda" class="account-text-button">Entenda o cálculo →</button></article>
             </div>
-            <div class="stat-box" style="cursor: pointer;" onclick="window.location.href='cartoes.html'" title="Ver Cartões">
-                <span class="stat-label">Cartões de Crédito</span>
-                <div class="stat-value" id="qtdeCartoes" style="color: var(--primary);">0</div>
-                <div class="stat-detail">Clique para gerenciar cartões ↗</div>
-            </div>
-        </div>
-
-        <!-- Formulário de Edição do Perfil -->
-        <section class="form-card" style="margin-bottom: 18px;">
-            <div class="section-title">
-                <div>
-                    <h2>Atualizar Dados Pessoais</h2>
-                    <p>Modifique sua foto, usuário de acesso, nome próprio, PIN ou parceiro.</p>
-                </div>
-            </div>
-
-            <form id="formMeuPerfil" onsubmit="salvarMeuPerfil(event)">
-                
-                <!-- Sessão de Foto de Perfil -->
-                <div style="display: flex; align-items: center; gap: 20px; margin-bottom: 24px; padding-bottom: 20px; border-bottom: 1px solid var(--border);">
-                    <div style="position: relative; width: 80px; height: 80px; flex-shrink: 0;">
-                        <img id="previewFotoPerfil" src="" alt="Sua Foto" style="width: 100%; height: 100%; border-radius: 50%; object-fit: cover; border: 2px solid var(--primary); background: var(--surface-2); box-shadow: var(--shadow);">
-                    </div>
-                    <div>
-                        <p style="font-weight: 700; font-size: 0.9rem; margin-bottom: 8px; color: var(--text-main);">Foto de Perfil</p>
-                        <input type="file" id="inputFotoPerfil" accept="image/png, image/jpeg, image/webp" style="display: none;" onchange="processarFotoPerfil(event)">
-                        <button type="button" class="btn-secundario" onclick="document.getElementById('inputFotoPerfil').click()" style="padding: 6px 14px; font-size: 0.8rem; border-radius: 8px;">Escolher Imagem</button>
-                        <button type="button" class="btn-secundario" onclick="removerFotoPerfil()" style="padding: 6px 14px; font-size: 0.8rem; margin-left: 8px; color: var(--danger); border-color: var(--danger-soft); border-radius: 8px;">Remover</button>
-                        <p style="font-size: 0.72rem; color: var(--text-muted); margin-top: 6px;">O sistema comprime a imagem automaticamente para não pesar. (Recomendado: foto quadrada).</p>
-                    </div>
-                </div>
-
-                <div class="form-grid-2" style="margin-bottom: 16px;">
-                    <div class="form-group">
-                        <label for="meuUsuarioLogin">Usuário de Acesso (Único)</label>
-                        <input type="text" id="meuUsuarioLogin" required style="width:100%;">
-                    </div>
-                    <div class="form-group">
-                        <label for="meuNome">Nome Próprio (Exibição)</label>
-                        <input type="text" id="meuNome" required style="width:100%;">
-                    </div>
-                </div>
-                
-                <div class="form-grid-2" style="margin-bottom: 20px;">
-                    <div class="form-group">
-                        <label for="meuPinAtual">Alterar PIN Numérico (Opcional)</label>
-                        <input type="password" id="meuPinAtual" maxlength="6" inputmode="numeric" placeholder="Deixe em branco para manter" style="width:100%;">
-                    </div>
-                    <div class="form-group">
-                        <label for="meuParceiro">Solicitar Atrelamento de Parceiro</label>
-                        <select id="meuParceiro" style="width:100%;">
-                            <option value="">Nenhum (Apenas Individual)</option>
-                        </select>
-                        <small class="muted" style="font-size: 0.75rem; display: block; margin-top: 4px;">Requer aprovação na Central de Notificações do parceiro.</small>
-                    </div>
-                </div>
-
-                <!-- Preferências de Notificação de Vencimento -->
-                <div style="border-top: 1px solid var(--border); padding-top: 16px; margin-bottom: 16px;">
-                    <p style="font-weight: 700; margin-bottom: 10px; font-size: 0.88rem; color: var(--text-main);">Preferências de Alertas de Vencimento:</p>
-                    <div class="form-grid-2">
-                        <div class="form-group" style="display: flex; align-items: center; gap: 10px;">
-                            <input type="checkbox" id="notifAtivaVencimento" style="width: 18px; height: 18px; accent-color: var(--primary); cursor: pointer;">
-                            <label for="notifAtivaVencimento" style="cursor: pointer; margin: 0; font-weight: 500;">Receber avisos de contas a vencer</label>
-                        </div>
-                        <div class="form-group">
-                            <label for="notifDiasAntecedencia">Dias de antecedência para o alerta</label>
-                            <input type="number" min="1" max="15" id="notifDiasAntecedencia" value="3" style="width: 100%;">
-                        </div>
-                    </div>
-                </div>
-
-                <div class="btn-row">
-                    <button type="submit" style="background-color: var(--primary);">Salvar Alterações</button>
-                </div>
-            </form>
         </section>
 
-        <!-- Resumo de Bens Vinculados e Compartilhados -->
-        <section class="form-card">
-            <div class="section-title">
-                <div>
-                    <h2>Meus Bens Patrimoniais e Compartilhados</h2>
-                    <p>Patrimônio próprio e bens em regime de divisão com o parceiro.</p>
-                </div>
-            </div>
-            <div class="tabela-container">
-                <table class="tabela">
-                    <thead>
-                        <tr>
-                            <th>Bem</th>
-                            <th>Tipo</th>
-                            <th>Valor Inicial</th>
-                            <th>Total Investido/Movimentado</th>
-                        </tr>
-                    </thead>
-                    <tbody id="tabelaBensPerfil"></tbody>
-                </table>
-            </div>
+        <div class="account-two-column">
+            <aside class="account-sidebar">
+                <section class="account-panel account-identity" aria-label="Resumo do perfil">
+                    <img id="fotoPerfilLateral" class="account-identity-avatar" alt="Foto de perfil" src="">
+                    <h2 id="nomePerfilLateral">Minha conta</h2>
+                    <p id="loginPerfilLateral">Seu perfil financeiro</p>
+                    <span class="account-status"><span></span> Conta ativa</span>
+                    <div class="account-side-divider"></div>
+                    <a href="#dados-pessoais">✎ <span>Editar meus dados</span> <span>→</span></a>
+                    <a href="#patrimonio-perfil">▦ <span>Ver patrimônio</span> <span>→</span></a>
+                </section>
+                <section class="account-panel account-quick-links" aria-label="Atalhos financeiros">
+                    <h3>Seu financeiro</h3>
+                    <a href="financiamentos.html"><span><span class="account-link-icon">⌂</span> Financiamentos</span><strong id="qtdFinanciamentos">0</strong></a>
+                    <a href="bens.html"><span><span class="account-link-icon">◇</span> Bens patrimoniais</span><strong id="qtdeBens">0</strong></a>
+                    <a href="cartoes.html"><span><span class="account-link-icon">▤</span> Cartões de crédito</span><strong id="qtdeCartoes">0</strong></a>
+                </section>
+            </aside>
+
+            <section class="account-panel account-profile-form" id="dados-pessoais">
+                <div class="account-panel-heading"><div><span class="account-overline">PREFERÊNCIAS DA CONTA</span><h2>Informações pessoais</h2><p>Atualize somente o que precisar. As alterações serão salvas na sua conta.</p></div></div>
+                <form id="formMeuPerfil" onsubmit="salvarMeuPerfil(event)">
+                    <div class="account-photo-row">
+                        <img id="previewFotoPerfil" src="" alt="Prévia da sua foto de perfil">
+                        <div><h3>Sua foto</h3><p>Uma foto quadrada funciona melhor. Até 5 MB; otimizamos automaticamente.</p>
+                            <input type="file" id="inputFotoPerfil" accept="image/png,image/jpeg,image/webp" class="account-file-input" onchange="processarFotoPerfil(event)">
+                            <div class="account-inline-actions"><button type="button" class="btn-secundario" onclick="document.getElementById('inputFotoPerfil').click()">Trocar foto</button><button type="button" class="account-text-button account-danger-text" onclick="removerFotoPerfil()">Remover</button></div>
+                        </div>
+                    </div>
+                    <div class="account-form-section-title"><span class="account-step-index">01</span><div><h3>Identificação</h3><p>Como você entra e aparece no sistema.</p></div></div>
+                    <div class="form-grid-2 account-form-grid">
+                        <div class="form-group"><label for="meuUsuarioLogin">Usuário de acesso</label><input type="text" id="meuUsuarioLogin" autocomplete="username" maxlength="80" required><small>Precisa ser único.</small></div>
+                        <div class="form-group"><label for="meuNome">Nome de exibição</label><input type="text" id="meuNome" autocomplete="name" maxlength="100" required><small>Será mostrado no cabeçalho.</small></div>
+                    </div>
+                    <div class="account-form-section-title"><span class="account-step-index">02</span><div><h3>Segurança e vínculo</h3><p>Sua senha de acesso e o compartilhamento com um parceiro.</p></div></div>
+                    <p class="account-note account-password-required" id="avisoTrocaSenhaObrigatoria" hidden>Por segurança, defina uma nova senha antes de acessar as outras páginas. A senha provisória não deve continuar em uso.</p>
+                    <div class="form-grid-2 account-form-grid">
+                        <div class="form-group"><label for="meuPinAtual">Nova senha <span class="account-optional" id="rotuloSenhaOpcional">opcional</span></label><div class="account-password-field"><input type="password" id="meuPinAtual" minlength="8" autocomplete="new-password" placeholder="Deixe vazio para manter"><button type="button" aria-label="Mostrar senha" aria-pressed="false" id="togglePinPerfil">Mostrar</button></div><small>8+ caracteres com letras maiúsculas e minúsculas, número e símbolo.</small></div>
+                        <div class="form-group"><label for="confirmarSenhaPerfil">Confirmar nova senha</label><input type="password" id="confirmarSenhaPerfil" autocomplete="new-password" placeholder="Repita a senha, se estiver alterando"><small>Evita erros de digitação.</small></div>
+                        <div class="form-group"><label for="meuParceiro">Parceiro financeiro</label><select id="meuParceiro"><option value="">Somente eu</option></select><small>Um novo vínculo depende da aprovação do parceiro.</small></div>
+                    </div>
+                    <div class="account-form-section-title"><span class="account-step-index">03</span><div><h3>Lembretes</h3><p>Receba avisos sobre contas próximas do vencimento.</p></div></div>
+                    <div class="account-reminder-row"><label class="account-switch-line"><input type="checkbox" id="notifAtivaVencimento"><span><strong>Avisar sobre vencimentos</strong><small>Um lembrete antes da data da conta.</small></span></label><div class="form-group account-reminder-days"><label for="notifDiasAntecedencia">Avisar com antecedência de</label><div class="account-days-field"><input type="number" min="1" max="15" id="notifDiasAntecedencia" value="3"><span>dias</span></div></div></div>
+                    <div class="account-save-bar"><span id="perfilFeedback" class="account-feedback" role="status" aria-live="polite">Tudo atualizado.</span><div><button type="button" class="btn-secundario" id="descartarPerfil" onclick="descartarAlteracoesPerfil()" hidden>Descartar</button><button type="submit" id="btnSalvarPerfil">Salvar alterações <span aria-hidden="true">→</span></button></div></div>
+                </form>
+            </section>
+        </div>
+
+        <section class="account-panel account-assets" id="patrimonio-perfil">
+            <div class="account-panel-heading"><div><span class="account-overline">PATRIMÔNIO</span><h2>Bens e investimentos vinculados</h2><p>Seus bens e os compartilhados com seu parceiro em uma visão consolidada.</p></div><a class="account-outline-link" href="bens.html">Gerenciar bens ↗</a></div>
+            <div class="tabela-container account-responsive-table"><table class="tabela"><thead><tr><th>Bem</th><th>Tipo</th><th>Valor inicial</th><th>Investido / movimentado</th></tr></thead><tbody id="tabelaBensPerfil"></tbody></table></div>
         </section>
     </main>
 
@@ -159,15 +92,54 @@
     <script>
         let novaFotoBase64 = null;
         let desejaRemoverFoto = false;
+        let alteracoesPerfilPendentes = false;
         const SVG_AVATAR_PADRAO = 'data:image/svg+xml;charset=UTF-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22%23a89586%22%3E%3Cpath%20d%3D%22M12%2012c2.21%200%204-1.79%204-4s-1.79-4-4-4-4%201.79-4%204%201.79%204%204%204zm0%202c-2.67%200-8%201.34-8%204v2h16v-2c0-2.66-5.33-4-8-4z%22%2F%3E%3C%2Fsvg%3E';
 
         document.addEventListener('DOMContentLoaded', async () => {
             injetarHeader();
             const autenticado = await verificarAutenticacao();
             if (autenticado) {
+                const usuario = obterUsuarioAtual();
+                document.querySelectorAll('[data-account-settings]').forEach(el => el.hidden = !usuarioPodeAcessarPagina(usuario, 'configuracoes'));
+                document.querySelectorAll('[data-account-logs]').forEach(el => el.hidden = !(usuarioPodeAcessarPagina(usuario, 'configuracoes') && usuarioPode('logs')));
                 carregarDadosPerfil();
+                const form = document.getElementById('formMeuPerfil');
+                form.addEventListener('input', marcarPerfilAlterado);
+                form.addEventListener('change', marcarPerfilAlterado);
+                document.getElementById('togglePinPerfil').addEventListener('click', () => {
+                    const campo = document.getElementById('meuPinAtual');
+                    const botao = document.getElementById('togglePinPerfil');
+                    const visivel = campo.type === 'password';
+                    campo.type = visivel ? 'text' : 'password';
+                    botao.textContent = visivel ? 'Ocultar' : 'Mostrar';
+                    botao.setAttribute('aria-label', visivel ? 'Ocultar senha' : 'Mostrar senha');
+                    botao.setAttribute('aria-pressed', String(visivel));
+                });
+                document.getElementById('notifAtivaVencimento').addEventListener('change', atualizarLembretePerfil);
+                atualizarLembretePerfil();
             }
         });
+
+        function definirFeedbackPerfil(texto, estado = '') {
+            const elemento = document.getElementById('perfilFeedback');
+            elemento.textContent = texto;
+            elemento.dataset.state = estado;
+        }
+
+        function marcarPerfilAlterado() {
+            alteracoesPerfilPendentes = true;
+            document.getElementById('descartarPerfil').hidden = false;
+            definirFeedbackPerfil('Você tem alterações ainda não salvas.', 'pending');
+        }
+
+        function descartarAlteracoesPerfil() {
+            carregarDadosPerfil();
+            definirFeedbackPerfil('Alterações descartadas. Tudo atualizado.');
+        }
+
+        function atualizarLembretePerfil() {
+            document.getElementById('notifDiasAntecedencia').disabled = !document.getElementById('notifAtivaVencimento').checked;
+        }
 
         function carregarDadosPerfil() {
             const dados = obterDados();
@@ -178,14 +150,22 @@
             novaFotoBase64 = null;
             desejaRemoverFoto = false;
             document.getElementById('inputFotoPerfil').value = '';
+            document.getElementById('meuPinAtual').value = '';
+            document.getElementById('confirmarSenhaPerfil').value = '';
+            document.getElementById('avisoTrocaSenhaObrigatoria').hidden = !usuario.trocaSenhaObrigatoria;
+            document.getElementById('rotuloSenhaOpcional').hidden = !!usuario.trocaSenhaObrigatoria;
             document.getElementById('previewFotoPerfil').src = usuario.fotoPerfil || SVG_AVATAR_PADRAO;
+            document.getElementById('fotoPerfilLateral').src = usuario.fotoPerfil || SVG_AVATAR_PADRAO;
+            document.getElementById('nomePerfilLateral').textContent = usuario.nome || 'Minha conta';
+            document.getElementById('loginPerfilLateral').textContent = '@' + (usuario.usuario || usuario.nome || 'usuário');
 
             document.getElementById('meuUsuarioLogin').value = usuario.usuario || usuario.nome || '';
             document.getElementById('meuNome').value = usuario.nome || '';
             
-            const prefsNotif = usuario.preferenciasNotificacao || { ativo: true, diasAntecedencia: 3 };
-            document.getElementById('notifAtivaVencimento').checked = prefsNotif.ativo;
-            document.getElementById('notifDiasAntecedencia').value = prefsNotif.diasAntecedencia;
+            const prefsNotif = usuario.preferenciasNotificacao || {};
+            document.getElementById('notifAtivaVencimento').checked = prefsNotif.ativo !== false;
+            document.getElementById('notifDiasAntecedencia').value = Number.isInteger(Number(prefsNotif.diasAntecedencia)) && Number(prefsNotif.diasAntecedencia) >= 1 && Number(prefsNotif.diasAntecedencia) <= 15 ? prefsNotif.diasAntecedencia : 3;
+            atualizarLembretePerfil();
 
             const selectParceiro = document.getElementById('meuParceiro');
             selectParceiro.innerHTML = '<option value="">Nenhum (Apenas Individual)</option>';
@@ -233,8 +213,8 @@
 });
             const valoresMensais = Object.values(mesesMap);
             const totalGanhosHistorico = valoresMensais.reduce((a, b) => a + b, 0);
-            const qtdMesesComEntrada = valoresMensais.length || 1; 
-            const mediaVariavel = totalGanhosHistorico / qtdMesesComEntrada;
+            const qtdMesesComEntrada = valoresMensais.length;
+            const mediaVariavel = totalGanhosHistorico / (qtdMesesComEntrada || 1);
 
             const rendaFixa = Number(usuario.rendaFixa || 0);
             const rendaTotalEstimada = rendaFixa + mediaVariavel;
@@ -252,7 +232,7 @@
             tbodyBens.innerHTML = '';
             
             if (bensDoUsuario.length === 0) {
-                tbodyBens.innerHTML = `<tr><td colspan="4" style="text-align: center;">Nenhum bem vinculado ou compartilhado.</td></tr>`;
+                tbodyBens.innerHTML = `<tr><td colspan="4" class="account-table-empty">Nenhum bem vinculado ou compartilhado.</td></tr>`;
             } else {
                 bensDoUsuario.forEach(b => {
                     const gastoBem = (dados.lancamentos || [])
@@ -261,14 +241,17 @@
 
                     const tr = document.createElement('tr');
                     tr.innerHTML = `
-                        <td><strong>${b.nome}</strong> ${b.compartilhado ? '<span style="font-size:0.7rem; background:var(--primary-soft); color:var(--primary); padding:2px 6px; border-radius:4px; font-weight:600; margin-left:6px;">Compartilhado</span>' : ''}</td>
-                        <td>${b.tipo.toUpperCase()}</td>
-                        <td>R$ ${Number(b.valor || 0).toLocaleString('pt-BR', {minimumFractionDigits: 2})}</td>
-                        <td class="negativo">R$ ${gastoBem.toLocaleString('pt-BR', {minimumFractionDigits: 2})}</td>
+                        <td data-label="Bem"><span><strong>${escaparHTML(b.nome || 'Sem nome')}</strong> ${b.compartilhado ? '<span class="account-shared-badge">Compartilhado</span>' : ''}</span></td>
+                        <td data-label="Tipo">${escaparHTML(String(b.tipo || 'Não informado').toUpperCase())}</td>
+                        <td data-label="Valor inicial">R$ ${Number(b.valor || 0).toLocaleString('pt-BR', {minimumFractionDigits: 2})}</td>
+                        <td data-label="Investido" class="negativo">R$ ${gastoBem.toLocaleString('pt-BR', {minimumFractionDigits: 2})}</td>
                     `;
                     tbodyBens.appendChild(tr);
                 });
             }
+            alteracoesPerfilPendentes = false;
+            document.getElementById('descartarPerfil').hidden = true;
+            definirFeedbackPerfil('Tudo atualizado.', 'success');
         }
 
         function processarFotoPerfil(event) {
@@ -277,6 +260,11 @@
 
             if (file.size > 5 * 1024 * 1024) {
                 mostrarAlertaModal('A imagem é muito pesada (maior que 5MB). Escolha uma imagem menor.');
+                event.target.value = '';
+                return;
+            }
+            if (!['image/png', 'image/jpeg', 'image/webp'].includes(file.type)) {
+                definirFeedbackPerfil('Escolha uma imagem PNG, JPG ou WEBP.', 'error');
                 event.target.value = '';
                 return;
             }
@@ -291,9 +279,9 @@
                     let height = img.height;
 
                     if (width > height) {
-                        if (width > maxSize) { height = Math.round(height *= maxSize / width); width = maxSize; }
+                        if (width > maxSize) { height = Math.round(height * maxSize / width); width = maxSize; }
                     } else {
-                        if (height > maxSize) { width = Math.round(width *= maxSize / height); height = maxSize; }
+                        if (height > maxSize) { width = Math.round(width * maxSize / height); height = maxSize; }
                     }
 
                     canvas.width = width;
@@ -306,7 +294,9 @@
                     document.getElementById('previewFotoPerfil').src = base64;
                     novaFotoBase64 = base64;
                     desejaRemoverFoto = false;
+                    marcarPerfilAlterado();
                 };
+                img.onerror = () => definirFeedbackPerfil('Não foi possível ler esta imagem.', 'error');
                 img.src = e.target.result;
             };
             reader.readAsDataURL(file);
@@ -317,6 +307,7 @@
             novaFotoBase64 = null;
             desejaRemoverFoto = true;
             document.getElementById('inputFotoPerfil').value = '';
+            marcarPerfilAlterado();
         }
 
         function abrirModalEdicaoRenda() {
@@ -326,11 +317,11 @@
             const valorAtual = usuario ? (usuario.rendaFixa || 0) : 0;
 
             const htmlEdicao = `
-                <div style="margin-top: 15px; text-align: left;">
-                    <label style="font-size: 0.85rem; font-weight: bold; color: var(--text-main);">Novo valor (R$):</label>
+                <div class="account-income-form">
+                    <label for="inputNovaRendaFixa">Novo valor (R$)</label>
                     <input type="number" id="inputNovaRendaFixa" step="0.01" min="0" class="modal-input" value="${valorAtual}">
                 </div>
-                <div class="modal-buttons" style="margin-top: 20px;">
+                <div class="modal-buttons account-modal-actions">
                     <button type="button" class="btn-secundario" data-cancelar>Cancelar</button>
                     <button type="button" data-confirmar>Confirmar</button>
                 </div>
@@ -339,9 +330,9 @@
             const overlay = document.createElement('div');
             overlay.className = 'modal-overlay';
             overlay.innerHTML = `
-                <div class="modal-box" style="max-width: 400px; width: 95%;">
+                <div class="modal-box account-income-modal">
                     <h3>Editar Renda Fixa</h3>
-                    <p style="font-size: 0.9rem; color: var(--text-muted); margin-bottom: 10px;">Atualize o valor base da sua renda fixa mensal.</p>
+                    <p>Atualize o valor base da sua renda fixa mensal.</p>
                     ${htmlEdicao}
                 </div>
             `;
@@ -356,7 +347,7 @@
             
             overlay.querySelector('[data-confirmar]').onclick = async () => {
                 const novoValor = input.value;
-                if (novoValor !== '') {
+                if (novoValor !== '' && Number.isFinite(Number(novoValor)) && Number(novoValor) >= 0) {
                     fechar();
                     await atualizarRendaFixaDireto(novoValor);
                 } else {
@@ -388,28 +379,28 @@
 
         function mostrarDetalhesRenda(fixa, totalVariavel, meses, mediaVar, totalEstimado) {
             const htmlDetalhes = `
-                <div style="text-align: left; line-height: 1.6; font-size: 0.95rem; color: var(--text-main);">
+                <div class="account-income-details">
                     <p>A <strong>Renda Total Estimada</strong> é a soma da sua renda fixa preenchida no card com a média histórica das suas entradas variáveis.</p>
-                    <hr style="margin: 14px 0; border: 0; border-top: 1px solid var(--border);">
-                    <ul style="list-style: none; padding: 0; margin: 0; font-size: 0.9rem;">
-                        <li style="display: flex; justify-content: space-between; margin-bottom: 10px;">
+                    <hr>
+                    <ul class="account-income-breakdown">
+                        <li>
                             <span>1. Renda Fixa Declarada:</span>
                             <strong>R$ ${fixa.toLocaleString('pt-BR', {minimumFractionDigits: 2})}</strong>
                         </li>
-                        <li style="display: flex; justify-content: space-between; margin-bottom: 10px;">
+                        <li>
                             <span>2. Entradas Variáveis Acumuladas:</span>
                             <strong>R$ ${totalVariavel.toLocaleString('pt-BR', {minimumFractionDigits: 2})}</strong>
                         </li>
-                        <li style="display: flex; justify-content: space-between; margin-bottom: 10px;">
+                        <li>
                             <span>3. Meses com Entradas Variáveis:</span>
                             <strong>${meses} ${meses === 1 ? 'mês' : 'meses'}</strong>
                         </li>
-                        <li style="display: flex; justify-content: space-between; margin-bottom: 10px; color: var(--accent);">
+                        <li class="account-income-average">
                             <span>4. Média Variável (Item 2 ÷ Item 3):</span>
                             <strong>R$ ${mediaVar.toLocaleString('pt-BR', {minimumFractionDigits: 2})}</strong>
                         </li>
-                        <hr style="margin: 14px 0; border: 0; border-top: 1px dashed var(--border);">
-                        <li style="display: flex; justify-content: space-between; font-size: 1.15rem; color: var(--success);">
+                        <hr>
+                        <li class="account-income-total">
                             <span><strong>Total (1 + 4):</strong></span>
                             <strong>R$ ${totalEstimado.toLocaleString('pt-BR', {minimumFractionDigits: 2})}</strong>
                         </li>
@@ -420,10 +411,10 @@
             const overlay = document.createElement('div');
             overlay.className = 'modal-overlay';
             overlay.innerHTML = `
-                <div class="modal-box" style="max-width: 500px; width: 95%;">
+                <div class="modal-box account-details-modal">
                     <h3>Detalhes do Cálculo de Renda</h3>
                     ${htmlDetalhes}
-                    <button type="button" class="btn-fechar" style="width: 100%; background-color: var(--primary); margin-top: 24px;">Fechar</button>
+                    <button type="button" class="btn-fechar account-details-close">Fechar</button>
                 </div>
             `;
             document.body.appendChild(overlay);
@@ -441,73 +432,90 @@
             const usuarioId = localStorage.getItem('usuarioLogado');
             const usuario = dados.usuarios.find(u => Number(u.id) === Number(usuarioId));
             if (!usuario) return;
-
             const novoUsuarioLogin = document.getElementById('meuUsuarioLogin').value.trim();
-
-            const usuarioExistente = dados.usuarios.find(u => 
+            const novoNome = document.getElementById('meuNome').value.trim();
+            const novoPin = document.getElementById('meuPinAtual').value.trim();
+            const confirmarSenha = document.getElementById('confirmarSenhaPerfil').value.trim();
+            const diasAntecedencia = Number(document.getElementById('notifDiasAntecedencia').value);
+            const novoParceiroId = document.getElementById('meuParceiro').value ? Number(document.getElementById('meuParceiro').value) : null;
+            if (!novoUsuarioLogin || !novoNome) {
+                definirFeedbackPerfil('Informe o usuário de acesso e o nome de exibição.', 'error');
+                return;
+            }
+            const usuarioExistente = dados.usuarios.find(u =>
                 normalizarTexto(u.usuario || u.nome) === normalizarTexto(novoUsuarioLogin) && Number(u.id) !== Number(usuarioId)
             );
             if (usuarioExistente) {
-                await mostrarAlertaModal("Este nome de usuário já está em uso por outra conta. Escolha um usuário único.");
+                definirFeedbackPerfil('Este usuário de acesso já está em uso. Escolha outro.', 'error');
                 return;
             }
-
-            usuario.usuario = novoUsuarioLogin;
-            usuario.nome = document.getElementById('meuNome').value.trim();
-
-            if (desejaRemoverFoto) {
-                usuario.fotoPerfil = null;
-            } else if (novaFotoBase64) {
-                usuario.fotoPerfil = novaFotoBase64;
+            if (usuario.trocaSenhaObrigatoria && !novoPin) {
+                definirFeedbackPerfil('Você precisa trocar a senha provisória antes de continuar.', 'error');
+                return;
             }
-            
-            usuario.preferenciasNotificacao = {
-                ativo: document.getElementById('notifAtivaVencimento').checked,
-                diasAntecedencia: inteiroSeguro(document.getElementById('notifDiasAntecedencia').value, 3)
-            };
-
-            const novoParceiroId = document.getElementById('meuParceiro').value ? Number(document.getElementById('meuParceiro').value) : null;
-
-            if (novoParceiroId !== usuario.parceiroId) {
+            if (novoPin && !validarComplexidadeSenha(novoPin)) {
+                definirFeedbackPerfil('A nova senha deve ter 8+ caracteres, maiúscula, minúscula, número e símbolo.', 'error');
+                return;
+            }
+            if (novoPin !== confirmarSenha) {
+                definirFeedbackPerfil('A confirmação não corresponde à nova senha.', 'error');
+                return;
+            }
+            if (!Number.isInteger(diasAntecedencia) || diasAntecedencia < 1 || diasAntecedencia > 15) {
+                definirFeedbackPerfil('Escolha entre 1 e 15 dias de antecedência.', 'error');
+                return;
+            }
+            if (novoParceiroId && (!dados.usuarios.some(u => Number(u.id) === novoParceiroId && u.ativo !== false) || novoParceiroId === Number(usuario.id))) {
+                definirFeedbackPerfil('Selecione um parceiro válido e ativo.', 'error');
+                return;
+            }
+            const botao = document.getElementById('btnSalvarPerfil');
+            botao.disabled = true;
+            botao.textContent = 'Salvando alterações…';
+            definirFeedbackPerfil('Salvando suas preferências…', 'loading');
+            try {
+                const hashPin = novoPin ? await gerarHash(novoPin) : null;
+                usuario.usuario = novoUsuarioLogin;
+                usuario.nome = novoNome;
+                if (desejaRemoverFoto) usuario.fotoPerfil = null;
+                else if (novaFotoBase64) usuario.fotoPerfil = novaFotoBase64;
+                usuario.preferenciasNotificacao = {
+                    ativo: document.getElementById('notifAtivaVencimento').checked,
+                    diasAntecedencia
+                };
+                if (hashPin) {
+                    usuario.pin = hashPin;
+                    usuario.trocaSenhaObrigatoria = false;
+                }
+                let feedbackParceiro = '';
+                if (novoParceiroId !== (usuario.parceiroId ? Number(usuario.parceiroId) : null)) {
                 if (novoParceiroId) {
                     dados.notificacoes = dados.notificacoes || [];
-                    dados.notificacoes.push({
-                        id: gerarId('notif'),
-                        usuarioDestinoId: novoParceiroId,
-                        remetenteId: usuario.id,
-                        tipo: 'solicitacao_parceiro',
-                        titulo: 'Solicitação de Atrelamento 🤝',
+                    const pendente = dados.notificacoes.some(n => n.tipo === 'solicitacao_parceiro' && String(n.remetenteId) === String(usuario.id) && String(n.usuarioDestinoId) === String(novoParceiroId) && n.statusAprovacao === 'pendente');
+                    if (!pendente) dados.notificacoes.push({
+                        id: gerarId('notif'), usuarioDestinoId: novoParceiroId, remetenteId: usuario.id,
+                        tipo: 'solicitacao_parceiro', titulo: 'Solicitação de Atrelamento 🤝',
                         mensagem: `${usuario.nome} solicitou atrelar você como parceiro no sistema financeiro.`,
-                        lida: false,
-                        statusAprovacao: 'pendente',
-                        createdAt: new Date().toISOString()
+                        lida: false, statusAprovacao: 'pendente', createdAt: new Date().toISOString()
                     });
-
-                    await mostrarAlertaModal("Solicitação de parceiro enviada! O atrelamento será efetivado após a aprovação na Central de Notificações do parceiro.");
+                    feedbackParceiro = pendente ? ' A solicitação ao parceiro já está pendente.' : ' Solicitação enviada ao parceiro para aprovação.';
                 } else {
                     usuario.parceiroId = null;
-                    await mostrarAlertaModal("Vínculo de parceiro removido.");
+                    feedbackParceiro = ' Vínculo de parceiro removido.';
                 }
-            }
-
-            const novoPin = document.getElementById('meuPinAtual').value.trim();
-            if (novoPin) {
-                if (novoPin.length < 4) {
-                    await mostrarAlertaModal("O PIN precisa ter pelo menos 4 dígitos.");
-                    return;
                 }
-                const hashPin = await gerarHash(novoPin);
-                usuario.pin = hashPin;
-                usuario.senha = hashPin; 
+                registrarLog(dados, 'ATUALIZAÇÃO PERFIL', `Usuário ${usuario.usuario} (${usuario.nome}) atualizou informações pessoais e preferências.`);
+                await salvarDados(dados);
+                atualizarHeaderUsuario();
+                carregarDadosPerfil();
+                definirFeedbackPerfil('Alterações salvas! A sincronização continuará em segundo plano.' + feedbackParceiro, 'success');
+            } catch (erro) {
+                console.error('Erro ao salvar perfil:', erro);
+                definirFeedbackPerfil('Não foi possível salvar agora. Tente novamente.', 'error');
+            } finally {
+                botao.disabled = false;
+                botao.innerHTML = 'Salvar alterações <span aria-hidden="true">→</span>';
             }
-
-            registrarLog(dados, "ATUALIZAÇÃO PERFIL", `Usuário ${usuario.usuario} (${usuario.nome}) atualizou suas informações pessoais e foto.`);
-            await salvarDados(dados);
-            
-            atualizarHeaderUsuario();
-            carregarDadosPerfil();
-            
-            await mostrarAlertaModal("Perfil e foto atualizados e sincronizados com sucesso!");
         }
     </script>
 </body>
