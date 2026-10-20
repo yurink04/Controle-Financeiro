@@ -3,7 +3,7 @@
 // ============================================================================
 const DB_KEY = 'sistemaFinanceiroCompartilhado';
 const BACKUP_TESTE_KEY = 'sistemaFinanceiroBackupTeste';
-const API_URL = "https://script.google.com/macros/s/AKfycbxOTWLwazFf7hO7scTIRlKAOxHUdB0CroAVuAyfnC6Xsq2XMql7vvyTzNwJ0d1se1MW/exec";
+const API_URL = "https://script.google.com/macros/s/AKfycbxKYyRCuntuAaiZAMto9k3v8lOm2mf4g2XUKBtRGPzYK03LKdp_rgMS2STuDfuYYiC3/exec";
 const TOKEN_API = "PLANOF1NALPRAS4AIRD@MERDA";
 const CHAVE_SESSAO_API = 'financeiroSessaoSegura';
 const CHAVE_USUARIO_SESSAO = 'financeiroSessaoUsuario';
@@ -1171,14 +1171,28 @@ function esconderLoading() {
 }
 
 function definirSidebarAberto(aberto) {
-    document.body.classList.toggle('sidebar-open', aberto);
+    const painel = document.getElementById('appSidebar');
     const botao = document.getElementById('btnSidebarToggle');
+    const focoEstavaDentro = painel && painel.contains(document.activeElement);
+    // Não deixa links invisíveis acessíveis por Tab quando o painel estiver fechado.
+    if (painel && aberto) {
+        painel.inert = false;
+        painel.setAttribute('aria-hidden', 'false');
+    }
+    if (!aberto && focoEstavaDentro) botao?.focus({ preventScroll: true });
+    document.body.classList.toggle('sidebar-open', Boolean(aberto));
+    if (painel && !aberto) {
+        painel.inert = true;
+        painel.setAttribute('aria-hidden', 'true');
+    }
     if (botao) {
         botao.setAttribute('aria-expanded', String(aberto));
         botao.setAttribute('aria-label', aberto ? 'Fechar menu lateral' : 'Abrir menu lateral');
         botao.title = aberto ? 'Fechar menu lateral' : 'Abrir menu lateral';
-        botao.textContent = aberto ? '×' : '☰';
+        const icone = botao.querySelector('.sidebar-toggle-glyph');
+        if (icone) icone.textContent = aberto ? '×' : '☰';
     }
+    if (aberto) painel?.querySelector('.sidebar-close-btn')?.focus({ preventScroll: true });
 }
 
 function alternarSidebar() {
@@ -1189,31 +1203,104 @@ function fecharSidebar() {
     definirSidebarAberto(false);
 }
 
+function alternarSubmenuSidebar() {
+    const grupo = document.querySelector('#appSidebar .nav-dropdown');
+    const botao = grupo?.querySelector('.sidebar-dropdown-trigger');
+    if (!grupo || !botao) return;
+    const expandir = !grupo.classList.contains('active');
+    grupo.classList.toggle('active', expandir);
+    botao.setAttribute('aria-expanded', String(expandir));
+    const conteudo = grupo.querySelector('.nav-dropdown-content');
+    if (conteudo) conteudo.inert = !expandir;
+}
+
+function iconeSidebar(nome) {
+    // SVGs locais: o menu não depende de imagens adicionais nem de bibliotecas externas.
+    const formas = {
+        marca: '<rect x="3.5" y="3.5" width="17" height="17" rx="4"/><path d="M7 15.5l3.2-4 2.6 2.3L17 8.5"/>',
+        inicio: '<rect x="3.5" y="3.5" width="7" height="7" rx="1.2"/><rect x="13.5" y="3.5" width="7" height="7" rx="1.2"/><rect x="3.5" y="13.5" width="7" height="7" rx="1.2"/><rect x="13.5" y="13.5" width="7" height="7" rx="1.2"/>',
+        lancamentos: '<path d="M4 5.5h16M4 11.5h16M4 17.5h10"/><path d="m16 17.5 2 2 3-4"/>',
+        pagamentos: '<rect x="3.5" y="4" width="17" height="16" rx="3"/><path d="M3.5 9h17m-12 6h4"/>',
+        relatorios: '<path d="M4 20.5V14m5 6.5V10m5 10.5V4m5 16.5v-8"/><path d="M2.5 21h19"/>',
+        cadastros: '<rect x="3.5" y="4" width="17" height="16" rx="3"/><path d="M7 9h10M7 13h10M7 17h6"/>',
+        configuracoes: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l-1.87 1.87A1.7 1.7 0 0 0 16 18.4a1.7 1.7 0 0 0-2 1.5h-4a1.7 1.7 0 0 0-2-1.5 1.7 1.7 0 0 0-1.87.34l-1.87-1.87A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-1.5-2v-2A1.7 1.7 0 0 0 4.6 9a1.7 1.7 0 0 0-.34-1.87l1.87-1.87A1.7 1.7 0 0 0 8 5.6a1.7 1.7 0 0 0 2-1.5h4a1.7 1.7 0 0 0 2 1.5 1.7 1.7 0 0 0 1.87-.34l1.87 1.87A1.7 1.7 0 0 0 19.4 9a1.7 1.7 0 0 0 1.5 2v2a1.7 1.7 0 0 0-1.5 2z"/>',
+        perfil: '<circle cx="12" cy="8" r="4"/><path d="M4.5 21c.5-4 3-6 7.5-6s7 2 7.5 6"/>',
+        sair: '<path d="M10 4.5H5.5A2.5 2.5 0 0 0 3 7v10a2.5 2.5 0 0 0 2.5 2.5H10M14 7.5l4.5 4.5-4.5 4.5M8.5 12h10"/>',
+        chevron: '<path d="m6 9 6 6 6-6"/>'
+    };
+    return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">${formas[nome] || formas.inicio}</svg>`;
+}
+
+function destacarPaginaSidebar() {
+    const atual = String(window.location.pathname).split('/').pop().toLowerCase();
+    const redirecionamentos = {
+        'editar-lancamento.html': 'lancamentos.html',
+        'detalhes-central-parcelada.html': 'central-pagamentos.html',
+        'detalhes-financiamento.html': 'financiamentos.html',
+        'admin-logs.html': 'configuracoes.html',
+        'grafico.html': 'relatorios.html'
+    };
+    const destino = redirecionamentos[atual] || atual;
+    const painel = document.getElementById('appSidebar');
+    painel?.querySelectorAll('.sidebar-nav a[href]').forEach(link => {
+        if (link.getAttribute('href') === destino) link.setAttribute('aria-current', 'page');
+    });
+    const grupo = painel?.querySelector('.nav-dropdown');
+    const temSubpaginaAtiva = Boolean(grupo?.querySelector('.nav-dropdown-content a[aria-current="page"]'));
+    if (temSubpaginaAtiva) {
+        grupo.classList.add('active');
+        const acionador = grupo.querySelector('.sidebar-dropdown-trigger');
+        acionador?.setAttribute('aria-expanded', 'true');
+        acionador?.classList.add('is-section-current');
+        grupo.querySelector('.nav-dropdown-content').inert = false;
+    }
+}
+
 function injetarHeader() {
     if (document.querySelector('.app-sidebar')) return;
     const old = document.querySelector('.app-header'); if (old) old.remove();
     document.body.insertAdjacentHTML('afterbegin', `
-    <div class="mobile-overlay" onclick="fecharSidebar()"></div>
-    <aside id="appSidebar" class="app-sidebar" aria-label="Menu principal">
-        <button type="button" class="sidebar-close-btn" onclick="fecharSidebar()" aria-label="Fechar menu lateral" title="Fechar menu lateral">×</button>
-        <div class="sidebar-profile" style="margin-top: 20px;">
-            <div id="usuarioLogadoNome" onclick="window.location.href='perfil.html'" style="display: flex; flex-direction: column; align-items: center; gap: 8px; cursor: pointer;"></div>
-            <span id="headerLoadingText" style="display: none; font-size: 0.75rem; font-weight: 700; color: var(--primary); margin-top: 10px;"></span>
+    <div class="mobile-overlay" aria-hidden="true" onclick="fecharSidebar()"></div>
+    <aside id="appSidebar" class="app-sidebar" aria-label="Menu de navegação" aria-hidden="true" inert>
+        <div class="sidebar-top">
+            <a href="dashboard.html" class="sidebar-brand" aria-label="Ir ao painel">
+                <span class="sidebar-brand-mark">${iconeSidebar('marca')}</span>
+                <span class="sidebar-brand-copy"><strong>Controle Financeiro</strong><small>Seu espaço, suas finanças</small></span>
+            </a>
+            <button type="button" class="sidebar-close-btn" onclick="fecharSidebar()" aria-label="Fechar menu lateral" title="Fechar menu lateral">×</button>
         </div>
-        <nav class="sidebar-nav app-nav-center">
-            <div style="display: flex; justify-content: space-between; padding: 4px; margin-bottom: 6px; border: 1px solid var(--border); border-radius: 12px;">
-                <a href="dashboard.html" style="flex:1; padding:10px; display:flex; justify-content:center;"><img src="imagens/casa.png" style="width:20px;" alt="Início"></a>
-                <div style="width:1px; background:var(--border);"></div>
-                <a href="configuracoes.html" style="flex:1; padding:10px; display:flex; justify-content:center;"><img src="imagens/config.png" style="width:20px;" alt="Configurações"></a>
-            </div>
+        <div class="sidebar-profile">
+            <span class="sidebar-profile-eyebrow">Minha conta</span>
+            <a id="usuarioLogadoNome" href="perfil.html" aria-label="Abrir meu perfil"><span class="sidebar-user-greeting">Meu perfil</span></a>
+            <span id="headerLoadingText" class="sidebar-loading-text"></span>
+        </div>
+        <nav class="sidebar-nav app-nav-center" aria-label="Páginas do sistema">
+            <span class="sidebar-nav-label">Navegação</span>
+            <a class="sidebar-nav-link" href="dashboard.html"><span class="sidebar-nav-icon">${iconeSidebar('inicio')}</span><span>Visão geral</span></a>
+            <a class="sidebar-nav-link" href="lancamentos.html"><span class="sidebar-nav-icon">${iconeSidebar('lancamentos')}</span><span>Lançamentos</span></a>
+            <a class="sidebar-nav-link" href="central-pagamentos.html"><span class="sidebar-nav-icon">${iconeSidebar('pagamentos')}</span><span>Central de pagamentos</span></a>
+            <a class="sidebar-nav-link" href="relatorios.html"><span class="sidebar-nav-icon">${iconeSidebar('relatorios')}</span><span>Relatórios</span></a>
+            <div class="sidebar-divider" aria-hidden="true"></div>
+            <span class="sidebar-nav-label">Organização</span>
             <div class="nav-dropdown">
-                <a href="#" onclick="event.preventDefault(); event.stopPropagation(); this.parentElement.classList.toggle('active');">Cadastros ▾</a>
-                <div class="nav-dropdown-content"><a href="cartoes.html">Cartões</a><a href="categorias.html">Categorias</a><a href="bens.html">Bens</a><a href="financiamentos.html">Financiamentos</a></div>
+                <button type="button" class="sidebar-nav-link sidebar-dropdown-trigger" onclick="alternarSubmenuSidebar()" aria-expanded="false" aria-controls="sidebarCadastros">
+                    <span class="sidebar-nav-icon">${iconeSidebar('cadastros')}</span><span>Cadastros</span><span class="sidebar-chevron">${iconeSidebar('chevron')}</span>
+                </button>
+                <div id="sidebarCadastros" class="nav-dropdown-content" inert><div class="nav-dropdown-content-inner">
+                    <a href="cartoes.html">Cartões</a><a href="categorias.html">Categorias</a><a href="bens.html">Bens</a><a href="financiamentos.html">Financiamentos</a>
+                </div></div>
             </div>
-            <a href="lancamentos.html">Lançamentos</a><a href="central-pagamentos.html">Central de pagamentos</a><a href="relatorios.html">Relatórios</a>
+            <div class="sidebar-divider" aria-hidden="true"></div>
+            <span class="sidebar-nav-label">Minha área</span>
+            <a class="sidebar-nav-link" href="perfil.html"><span class="sidebar-nav-icon">${iconeSidebar('perfil')}</span><span>Meu perfil</span></a>
+            <a class="sidebar-nav-link" href="configuracoes.html"><span class="sidebar-nav-icon">${iconeSidebar('configuracoes')}</span><span>Configurações</span></a>
         </nav>
-        <div class="sidebar-footer"><a href="#" onclick="event.preventDefault(); deslogarSistema(true)" class="btn-sair-sidebar"><img src="imagens/exit.png" alt="Sair"><span>Sair do sistema</span></a></div>
+        <div class="sidebar-footer">
+            <span class="sidebar-footer-note">Tudo organizado em um só lugar</span>
+            <button type="button" onclick="deslogarSistema(true)" class="btn-sair-sidebar">${iconeSidebar('sair')}<span>Sair do sistema</span></button>
+        </div>
     </aside>`);
+    destacarPaginaSidebar();
 
     const p = String(window.location.pathname).split('/').pop().toLowerCase();
     const titulo = p.includes('admin-logs') ? 'Auditoria'
@@ -1233,7 +1320,7 @@ function injetarHeader() {
         cnt.insertAdjacentHTML('afterbegin', `
         <div class="app-top-island">
             <div class="top-island-leading">
-                <button type="button" id="btnSidebarToggle" class="mobile-menu-btn" onclick="alternarSidebar()" aria-label="Abrir menu lateral" aria-expanded="false" aria-controls="appSidebar" title="Abrir menu lateral">☰</button>
+                <button type="button" id="btnSidebarToggle" class="mobile-menu-btn" onclick="alternarSidebar()" aria-label="Abrir menu lateral" aria-expanded="false" aria-controls="appSidebar" title="Abrir menu lateral"><span class="sidebar-toggle-glyph" aria-hidden="true">☰</span></button>
                 <a class="top-island-brand" href="dashboard.html" title="Ir para o início" aria-label="Controle Financeiro — ir para a página inicial">
                     <img class="top-island-home-icon" src="imagens/home.png" alt="" aria-hidden="true" onerror="this.onerror=null;this.src='imagens/casa.png'">
                     <div class="top-island-brand-copy">
@@ -1260,9 +1347,22 @@ function injetarHeader() {
     }
     definirSidebarAberto(false);
     document.addEventListener('keydown', (e) => {
-        if (e.key === 'Escape' && document.body.classList.contains('sidebar-open')) {
+        if (!document.body.classList.contains('sidebar-open')) return;
+        if (e.key === 'Escape') {
+            e.preventDefault();
             fecharSidebar();
-            document.getElementById('btnSidebarToggle')?.focus();
+            return;
+        }
+        if (e.key === 'Tab') {
+            const itens = [...document.querySelectorAll('#appSidebar a[href], #appSidebar button')]
+                .filter(el => !el.closest('[inert]') && !el.hidden && !el.closest('[hidden]') && el.getClientRects().length);
+            if (!itens.length) return;
+            const primeiro = itens[0], ultimo = itens[itens.length - 1];
+            if (e.shiftKey && document.activeElement === primeiro) {
+                e.preventDefault(); ultimo.focus();
+            } else if (!e.shiftKey && document.activeElement === ultimo) {
+                e.preventDefault(); primeiro.focus();
+            }
         }
     });
     const botaoTema = document.getElementById('btnTemaVisual');
@@ -3100,7 +3200,12 @@ document.addEventListener("DOMContentLoaded", async () => {
     document.addEventListener('click', (e) => {
         const dd = document.querySelector('.nav-dropdown');
         if (!dd || !dd.classList.contains('active')) return;
-        if (!dd.contains(e.target)) dd.classList.remove('active');
+        if (!dd.contains(e.target) && !document.body.classList.contains('sidebar-open')) {
+            dd.classList.remove('active');
+            dd.querySelector('.sidebar-dropdown-trigger')?.setAttribute('aria-expanded', 'false');
+            const conteudo = dd.querySelector('.nav-dropdown-content');
+            if (conteudo) conteudo.inert = true;
+        }
     });
 
     if (!window.location.pathname.endsWith('index.html') && typeof verificarAutenticacao === 'function') {

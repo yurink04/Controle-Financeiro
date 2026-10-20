@@ -1,0 +1,505 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Relatórios e Fechamento | Controle Financeiro</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+    <main class="container">
+        <div class="page-heading" data-overline="INTELIGÊNCIA FINANCEIRA · RELATÓRIOS">
+            <div>
+                <h2>Relatório Gerencial</h2>
+                <p>Análise do mês, comparativo e alertas para decisões financeiras.</p>
+            </div>
+        </div>
+
+        <div class="relatorios-toolbar">
+            <div class="filter-group">
+                <label for="filtroMesRelatorio" style="margin: 0;">Competência:</label>
+                <input type="month" id="filtroMesRelatorio" onchange="carregarRelatorioMensal()" style="min-width: 160px;">
+            </div>
+            <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+                <a class="btn-toolbar-custom" href="rendimentos.html" title="Histórico de salário, adiantamentos e ganhos variáveis">💼 Meus rendimentos ↗</a>
+                <div class="menu-personalizar-container">
+                    <button type="button" class="btn-toolbar-custom" onclick="alternarMenuPersonalizar(event)">⚙️ Personalizar</button>
+                    <div id="dropdownMenuPersonalizar" class="dropdown-menu-personalizar" onclick="event.stopPropagation()">
+                        <p style="font-weight: 700; font-size: 0.8rem; margin-bottom: 8px; color: var(--text-muted);">EXIBIR BLOCOS:</p>
+                        <label><input type="checkbox" id="chkInsights" checked onchange="salvarPreferenciaVisao()"> Insights e Alertas</label>
+                        <label><input type="checkbox" id="chkComparativo" checked onchange="salvarPreferenciaVisao()"> Comparativo Mensal</label>
+                        <label><input type="checkbox" id="chkTopCategorias" checked onchange="salvarPreferenciaVisao()"> Top Categorias</label>
+                        <label><input type="checkbox" id="chkResumo" checked onchange="salvarPreferenciaVisao()"> Resumo e Indicadores</label>
+                        <label><input type="checkbox" id="chkClassificacao" checked onchange="salvarPreferenciaVisao()"> Classificação de Gastos</label>
+                        <label><input type="checkbox" id="chkContasPagas" checked onchange="salvarPreferenciaVisao()"> Contas Pagas</label>
+                        <label><input type="checkbox" id="chkContasAbertas" checked onchange="salvarPreferenciaVisao()"> Contas em Aberto</label>
+                        <label><input type="checkbox" id="chkFaturas" checked onchange="salvarPreferenciaVisao()"> Faturas de Cartão</label>
+                        <label><input type="checkbox" id="chkFinanciamentos" checked onchange="salvarPreferenciaVisao()"> Financiamentos</label>
+                        <label><input type="checkbox" id="chkBens" checked onchange="salvarPreferenciaVisao()"> Custos por Bem</label>
+                        <label><input type="checkbox" id="chkExtrato" onchange="salvarPreferenciaVisao()"> Extrato Completo</label>
+                    </div>
+                </div>
+                <div class="menu-opcoes-container">
+                    <button type="button" class="btn-toolbar-custom" onclick="alternarMenuOpcoes(event)" title="Exportar">⋮</button>
+                    <div id="dropdownMenuOpcoes" class="dropdown-menu-opcoes" style="display:none; position:absolute; right:0; top:calc(100% + 6px); background:var(--surface); border:1px solid var(--border); border-radius:10px; box-shadow:var(--shadow-lg); z-index:100; min-width:160px;">
+                        <button type="button" onclick="exportarCSV()" style="width:100%;background:transparent;border:none;padding:10px 14px;text-align:left;font-size:0.85rem;font-weight:600;color:var(--text-main);cursor:pointer;">📥 Exportar CSV</button>
+                        <button type="button" onclick="exportarPDF()" style="width:100%;background:transparent;border:none;padding:10px 14px;text-align:left;font-size:0.85rem;font-weight:600;color:var(--text-main);cursor:pointer;">📄 Exportar PDF</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <section class="form-card" id="blocoInsights" style="margin-bottom: 18px;">
+            <div class="section-title">
+                <div><h2>Insights e Alertas</h2><p>Análise automática do mês para orientar suas decisões.</p></div>
+            </div>
+            <div id="containerInsights" class="grid-2"></div>
+        </section>
+
+        <section class="form-card" id="blocoComparativo" style="margin-bottom: 18px;">
+            <div class="section-title">
+                <div><h2>Comparativo com mês anterior</h2><p>Variação percentual das principais métricas.</p></div>
+            </div>
+            <div id="containerComparativo" class="grid-4"></div>
+        </section>
+
+        <div id="blocoResumoGeral" class="stat-grid" style="margin-bottom: 18px; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));">
+            <div class="stat-box"><span class="stat-label">Total Entradas</span><div class="stat-value positivo" id="relTotalEntradas">R$ 0,00</div></div>
+            <div class="stat-box"><span class="stat-label">Total Saídas</span><div class="stat-value negativo" id="relTotalSaidas">R$ 0,00</div></div>
+            <div class="stat-box"><span class="stat-label">Saldo do Mês</span><div class="stat-value" id="relSaldo">R$ 0,00</div><div class="stat-detail">Entradas − Saídas</div></div>
+            <div class="stat-box"><span class="stat-label">Taxa de Poupança</span><div class="stat-value" id="relTaxaPoupanca">0%</div><div class="stat-detail">Sobra sobre as entradas</div></div>
+            <div class="stat-box"><span class="stat-label">Essenciais / Entradas</span><div class="stat-value warning" id="relComprometimento">0%</div><div class="stat-detail">Comprometimento da renda</div></div>
+        </div>
+
+        <section class="form-card" id="blocoTopCategorias" style="margin-bottom: 18px;">
+            <div class="section-title">
+                <div><h2>Top 5 categorias de gasto</h2><p>Onde a maior parte do dinheiro foi consumida.</p></div>
+            </div>
+            <div id="containerTopCategorias" class="grid-2"></div>
+        </section>
+
+        <div class="form-card" id="blocoClassificacao" style="margin-bottom: 18px;">
+            <div class="section-title"><div><h2>Classificação Estratégica</h2><p>Divisão contábil entre Casal, Individual, Essencial e Não Essencial.</p></div></div>
+            <div class="grid-4">
+                <div class="stat-box" style="background: var(--surface-2);"><span class="stat-label">Gastos de Casal</span><div class="stat-value" id="totCasal">R$ 0,00</div></div>
+                <div class="stat-box" style="background: var(--surface-2);"><span class="stat-label">Gastos Individuais</span><div class="stat-value" id="totIndividual">R$ 0,00</div></div>
+                <div class="stat-box" style="background: var(--surface-2);"><span class="stat-label">Gastos Essenciais</span><div class="stat-value" id="totEssencial">R$ 0,00</div></div>
+                <div class="stat-box" style="background: var(--surface-2);"><span class="stat-label">Gastos Não Essenciais</span><div class="stat-value" id="totNaoEssencial">R$ 0,00</div></div>
+            </div>
+        </div>
+
+        <div class="grid-2" style="margin-bottom: 18px;">
+            <section class="form-card" id="blocoSecaoContasPagas" style="margin-bottom: 0;">
+                <div class="section-title"><div><h2>Receitas e Contas Pagas</h2></div></div>
+                <div class="tabela-container tabela-fluida">
+                    <table class="tabela"><thead><tr><th>Descrição</th><th>Vencimento</th><th>Valor</th><th>Ações</th></tr></thead><tbody id="tabelaContasPagas"></tbody></table>
+                </div>
+            </section>
+            <section class="form-card" id="blocoSecaoContasAbertas" style="margin-bottom: 0;">
+                <div class="section-title"><div><h2>Receitas e Contas em Aberto</h2></div></div>
+                <div class="tabela-container tabela-fluida">
+                    <table class="tabela"><thead><tr><th>Descrição</th><th>Vencimento</th><th>Valor</th><th>Ações</th></tr></thead><tbody id="tabelaContasAbertas"></tbody></table>
+                </div>
+            </section>
+        </div>
+
+        <div class="grid-2" style="margin-bottom: 18px;">
+            <section class="form-card" id="blocoSecaoFaturas" style="margin-bottom: 0;">
+                <div class="section-title"><div><h2>Faturas de Cartão no Período</h2></div></div>
+                <div class="tabela-container tabela-fluida">
+                    <table class="tabela"><thead><tr><th>Cartão</th><th>Vencimento</th><th>Valor Total</th><th>Status</th><th style="text-align: center;">Ações</th></tr></thead><tbody id="tabelaFaturasRelatorio"></tbody></table>
+                </div>
+            </section>
+            <section class="form-card" id="blocoSecaoFinanciamentos" style="margin-bottom: 0;">
+                <div class="section-title"><div><h2>Contratos e Parcelas Ativas</h2></div></div>
+                <div class="tabela-container tabela-fluida">
+                    <table class="tabela"><thead><tr><th>Contrato</th><th>Parcela</th><th>Valor</th></tr></thead><tbody id="tabelaFinanciamentosRelatorio"></tbody></table>
+                </div>
+            </section>
+        </div>
+
+        <section class="form-card" id="blocoSecaoBens" style="margin-bottom: 18px;">
+            <div class="section-title"><div><h2>Investimentos por Bem Patrimonial</h2><p>Total aportado em bens vinculados no período.</p></div></div>
+            <div class="tabela-container">
+                <table class="tabela"><thead><tr><th>Bem</th><th>Tipo</th><th>Valor de Aquisição</th><th>Gasto / Aporte no Mês</th></tr></thead><tbody id="tabelaBensRelatorio"></tbody></table>
+            </div>
+        </section>
+
+        <section class="form-card" id="blocoSecaoExtrato">
+            <div class="section-title"><div><h2>Extrato Detalhado do Período</h2><p>Movimentações completas para auditoria.</p></div></div>
+            <div class="tabela-container">
+                <table class="tabela">
+                    <thead><tr><th>Data</th><th>Descrição</th><th>Categoria</th><th>Tipo</th><th>Status</th><th>Valor</th><th style="text-align: center;">Ações</th></tr></thead>
+                    <tbody id="tabelaExtratoRelatorio"></tbody>
+                </table>
+            </div>
+        </section>
+    </main>
+
+    <script src="script.js"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', async () => {
+            injetarHeader();
+            const autenticado = await verificarAutenticacao();
+            if (!autenticado) return;
+
+            const hoje = new Date();
+            const filtroMes = document.getElementById('filtroMesRelatorio');
+            if (filtroMes) filtroMes.value = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, '0')}`;
+
+            carregarPreferenciasVisao();
+            carregarRelatorioMensal();
+        });
+
+        async function marcarPagamento(id) {
+            const ok = await alternarStatusPagamento(id);
+            if (ok) carregarRelatorioMensal();
+        }
+
+        function alternarMenuPersonalizar(event) {
+            event.stopPropagation();
+            const menu = document.getElementById('dropdownMenuPersonalizar');
+            if (menu) menu.style.display = menu.style.display === 'block' ? 'none' : 'block';
+            const o = document.getElementById('dropdownMenuOpcoes'); if (o) o.style.display = 'none';
+        }
+        function alternarMenuOpcoes(event) {
+            event.stopPropagation();
+            const menu = document.getElementById('dropdownMenuOpcoes');
+            if (menu) menu.style.display = menu.style.display === 'block' ? 'none' : 'block';
+            const p = document.getElementById('dropdownMenuPersonalizar'); if (p) p.style.display = 'none';
+        }
+        window.addEventListener('click', () => {
+            const m1 = document.getElementById('dropdownMenuPersonalizar');
+            const m2 = document.getElementById('dropdownMenuOpcoes');
+            if (m1) m1.style.display = 'none';
+            if (m2) m2.style.display = 'none';
+        });
+
+        function salvarPreferenciaVisao() {
+            const ids = ['Insights','Comparativo','TopCategorias','Resumo','Classificacao','ContasPagas','ContasAbertas','Faturas','Financiamentos','Bens','Extrato'];
+            const prefs = {};
+            ids.forEach(id => prefs[id.toLowerCase()] = document.getElementById('chk' + id)?.checked ?? true);
+            localStorage.setItem('relatorioPrefs', JSON.stringify(prefs));
+            aplicarPreferenciasVisao(prefs);
+        }
+        function carregarPreferenciasVisao() {
+            const salvo = localStorage.getItem('relatorioPrefs');
+            if (!salvo) return;
+            try {
+                const prefs = JSON.parse(salvo);
+                ['Insights','Comparativo','TopCategorias','Resumo','Classificacao','ContasPagas','ContasAbertas','Faturas','Financiamentos','Bens','Extrato'].forEach(id => {
+                    const el = document.getElementById('chk' + id);
+                    const k = id.toLowerCase();
+                    if (el && prefs[k] !== undefined) el.checked = prefs[k];
+                });
+                aplicarPreferenciasVisao(prefs);
+            } catch (e) {}
+        }
+        function aplicarPreferenciasVisao(p) {
+            const map = {
+                blocoInsights: p.insights, blocoComparativo: p.comparativo, blocoTopCategorias: p.topcategorias,
+                blocoResumoGeral: p.resumo, blocoClassificacao: p.classificacao, blocoSecaoContasPagas: p.contaspagas,
+                blocoSecaoContasAbertas: p.contasabertas, blocoSecaoFaturas: p.faturas, blocoSecaoFinanciamentos: p.financiamentos,
+                blocoSecaoBens: p.bens, blocoSecaoExtrato: p.extrato
+            };
+            Object.entries(map).forEach(([id, v]) => { const el = document.getElementById(id); if (el) el.style.display = v === false ? 'none' : ''; });
+            const contas = document.getElementById('blocoSecaoContasPagas')?.closest('.grid-2');
+            if (contas) contas.style.display = (p.contaspagas || p.contasabertas) ? 'grid' : 'none';
+            const fats = document.getElementById('blocoSecaoFaturas')?.closest('.grid-2');
+            if (fats) fats.style.display = (p.faturas || p.financiamentos) ? 'grid' : 'none';
+        }
+
+        function carregarRelatorioMensal() {
+            const filtro = document.getElementById('filtroMesRelatorio');
+            if (!filtro || !filtro.value) return;
+            const mesSelecionado = filtro.value;
+
+            const dados = obterDados();
+            const lancamentosPermitidos = filtrarDadosPorPermissao(dados.lancamentos || [], dados, 'casal');
+            const bensPermitidos = filtrarDadosPorPermissao(dados.bens || [], dados, 'casal');
+            const cartoesPermitidos = filtrarDadosPorPermissao(dados.cartoes || [], dados, 'casal');
+            const categorias = dados.categorias || [];
+
+            const movimentosMes = lancamentosPermitidos.filter(l => String(l.vencimento || l.data || l.dataCompra || l.createdAt || '').startsWith(mesSelecionado));
+
+            let totalEntradas = 0, totalSaidas = 0, totCasal = 0, totIndividual = 0, totEssencial = 0, totNaoEssencial = 0;
+            const somasCat = {};
+
+            const tbodyPagas = document.getElementById('tabelaContasPagas');
+            const tbodyAbertas = document.getElementById('tabelaContasAbertas');
+            const tbodyExtrato = document.getElementById('tabelaExtratoRelatorio');
+            const tbodyFin = document.getElementById('tabelaFinanciamentosRelatorio');
+            const tbodyFat = document.getElementById('tabelaFaturasRelatorio');
+            const tbodyBens = document.getElementById('tabelaBensRelatorio');
+            [tbodyPagas,tbodyAbertas,tbodyExtrato,tbodyFin,tbodyFat,tbodyBens].forEach(t => { if (t) t.innerHTML = ''; });
+
+            let countPagas = 0, countAbertas = 0, countExtrato = 0, countFin = 0;
+
+            movimentosMes.forEach(m => {
+                const valor = Number(m.valor || 0);
+                const tipo = m.tipo || 'saida';
+                const cat = categorias.find(c => Number(c.id) === Number(m.categoriaId)) || { nome: 'Geral', tipoGasto: 'individual' };
+
+                if (tipo === 'entrada') {
+                    totalEntradas += valor;
+                } else {
+                    totalSaidas += valor;
+                    somasCat[m.categoriaId] = (somasCat[m.categoriaId] || 0) + valor;
+                    const esc = m.escopo || cat.tipoGasto || 'casal';
+                    if (esc === 'casal') totCasal += valor; else totIndividual += valor;
+                    if (m.servicoEssencial === 'sim') totEssencial += valor; else totNaoEssencial += valor;
+                    if (m.financiamentoId || (m.descricao && normalizarTexto(m.descricao).includes('financiamento'))) {
+                        const trFin = document.createElement('tr');
+                        trFin.innerHTML = `<td>${escaparHTML(m.descricao || '')}</td><td>${m.parcelaAtual && m.totalParcelas ? `${escaparHTML(m.parcelaAtual)}/${escaparHTML(m.totalParcelas)}` : 'Única'}</td><td class="negativo">${escaparHTML(formatarMoeda(valor))}</td>`;
+                        if (tbodyFin) tbodyFin.appendChild(trFin);
+                        countFin++;
+                    }
+                }
+
+                const btnAcoes = `<div style="display:flex;gap:6px;justify-content:flex-start;">
+                    <button type="button" onclick="window.location.href='editar-lancamento.html?id=${encodeURIComponent(String(m.id))}'" class="btn-acao-icone editar" title="Editar"><img src="imagens/editar.png" alt="Editar"></button>
+                    ${m.formaPagamento === 'CARTAO'
+                        ? `<a href="grafico.html?tipo=cartao&cartaoId=${m.cartaoId}&mes=${String(m.vencimento).slice(0,7)}" class="btn-acao-icone" title="Gerenciar Fatura" style="display:inline-flex;align-items:center;justify-content:center;text-decoration:none;"><span style="font-size:16px;">💳</span></a>`
+                        : `<button type="button" onclick="marcarPagamento(${Number(m.id)})" class="btn-acao-icone" title="${m.pago?'Desfazer':'Pagar'}"><img src="imagens/${m.pago?'desfazer':'pagar'}.png" alt="Ação"></button>`}
+                </div>`;
+                const clsValor = tipo === 'entrada' ? 'positivo' : 'negativo';
+                const selo = tipo === 'entrada' ? '<span class="status-badge status-pago" style="margin-right:8px;font-size:0.6rem;padding:2px 6px;">RECEITA</span>' : '';
+
+                const trConta = document.createElement('tr');
+                trConta.innerHTML = `<td>${selo}${escaparHTML(m.descricao || '')}</td><td>${escaparHTML(m.vencimento ? m.vencimento.split('-').reverse().join('/') : '-')}</td><td class="${clsValor}">${escaparHTML(formatarMoeda(valor))}</td><td>${btnAcoes}</td>`;
+                if (m.pago) { if (tbodyPagas) tbodyPagas.appendChild(trConta); countPagas++; }
+                else { if (tbodyAbertas) tbodyAbertas.appendChild(trConta); countAbertas++; }
+
+                const trExt = document.createElement('tr');
+                trExt.innerHTML = `<td>${escaparHTML(m.vencimento ? m.vencimento.split('-').reverse().join('/') : '-')}</td><td><strong>${escaparHTML(m.descricao || '')}</strong></td><td>${escaparHTML(cat.nome || 'Geral')}</td><td><span class="status-badge ${tipo === 'entrada' ? 'status-pago' : 'status-pendente'}">${tipo.toUpperCase()}</span></td><td>${m.pago ? 'Pago' : 'Pendente'}</td><td class="${clsValor}">${escaparHTML(formatarMoeda(valor))}</td><td>${btnAcoes}</td>`;
+                if (tbodyExtrato) tbodyExtrato.appendChild(trExt);
+                countExtrato++;
+            });
+
+            const faturasMap = {};
+            movimentosMes.filter(l => l.formaPagamento === 'CARTAO' && l.cartaoId).forEach(l => { faturasMap[l.cartaoId] = (faturasMap[l.cartaoId] || 0) + Number(l.valor || 0); });
+            let countFat = 0;
+            for (const cartaoId in faturasMap) {
+                const cObj = cartoesPermitidos.find(c => Number(c.id) === Number(cartaoId));
+                if (!cObj) continue;
+                const faturaId = `fat_${cartaoId}_${mesSelecionado}`;
+                const faturaDb = (dados.fatura_cartao || []).find(f => String(f.id) === String(faturaId));
+                const st = faturaDb ? faturaDb.status : 'pendente';
+                const stTxt = st === 'paga' ? 'Quitada' : st === 'parcial' ? 'Parcial' : 'Pendente';
+                const stCls = st === 'paga' ? 'status-pago' : st === 'parcial' ? 'status-pendente' : 'status-atrasado';
+                const btnFat = `<button type="button" onclick="window.location.href='grafico.html?tipo=cartao&cartaoId=${Number(cartaoId)}&mes=${mesSelecionado}'" class="btn-acao-icone" title="Gerenciar Fatura"><img src="imagens/ver.png" alt="Ver" style="width:20px;height:20px;object-fit:contain;"></button>`;
+                const trFat = document.createElement('tr');
+                trFat.innerHTML = `<td>${escaparHTML(cObj.nome)}</td><td>Dia ${escaparHTML(cObj.vencimento)}</td><td class="negativo">${escaparHTML(formatarMoeda(faturasMap[cartaoId]))}</td><td><span class="status-badge ${stCls}">${stTxt}</span></td><td style="text-align:center;">${btnFat}</td>`;
+                if (tbodyFat) tbodyFat.appendChild(trFat);
+                countFat++;
+            }
+
+            let countBens = 0;
+            bensPermitidos.filter(b => b.ativo !== false).forEach(b => {
+                const gasto = movimentosMes.filter(l => Number(l.bemId) === Number(b.id) && l.tipo === 'saida').reduce((a, l) => a + Number(l.valor || 0), 0);
+                const tr = document.createElement('tr');
+                tr.innerHTML = `<td><strong>${escaparHTML(b.nome || '')}</strong></td><td>${escaparHTML((b.tipo || '').toUpperCase())}</td><td>${escaparHTML(formatarMoeda(b.valor || 0))}</td><td class="negativo">${escaparHTML(formatarMoeda(gasto))}</td>`;
+                if (tbodyBens) tbodyBens.appendChild(tr);
+                countBens++;
+            });
+
+            if (countPagas === 0 && tbodyPagas) tbodyPagas.innerHTML = `<tr><td colspan="4" style="text-align:center;">Nenhuma conta paga.</td></tr>`;
+            if (countAbertas === 0 && tbodyAbertas) tbodyAbertas.innerHTML = `<tr><td colspan="4" style="text-align:center;">Nenhuma conta em aberto.</td></tr>`;
+            if (countFin === 0 && tbodyFin) tbodyFin.innerHTML = `<tr><td colspan="3" style="text-align:center;">Nenhum financiamento no período.</td></tr>`;
+            if (countFat === 0 && tbodyFat) tbodyFat.innerHTML = `<tr><td colspan="5" style="text-align:center;">Nenhuma fatura.</td></tr>`;
+            if (countBens === 0 && tbodyBens) tbodyBens.innerHTML = `<tr><td colspan="4" style="text-align:center;">Nenhum bem cadastrado.</td></tr>`;
+            if (countExtrato === 0 && tbodyExtrato) tbodyExtrato.innerHTML = `<tr><td colspan="7" style="text-align:center;">Nenhum lançamento encontrado.</td></tr>`;
+
+            const set = (id, txt) => { const e = document.getElementById(id); if (e) e.textContent = txt; };
+            set('relTotalEntradas', formatarMoeda(totalEntradas));
+            set('relTotalSaidas', formatarMoeda(totalSaidas));
+            const saldo = totalEntradas - totalSaidas;
+            const eSaldo = document.getElementById('relSaldo');
+            if (eSaldo) { eSaldo.textContent = formatarMoeda(saldo); eSaldo.className = `stat-value ${saldo >= 0 ? 'positivo' : 'negativo'}`; }
+            const taxaP = totalEntradas > 0 ? ((totalEntradas - totalSaidas) / totalEntradas) * 100 : 0;
+            set('relTaxaPoupanca', formatarPercentualPrivado(taxaP, 1));
+            const eTaxa = document.getElementById('relTaxaPoupanca'); if (eTaxa) eTaxa.className = `stat-value ${taxaP >= 0 ? 'positivo' : 'negativo'}`;
+            const comp = totalEntradas > 0 ? (totEssencial / totalEntradas) * 100 : 0;
+            set('relComprometimento', formatarPercentualPrivado(comp, 1));
+            set('totCasal', formatarMoeda(totCasal));
+            set('totIndividual', formatarMoeda(totIndividual));
+            set('totEssencial', formatarMoeda(totEssencial));
+            set('totNaoEssencial', formatarMoeda(totNaoEssencial));
+
+            renderizarInsights(dados, movimentosMes, totalEntradas, totalSaidas, totEssencial, somasCat, mesSelecionado);
+            renderizarComparativo(dados, mesSelecionado, totalEntradas, totalSaidas, totEssencial);
+            renderizarTopCategorias(dados, somasCat, totalSaidas);
+        }
+
+        function renderizarInsights(dados, movs, ent, sai, ess, somasCat, mes) {
+            const cont = document.getElementById('containerInsights');
+            if (!cont) return;
+            const insights = [];
+            const saldo = ent - sai;
+            const priv = privacidadeAtiva();
+
+            if (ent === 0 && sai === 0) {
+                cont.innerHTML = `<div class="stat-box" style="grid-column:1/-1;text-align:center;"><p class="muted">Nenhum lançamento no período.</p></div>`;
+                return;
+            }
+            if (saldo < 0) {
+                insights.push({
+                    ic: '🔴', cor: 'var(--danger)',
+                    tit: 'Saldo negativo',
+                    txt: priv
+                        ? 'Você gastou mais do que recebeu este mês. Revise os gastos não essenciais.'
+                        : `Você gastou ${formatarMoeda(Math.abs(saldo))} mais do que recebeu este mês.`
+                });
+            } else if (ent > 0 && (saldo / ent) > 0.2) {
+                insights.push({
+                    ic: '🟢', cor: 'var(--success)',
+                    tit: 'Boa taxa de poupança',
+                    txt: priv
+                        ? 'Você guardou parte da renda este mês. Continue assim.'
+                        : `Você guardou ${(saldo / ent * 100).toFixed(0)}% da renda. Continue assim.`
+                });
+            }
+            if (ent > 0) {
+                const pct = (ess / ent) * 100;
+                const pctTxt = priv ? '••%' : `${pct.toFixed(0)}%`;
+                if (pct > 70) {
+                    insights.push({
+                        ic: '🚨', cor: 'var(--danger)',
+                        tit: 'Essenciais muito altos',
+                        txt: `${pctTxt} da renda foi para despesas essenciais. Considere revisar.`
+                    });
+                } else if (pct > 50) {
+                    insights.push({
+                        ic: '⚠️', cor: 'var(--warning)',
+                        tit: 'Atenção aos essenciais',
+                        txt: `${pctTxt} da renda foi para essenciais — acima do ideal.`
+                    });
+                }
+            }
+            const hoje = dataLocalYYYYMMDD();
+            const atrasadas = movs.filter(m => !m.pago && m.vencimento < hoje && m.tipo === 'saida');
+            if (atrasadas.length) {
+                const t = atrasadas.reduce((a, m) => a + Number(m.valor || 0), 0);
+                insights.push({
+                    ic: '⏰', cor: 'var(--danger)',
+                    tit: `${atrasadas.length} conta(s) atrasada(s)`,
+                    txt: priv
+                        ? 'Priorize a quitação para evitar juros e negativação.'
+                        : `Total em atraso: ${formatarMoeda(t)}. Priorize a quitação.`
+                });
+            }
+            const seteDias = dataLocalYYYYMMDD(new Date(Date.now() + 7 * 24 * 60 * 60 * 1000));
+            const vencendo = movs.filter(m => !m.pago && m.vencimento >= hoje && m.vencimento <= seteDias);
+            if (vencendo.length) {
+                const t = vencendo.reduce((a, m) => a + Number(m.valor || 0), 0);
+                insights.push({
+                    ic: '📅', cor: 'var(--warning)',
+                    tit: `${vencendo.length} conta(s) vencem em 7 dias`,
+                    txt: priv
+                        ? 'Programe os pagamentos para evitar atrasos.'
+                        : `Total: ${formatarMoeda(t)}. Programe os pagamentos.`
+                });
+            }
+
+            cont.innerHTML = insights.length ? insights.map(i => `
+                <div class="stat-box" style="border-left:4px solid ${i.cor};">
+                    <div style="display:flex;gap:12px;align-items:flex-start;">
+                        <span style="font-size:1.5rem;line-height:1;">${i.ic}</span>
+                        <div><div style="font-weight:800;margin-bottom:4px;">${i.tit}</div><div style="font-size:0.88rem;color:var(--text-muted);">${i.txt}</div></div>
+                    </div>
+                </div>`).join('')
+                : `<div class="stat-box" style="grid-column:1/-1;text-align:center;"><p class="muted">✓ Tudo em ordem. Nenhum alerta para este mês.</p></div>`;
+        }
+
+        function renderizarComparativo(dados, mes, ent, sai, ess) {
+            const cont = document.getElementById('containerComparativo');
+            if (!cont) return;
+            const [ano, m] = mes.split('-').map(Number);
+            const dataAnt = new Date(ano, m - 2, 1);
+            const mesAnt = `${dataAnt.getFullYear()}-${String(dataAnt.getMonth() + 1).padStart(2, '0')}`;
+            const lancs = filtrarDadosPorPermissao(dados.lancamentos || [], dados, 'casal');
+            const movsAnt = lancs.filter(l => String(l.vencimento || l.dataCompra || '').startsWith(mesAnt));
+            let entAnt = 0, saiAnt = 0, essAnt = 0;
+            movsAnt.forEach(l => {
+                if (l.tipo === 'entrada') entAnt += Number(l.valor || 0);
+                else {
+                    saiAnt += Number(l.valor || 0);
+                    if (l.servicoEssencial === 'sim') essAnt += Number(l.valor || 0);
+                }
+            });
+            const priv = privacidadeAtiva();
+            const calcularPct = (atual, ant) => {
+                if (ant === 0) return atual > 0 ? { v: '—', cor: 'var(--text-muted)' } : { v: '0%', cor: 'var(--text-muted)' };
+                const p = ((atual - ant) / ant) * 100;
+                if (priv) return { v: '••%', cor: 'var(--text-muted)' };
+                const sinal = p > 0 ? '+' : '';
+                return { v: `${sinal}${p.toFixed(0)}%`, cor: p > 0 ? 'var(--danger)' : p < 0 ? 'var(--success)' : 'var(--text-muted)' };
+            };
+            const cards = [
+                { label: 'Entradas', atual: ent, ant: entAnt, inv: true },
+                { label: 'Saídas', atual: sai, ant: saiAnt, inv: false },
+                { label: 'Saldo', atual: ent - sai, ant: entAnt - saiAnt, inv: true },
+                { label: 'Essenciais', atual: ess, ant: essAnt, inv: false }
+            ];
+            cont.innerHTML = cards.map(c => {
+                const pct = calcularPct(c.atual, c.ant);
+                return `<div class="stat-box">
+                    <div class="stat-label">${c.label}</div>
+                    <div class="stat-value" style="font-size:1.1rem;">${formatarMoeda(c.atual)}</div>
+                    <div class="stat-detail">Mês anterior: ${formatarMoeda(c.ant)}</div>
+                    <div style="margin-top:6px;font-weight:800;color:${pct.cor};">${pct.v}</div>
+                </div>`;
+            }).join('');
+        }
+
+        function renderizarTopCategorias(dados, somasCat, totalSaidas) {
+            const cont = document.getElementById('containerTopCategorias');
+            if (!cont) return;
+            const priv = privacidadeAtiva();
+            const ranking = Object.entries(somasCat).map(([catId, val]) => {
+                const cat = (dados.categorias || []).find(c => String(c.id) === String(catId));
+                return { nome: cat ? cat.nome : 'Sem categoria', valor: val, pct: totalSaidas > 0 ? (val / totalSaidas * 100) : 0 };
+            }).sort((a, b) => b.valor - a.valor).slice(0, 5);
+
+            if (!ranking.length) {
+                cont.innerHTML = `<div class="stat-box" style="grid-column:1/-1;text-align:center;"><p class="muted">Nenhum gasto registrado no período.</p></div>`;
+                return;
+            }
+            const maxVal = ranking[0]?.valor || 1;
+            cont.innerHTML = ranking.map((r, i) => {
+                const pctTxt = priv ? '••%' : `${r.pct.toFixed(1)}%`;
+                const valorTxt = priv ? 'R$ •••,••' : formatarMoeda(r.valor);
+                const larguraBarra = priv ? 100 : (r.valor / maxVal) * 100;
+                return `
+                <div class="stat-box">
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+                        <div class="stat-label">#${i + 1} · ${escaparHTML(r.nome)}</div>
+                        <span style="font-size:0.78rem;font-weight:800;color:var(--primary);">${pctTxt}</span>
+                    </div>
+                    <div class="stat-value" style="font-size:1.1rem;">${valorTxt}</div>
+                    <div class="progress" style="margin-top:8px;height:6px;">
+                        <div style="height:100%;background:var(--primary);border-radius:inherit;width:${larguraBarra}%;"></div>
+                    </div>
+                </div>`;
+            }).join('');
+        }
+
+        function exportarCSV() {
+            const mes = document.getElementById('filtroMesRelatorio')?.value || '';
+            const dados = obterDados();
+            const lancs = filtrarDadosPorPermissao(dados.lancamentos || [], dados, 'casal').filter(l => String(l.vencimento || l.data || l.dataCompra || l.createdAt || '').startsWith(mes));
+            if (!lancs.length) { mostrarAlertaModal('Não há dados para exportar.'); return; }
+            const campo = v => { let t = v == null ? '' : String(v); if (/^[\s\u0000-\u001f]*[=+\-@]/.test(t)) t = "'" + t; return `"${t.replace(/"/g, '""').replace(/\r?\n/g, ' ')}"`; };
+            const linhas = [['Vencimento', 'Descrição', 'Tipo', 'Valor']];
+            lancs.forEach(l => linhas.push([l.vencimento || '', l.descricao || '', l.tipo || '', Number(l.valor || 0).toFixed(2).replace('.', ',')]));
+            const csv = '\uFEFF' + linhas.map(l => l.map(campo).join(';')).join('\r\n');
+            const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8;' }));
+            const a = document.createElement('a');
+            a.href = url; a.download = `relatorio_${mes || 'completo'}.csv`;
+            document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+        }
+        function exportarPDF() { window.print(); }
+    </script>
+</body>
+</html>

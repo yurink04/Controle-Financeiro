@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Meus Rendimentos | Controle Financeiro</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body class="account-page income-page">
+    <main class="container account-container">
+        <header class="account-hero">
+            <div><span class="account-eyebrow">MEU FINANCEIRO · RENDIMENTOS</span>
+                <h1>Saiba de onde vem cada real.</h1>
+                <p>Seu salário estimado, adiantamentos, horas extras e entradas variáveis, com histórico e cálculos explicados.</p></div>
+            <a href="relatorios.html" class="account-hero-home">↗ <span>Relatórios</span></a>
+        </header>
+
+        <nav class="account-nav" aria-label="Navegação de rendimentos">
+            <a href="perfil.html">◉ <span>Meu perfil</span></a>
+            <a class="active" href="rendimentos.html" aria-current="page">▤ <span>Meus rendimentos</span></a>
+            <a href="relatorios.html">↗ <span>Relatórios gerais</span></a>
+        </nav>
+
+        <section class="income-filterbar" aria-label="Filtrar rendimentos">
+            <div><span class="income-eyebrow">HISTÓRICO INDIVIDUAL</span><h2>Visão dos seus ganhos</h2><p>Os filtros alteram o histórico; a média projetada sempre usa os últimos 6 meses corridos.</p></div>
+            <div class="income-filter-controls">
+                <label for="inicioPeriodoRenda">Período <select id="inicioPeriodoRenda" onchange="carregarHistoricoRendimentos()">
+                    <option value="3">Últimos 3 meses</option><option value="6" selected>Últimos 6 meses</option>
+                    <option value="12">Últimos 12 meses</option><option value="todos">Todo o histórico</option>
+                </select></label>
+                <label for="fimPeriodoRenda">Até o mês <input type="month" id="fimPeriodoRenda" onchange="carregarHistoricoRendimentos()"></label>
+                <button type="button" id="exportarRendimentosCsv" class="btn-secundario" onclick="exportarHistoricoRendimentos()">↓ Exportar CSV</button>
+            </div>
+        </section>
+
+        <div id="conteudoRendimentos">
+            <section class="income-kpis" aria-label="Projeção mensal">
+                <article><span>Salário bruto informado</span><strong id="rendaBrutaCard">R$ 0,00</strong><small>Antes dos descontos da folha</small></article>
+                <article><span>Salário líquido estimado</span><strong id="rendaLiquidaCard">R$ 0,00</strong><small>Depois dos descontos previstos</small></article>
+                <article><span>Renda variável média</span><strong id="mediaVariavelCard">R$ 0,00</strong><small>6 meses, incluindo os sem ganhos</small></article>
+                <article class="income-kpi-featured"><span>Renda disponível estimada</span><strong id="rendaCompostaCard">R$ 0,00</strong><small>Líquido + média variável</small></article>
+            </section>
+
+            <section class="income-two-col">
+                <article class="account-panel income-detail-card">
+                    <div class="income-section-heading"><div><span class="income-eyebrow">SIMULAÇÃO · REFERÊNCIA 2026</span><h2>Como o líquido é calculado</h2>
+                        <p>INSS progressivo, IRRF quando aplicável e os descontos que você cadastrou.</p></div>
+                        <button type="button" class="btn-secundario" onclick="abrirEditorSalarial()">⚙ Configurar salário</button>
+                    </div>
+                    <div id="detalheFolhaEstimado" class="income-breakdown"></div>
+                    <details class="income-legal-details"><summary>Como o INSS e o IRRF são apurados?</summary>
+                        <div id="detalheFaixasINSS"></div>
+                        <p>O IRRF compara as deduções legais com o desconto simplificado mensal e considera a redução prevista em 2026. Valores podem diferir do contracheque.</p>
+                    </details>
+                </article>
+                <article class="account-panel income-detail-card">
+                    <div class="income-section-heading"><div><span class="income-eyebrow">RENDA VARIÁVEL</span><h2>Como calculamos a média</h2>
+                        <p>Usamos o que entrou em cada um dos seis meses mais recentes.</p></div></div>
+                    <div id="detalheMediaVariavel" class="income-breakdown"></div>
+                    <p class="income-hint">Entradas classificadas como adiantamento, folha, férias, 13º, PLR, empréstimos, transferências ou reembolsos não entram nessa média.</p>
+                </article>
+            </section>
+
+            <section class="account-panel income-history-card">
+                <div class="income-section-heading"><div><span class="income-eyebrow">HISTÓRICO DE SALÁRIO</span><h2>Folha + adiantamentos, mês a mês</h2>
+                    <p>Veja quanto foi realmente lançado e identifique as horas extras já incluídas na folha.</p></div></div>
+                <div class="tabela-container income-responsive-table">
+                    <table class="tabela"><thead><tr><th>Mês</th><th>Folha recebida</th><th>Adiantamentos</th><th>Outros salariais</th><th>Horas extras inclusas</th><th>Total recebido</th></tr></thead>
+                        <tbody id="historicoSalarioMensal"></tbody></table>
+                </div>
+                <p class="income-hint">O total recebido soma os lançamentos. As horas extras são apenas uma informação dentro da folha e não são adicionadas novamente.</p>
+            </section>
+
+            <section class="account-panel income-history-card">
+                <div class="income-section-heading"><div><span class="income-eyebrow">HISTÓRICO VARIÁVEL</span><h2>O que entrou em cada mês</h2>
+                    <p>Uber, trabalhos extras, vendas e outras receitas variáveis organizadas por categoria.</p></div></div>
+                <div class="income-variable-grid"><div class="tabela-container income-responsive-table">
+                    <table class="tabela"><thead><tr><th>Mês</th><th>Quantidade</th><th>Renda variável</th></tr></thead>
+                        <tbody id="historicoVariavelMensal"></tbody></table></div>
+                    <div id="categoriasVariaveis" class="income-category-list"></div>
+                </div>
+            </section>
+
+            <section class="account-panel income-history-card">
+                <div class="income-section-heading"><div><span class="income-eyebrow">EXTRATO DE GANHOS</span><h2>Cada lançamento, sem duplicidade</h2>
+                    <p>Confira categoria, descrição, tipo de renda, hora extra e valor registrado.</p></div></div>
+                <div class="tabela-container income-responsive-table">
+                    <table class="tabela"><thead><tr><th>Data</th><th>Descrição</th><th>Categoria</th><th>Classificação</th><th>Hora extra (inclusa)</th><th>Recebido</th><th>Abrir</th></tr></thead>
+                        <tbody id="historicoRendimentosItens"></tbody></table>
+                </div>
+            </section>
+        </div>
+        <div id="rendaPrivacidadeOculta" class="account-panel income-privacy-note" hidden>🔒 Valores ocultos pelo modo de privacidade. Use o botão de privacidade no cabeçalho para mostrar os rendimentos.</div>
+        <p class="income-disclaimer">Este demonstrativo é uma ferramenta de organização financeira, não uma folha de pagamento oficial. Regras de 2026 foram usadas para estimar o salário CLT; consulte o holerite para valores definitivos.</p>
+    </main>
+    <script src="script.js"></script>
+    <script>
+        let itensRendaExportacao = [];
+        const nomesRenda = {
+            folha: 'Folha de pagamento', adiantamento: 'Adiantamento salarial',
+            salarial_extra: 'Outros salariais', variavel: 'Renda variável'
+        };
+        function mesRendaPtBr(mes) {
+            const partes = String(mes || '').split('-');
+            if (partes.length !== 2) return mes;
+            return new Date(Number(partes[0]), Number(partes[1]) - 1, 1)
+                .toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
+        }
+        function periodoRendaInclui(mes, fim, qtd) {
+            if (!mes || mes > fim) return false;
+            if (qtd === 'todos') return true;
+            const [ano, m] = fim.split('-').map(Number);
+            const inicio = new Date(ano, m - 1 - (Number(qtd) - 1), 1);
+            const chave = inicio.getFullYear() + '-' + String(inicio.getMonth() + 1).padStart(2, '0');
+            return mes >= chave;
+        }
+        function linhaRenda(rotulo, valor, classe = '') {
+            return '<div class="income-breakdown-line ' + classe + '"><span>' + escaparHTML(rotulo) +
+                '</span><strong>' + formatarMoeda(valor) + '</strong></div>';
+        }
+        function carregarHistoricoRendimentos() {
+            const conteudo = document.getElementById('conteudoRendimentos');
+            const oculto = document.getElementById('rendaPrivacidadeOculta');
+            const discreto = document.body.classList.contains('privacidade-ativa');
+            conteudo.hidden = discreto;
+            oculto.hidden = !discreto;
+            document.getElementById('exportarRendimentosCsv').disabled = discreto;
+            itensRendaExportacao = [];
+            if (discreto) return;
+            const dados = obterDados(), usuario = obterUsuarioAtual(dados);
+            if (!usuario) return;
+            const calculo = calcularSalarioLiquido(usuario.rendaFixa, usuario.configuracaoSalarial);
+            const consolidado = consolidarRendimentosUsuario(dados, usuario.id);
+            const fim = document.getElementById('fimPeriodoRenda').value;
+            const qtd = document.getElementById('inicioPeriodoRenda').value;
+            const meses = consolidado.meses.filter(x => periodoRendaInclui(x.mes, fim, qtd));
+            const registros = consolidado.registros.filter(x => periodoRendaInclui(x.mesRenda, fim, qtd));
+            itensRendaExportacao = registros;
+            document.getElementById('rendaBrutaCard').textContent = formatarMoeda(calculo.bruto);
+            document.getElementById('rendaLiquidaCard').textContent = formatarMoeda(calculo.liquido);
+            document.getElementById('mediaVariavelCard').textContent = formatarMoeda(consolidado.mediaVariavel);
+            document.getElementById('rendaCompostaCard').textContent = formatarMoeda(centavosRenda(calculo.liquido + consolidado.mediaVariavel));
+            const itens = [
+                linhaRenda('Salário bruto informado', calculo.bruto),
+                linhaRenda('INSS (progressivo)', -calculo.inss.valor),
+                linhaRenda('IRRF estimado', -calculo.irrf.valor),
+                linhaRenda('Vale-transporte', -calculo.valeTransporte)
+            ];
+            calculo.descontos.forEach(d => itens.push(linhaRenda(d.nome + (d.tipo === 'percentual' ? ' (' + d.valor + '%)' : ''), -d.calculado)));
+            itens.push(linhaRenda('Total dos descontos', -calculo.totalDescontos, 'income-breakdown-subtotal'));
+            itens.push(linhaRenda('Salário líquido projetado', calculo.liquido, 'income-breakdown-total'));
+            document.getElementById('detalheFolhaEstimado').innerHTML = itens.join('');
+            document.getElementById('detalheFaixasINSS').innerHTML =
+                '<p>O INSS incide por faixas, não por uma alíquota única sobre todo o salário:</p>' +
+                calculo.inss.faixas.map(f => linhaRenda((f.aliquota * 100).toLocaleString('pt-BR') + '% sobre ' + formatarMoeda(f.ate - f.de), f.valor)).join('') +
+                '<p>IRRF: base ' + formatarMoeda(calculo.irrf.base || 0) + ', imposto antes da redução ' +
+                formatarMoeda(calculo.irrf.impostoTabela || 0) + ', redução ' + formatarMoeda(calculo.irrf.reducao || 0) + '.</p>';
+            const variaveis = consolidado.mesesMedia.map(mes => {
+                const total = consolidado.meses.find(g => g.mes === mes)?.variavel || 0;
+                return linhaRenda(mesRendaPtBr(mes), total);
+            });
+            variaveis.push(linhaRenda('Soma dos 6 meses', consolidado.totalVariavelJanela, 'income-breakdown-subtotal'));
+            variaveis.push(linhaRenda('Média (soma ÷ 6)', consolidado.mediaVariavel, 'income-breakdown-total'));
+            document.getElementById('detalheMediaVariavel').innerHTML = variaveis.join('');
+
+            const tdVazio = (colunas, texto) => '<tr><td colspan="' + colunas + '" class="income-empty">' + texto + '</td></tr>';
+            const mesesSalario = meses.filter(m => m.folha || m.adiantamento || m.salarial_extra);
+            document.getElementById('historicoSalarioMensal').innerHTML = mesesSalario.length
+                ? mesesSalario.map(m => '<tr><td data-label="Mês"><strong>' + escaparHTML(mesRendaPtBr(m.mes)) + '</strong></td>' +
+                    '<td data-label="Folha">' + formatarMoeda(m.folha) + '</td>' +
+                    '<td data-label="Adiantamentos">' + formatarMoeda(m.adiantamento) + '</td>' +
+                    '<td data-label="Outros">' + formatarMoeda(m.salarial_extra) + '</td>' +
+                    '<td data-label="Horas extras"><span class="income-extra-badge">' + formatarMoeda(m.horasExtras) + '</span></td>' +
+                    '<td data-label="Total"><strong>' + formatarMoeda(m.folha + m.adiantamento + m.salarial_extra) + '</strong></td></tr>').join('')
+                : tdVazio(6, 'Ainda não há lançamentos salariais neste período.');
+            const mesesVariavel = meses.filter(m => m.variavel);
+            document.getElementById('historicoVariavelMensal').innerHTML = mesesVariavel.length
+                ? mesesVariavel.map(m => '<tr><td data-label="Mês">' + escaparHTML(mesRendaPtBr(m.mes)) + '</td><td data-label="Lançamentos">' +
+                    registros.filter(r => r.mesRenda === m.mes && r.classeRenda === 'variavel').length +
+                    '</td><td data-label="Variável"><strong>' + formatarMoeda(m.variavel) + '</strong></td></tr>').join('')
+                : tdVazio(3, 'Nenhuma renda variável no período.');
+            const totaisCategorias = new Map();
+            registros.filter(r => r.classeRenda === 'variavel').forEach(r => {
+                const categoria = (dados.categorias || []).find(c => String(c.id) === String(r.categoriaId))?.nome || 'Sem categoria';
+                totaisCategorias.set(categoria, centavosRenda((totaisCategorias.get(categoria) || 0) + r.valor));
+            });
+            const topCategorias = [...totaisCategorias.entries()].sort((a, b) => b[1] - a[1]);
+            const totalCategorias = topCategorias.reduce((s, x) => s + x[1], 0);
+            document.getElementById('categoriasVariaveis').innerHTML = topCategorias.length ?
+                '<h3>Origem da renda variável</h3>' + topCategorias.map(([nome, valor]) =>
+                    '<div class="income-category-item"><div><strong>' + escaparHTML(nome) + '</strong><span>' + formatarMoeda(valor) +
+                    '</span></div><div class="income-category-track"><span style="width:' +
+                    Math.min(100, Math.max(0, valor / totalCategorias * 100)).toFixed(2) + '%"></span></div></div>').join('')
+                : '<p class="income-empty">Cadastre entradas variáveis para ver as origens aqui.</p>';
+            document.getElementById('historicoRendimentosItens').innerHTML = registros.length
+                ? registros.map(r => {
+                    const categoria = (dados.categorias || []).find(c => String(c.id) === String(r.categoriaId))?.nome || 'Sem categoria';
+                    const data = r.dataPagamento || r.vencimento || r.dataCompra;
+                    return '<tr><td data-label="Data">' + formatarDataBR(data) + '</td><td data-label="Descrição">' +
+                        escaparHTML(r.descricao || 'Sem descrição') + '</td><td data-label="Categoria">' +
+                        escaparHTML(categoria) + '</td><td data-label="Tipo"><span class="income-tag">' +
+                        escaparHTML(nomesRenda[r.classeRenda]) + '</span></td><td data-label="Hora extra">' +
+                        (r.horasExtrasIncluidas ? formatarMoeda(r.horasExtrasIncluidas) : '—') + '</td><td data-label="Recebido"><strong>' +
+                        formatarMoeda(r.valor) + '</strong></td><td data-label="Abrir"><a class="income-row-link" href="editar-lancamento.html?id=' +
+                        encodeURIComponent(String(r.id)) + '&returnUrl=rendimentos.html">↗</a></td></tr>';
+                }).join('')
+                : tdVazio(7, 'Sem entradas salariais ou variáveis registradas neste período.');
+        }
+        function exportarHistoricoRendimentos() {
+            if (document.body.classList.contains('privacidade-ativa')) return;
+            if (!itensRendaExportacao.length) { notificarOperacao('Não há registros no período para exportar.'); return; }
+            const dados = obterDados();
+            const linhas = [['Data','Mês','Descrição','Categoria','Classificação','Hora extra inclusa','Valor recebido']];
+            itensRendaExportacao.forEach(r => {
+                const categoria = (dados.categorias || []).find(c => String(c.id) === String(r.categoriaId))?.nome || '';
+                linhas.push([r.dataPagamento || r.vencimento || '', r.mesRenda, r.descricao || '',
+                    categoria, nomesRenda[r.classeRenda], r.horasExtrasIncluidas, r.valor]);
+            });
+            // Planilhas podem executar células começando por operadores, mesmo em campos CSV entre aspas.
+            const celulaSegura = valor => {
+                let texto = String(valor ?? '');
+                if (/^\s*[=+\-@]/.test(texto) && typeof valor === 'string') texto = "'" + texto;
+                return '"' + texto.replace(/"/g, '""') + '"';
+            };
+            const csv = '\uFEFF' + linhas.map(row => row.map(celulaSegura).join(';')).join('\r\n');
+            const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+            const a = document.createElement('a');
+            a.href = url; a.download = 'meus-rendimentos.csv'; document.body.append(a); a.click(); a.remove();
+            setTimeout(() => URL.revokeObjectURL(url), 1000);
+        }
+        document.addEventListener('DOMContentLoaded', async () => {
+            injetarHeader();
+            if (!await verificarAutenticacao()) return;
+            const agora = new Date();
+            const params = new URLSearchParams(window.location.search);
+            const mesSolicitado = params.get('mes');
+            document.getElementById('fimPeriodoRenda').value = /^\d{4}-(0[1-9]|1[0-2])$/.test(mesSolicitado || '')
+                ? mesSolicitado : agora.getFullYear() + '-' + String(agora.getMonth() + 1).padStart(2, '0');
+            carregarHistoricoRendimentos();
+            new MutationObserver(() => carregarHistoricoRendimentos())
+                .observe(document.body, { attributes: true, attributeFilter: ['class'] });
+        });
+    </script>
+</body>
+</html>

@@ -22,6 +22,7 @@ function conferirSessaoRespostaAPI(resposta) {
 }
 const SCHEMA_VERSION = 5;
 const SYNC_DEBOUNCE_MS = 1500;
+const SYNC_RETRY_MAX_MS = 90000;
 const SYNC_BASELINE_KEY = 'sistemaFinanceiroSnapshotSincronizado';
 const SYNC_CONFLICT_KEY = 'sistemaFinanceiroConflitoSync';
 const COLECOES_DADOS = ['usuarios', 'categorias', 'cartoes', 'lancamentos', 'financiamentos', 'bens', 'notificacoes', 'logs', 'exclusao_movimento', 'edicao_movimento', 'fatura_cartao'];
@@ -29,6 +30,7 @@ const COLECOES_DADOS = ['usuarios', 'categorias', 'cartoes', 'lancamentos', 'fin
 let syncTimer = null;
 let syncPendingData = null;
 let syncInFlight = false;
+let syncFalhasConsecutivas = 0;
 let processandoAcaoModal = false;
 let processandoSaidaSistema = false;
 let memoriaSistema = null;
@@ -85,6 +87,293 @@ async function gerarHash(texto) {
     const data = new TextEncoder().encode(texto);
     const hashBuffer = await crypto.subtle.digest('SHA-256', data);
     return Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+// ============================================================================
+// REMUNERAÇÃO CLT E HISTÓRICO DE RENDIMENTOS
+// Referência: INSS / Receita Federal (competência 2026). É uma estimativa:
+// rescisões, férias, 13º, múltiplos vínculos e rubricas específicas têm regras
+// próprias. O lançamento financeiro registra o valor efetivamente recebido.
+// ============================================================================
+const REFERENCIA_CALCULO_SALARIAL = '2026';
+const FAIXAS_INSS_2026 = Object.freeze([
+    { limite: 1621.00, taxa: .075 },
+    { limite: 2902.84, taxa: .09 },
+    { limite: 4354.27, taxa: .12 },
+    { limite: 8475.55, taxa: .14 }
+]);
+const FAIXAS_IRRF_2026 = Object.freeze([
+    { limite: 2428.80, aliquota: 0, deducao: 0 },
+    { limite: 2826.65, aliquota: .075, deducao: 182.16 },
+    { limite: 3751.05, aliquota: .15, deducao: 394.16 },
+    { limite: 4664.68, aliquota: .225, deducao: 675.49 },
+    { limite: Infinity, aliquota: .275, deducao: 908.73 }
+]);
+function centavosRenda(valor) {
+    const n = Number(valor);
+    return Number.isFinite(n) ? Math.round((n + Number.EPSILON) * 100) / 100 : 0;
+}
+function normalizarConfiguracaoSalarial(valor) {
+    const c = valor && typeof valor === 'object' && !Array.isArray(valor) ? valor : {};
+    return {
+        vtAtivo: c.vtAtivo === true,
+        vtCustoMensal: Math.max(0, centavosRenda(c.vtCustoMensal)),
+        irrfAtivo: c.irrfAtivo !== false,
+        dependentes: Math.min(20, Math.max(0, Math.trunc(Number(c.dependentes) || 0))),
+        descontos: Array.isArray(c.descontos) ? c.descontos.slice(0, 20)
+            .filter(d => d && typeof d === 'object')
+            .map(d => ({
+                id: String(d.id || gerarId('desc')).slice(0, 70),
+                nome: String(d.nome || 'Outro desconto').trim().slice(0, 70),
+                tipo: d.tipo === 'percentual' ? 'percentual' : 'fixo',
+                valor: Math.max(0, centavosRenda(d.valor))
+            })) : []
+    };
+}
+function calcularINSSSalario2026(remuneracaoBruta) {
+    const base = Math.min(Math.max(0, Number(remuneracaoBruta) || 0), 8475.55);
+    let anterior = 0, total = 0;
+    const faixas = [];
+    for (const faixa of FAIXAS_INSS_2026) {
+        const parcela = Math.max(0, Math.min(base, faixa.limite) - anterior);
+        if (parcela > 0) {
+            const descontado = centavosRenda(parcela * faixa.taxa);
+            faixas.push({ de: anterior, ate: Math.min(base, faixa.limite), aliquota: faixa.taxa, valor: descontado });
+            total += descontado;
+        }
+        anterior = faixa.limite;
+        if (base <= faixa.limite) break;
+    }
+    return { valor: centavosRenda(total), base, faixas };
+}
+function calcularIRRFSalario2026(remuneracaoBruta, inss, dependentes = 0) {
+    const bruto = Math.max(0, Number(remuneracaoBruta) || 0);
+    const deducaoDependentes = Math.max(0, Number(dependentes) || 0) * 189.59;
+    const baseLegal = Math.max(0, bruto - inss - deducaoDependentes);
+    const baseSimplificada = Math.max(0, bruto - 607.20);
+    const simplificado = baseSimplificada < baseLegal;
+    const base = centavosRenda(Math.min(baseLegal, baseSimplificada));
+    const faixa = FAIXAS_IRRF_2026.find(f => base <= f.limite);
+    const impostoTabela = centavosRenda(Math.max(0, base * faixa.aliquota - faixa.deducao));
+    const reducaoLegal = bruto <= 5000 ? impostoTabela
+        : bruto <= 7350 ? Math.max(0, 978.62 - 0.133145 * bruto) : 0;
+    const reducao = Math.min(impostoTabela, centavosRenda(reducaoLegal));
+    return {
+        valor: centavosRenda(Math.max(0, impostoTabela - reducao)),
+        base, baseLegal: centavosRenda(baseLegal), baseSimplificada: centavosRenda(baseSimplificada),
+        simplificado, aliquota: faixa.aliquota, deducaoTabela: faixa.deducao,
+        impostoTabela, reducao, dependentes: Math.max(0, Number(dependentes) || 0)
+    };
+}
+function calcularSalarioLiquido(brutoInformado, configuracao) {
+    const bruto = Math.max(0, centavosRenda(brutoInformado));
+    const conf = normalizarConfiguracaoSalarial(configuracao);
+    const inss = calcularINSSSalario2026(bruto);
+    const irrf = conf.irrfAtivo
+        ? calcularIRRFSalario2026(bruto, inss.valor, conf.dependentes)
+        : { valor: 0, base: 0, impostoTabela: 0, reducao: 0, desativado: true };
+    const vtMaximo = centavosRenda(bruto * .06);
+    const valeTransporte = conf.vtAtivo
+        ? centavosRenda(conf.vtCustoMensal > 0 ? Math.min(vtMaximo, conf.vtCustoMensal) : vtMaximo) : 0;
+    const descontos = conf.descontos.map(d => ({
+        ...d, calculado: centavosRenda(d.tipo === 'percentual' ? bruto * d.valor / 100 : d.valor)
+    }));
+    const outrosDescontos = centavosRenda(descontos.reduce((acc, d) => acc + d.calculado, 0));
+    const totalDescontos = centavosRenda(inss.valor + irrf.valor + valeTransporte + outrosDescontos);
+    return {
+        bruto, inss, irrf, valeTransporte, vtMaximo, descontos, outrosDescontos, totalDescontos,
+        liquido: Math.max(0, centavosRenda(bruto - totalDescontos)),
+        descontosExcedemBruto: totalDescontos > bruto, referencia: REFERENCIA_CALCULO_SALARIAL
+    };
+}
+function classificarEntradaRendimento(lancamento, dados) {
+    if (!lancamento || lancamento.tipo !== 'entrada') return 'fora';
+    const contrato = (dados.financiamentos || []).find(f => String(f.id) === String(lancamento.financiamentoId));
+    if (contrato && ['emprestimo', 'consignado', 'financiamento'].includes(normalizarTexto(contrato.tipoContrato))) return 'nao_renda';
+    const cat = (dados.categorias || []).find(c => String(c.id) === String(lancamento.categoriaId));
+    const categoria = normalizarTexto(cat?.nome);
+    const descricao = normalizarTexto(lancamento.descricao);
+    // Crédito financeiro, reembolso e transferência não são rendimentos do trabalho.
+    if (/emprestimo|financiamento|consignado|transferencia|estorno|reembolso|resgate/.test(categoria)) return 'nao_renda';
+    const manual = String(lancamento.naturezaRenda || '');
+    if (['folha', 'adiantamento', 'salarial_extra', 'variavel', 'nao_renda'].includes(manual)) return manual;
+    const texto = categoria + ' ' + descricao;
+    if (/adiantamento|antecipacao.*salario|vale.*salario/.test(texto)) return 'adiantamento';
+    if (/ferias|decimo|13.?salario|participacao.*lucro|\bplr\b/.test(texto)) return 'salarial_extra';
+    if (/salario|folha de pagamento|pagamento de folha/.test(texto)) return 'folha';
+    if (/emprestimo|transferencia|estorno|reembolso|resgate/.test(descricao)) return 'nao_renda';
+    return 'variavel';
+}
+function obterMesRendimento(lancamento) {
+    return String(lancamento.dataPagamento || lancamento.vencimento || lancamento.dataCompra || lancamento.createdAt || '').slice(0, 7);
+}
+function consolidarRendimentosUsuario(dados, usuarioId, referencia = new Date()) {
+    const mensal = new Map();
+    const registros = [];
+    for (const l of (dados.lancamentos || [])) {
+        if (String(l.usuarioId) !== String(usuarioId) || l.tipo !== 'entrada') continue;
+        if (l.pago !== true && l.status !== 'pago') continue;
+        const classe = classificarEntradaRendimento(l, dados);
+        if (classe === 'fora' || classe === 'nao_renda') continue;
+        const mes = obterMesRendimento(l);
+        if (!/^\d{4}-\d{2}$/.test(mes)) continue;
+        const valor = Math.max(0, centavosRenda(l.valor));
+        const horaExtra = classe === 'folha' ? Math.min(valor, Math.max(0, centavosRenda(l.horaExtra))) : 0;
+        if (!mensal.has(mes)) mensal.set(mes, {
+            mes, folha: 0, adiantamento: 0, salarial_extra: 0, variavel: 0, horasExtras: 0, total: 0, quantidade: 0
+        });
+        const grupo = mensal.get(mes);
+        grupo[classe] = centavosRenda(grupo[classe] + valor);
+        grupo.horasExtras = centavosRenda(grupo.horasExtras + horaExtra);
+        grupo.total = centavosRenda(grupo.total + valor);
+        grupo.quantidade++;
+        registros.push({ ...l, classeRenda: classe, mesRenda: mes, valor, horasExtrasIncluidas: horaExtra });
+    }
+    const hoje = referencia instanceof Date ? referencia : new Date(referencia);
+    const mesesMedia = [];
+    let totalVariavelJanela = 0;
+    for (let i = 0; i < 6; i++) {
+        const d = new Date(hoje.getFullYear(), hoje.getMonth() - i, 1);
+        const mes = String(d.getFullYear()) + '-' + String(d.getMonth() + 1).padStart(2, '0');
+        mesesMedia.push(mes);
+        totalVariavelJanela += mensal.get(mes)?.variavel || 0;
+    }
+    const grupos = [...mensal.values()].sort((a, b) => b.mes.localeCompare(a.mes));
+    registros.sort((a, b) => String(b.dataPagamento || b.vencimento || '').localeCompare(String(a.dataPagamento || a.vencimento || '')));
+    return {
+        meses: grupos, registros, mesesMedia, totalVariavelJanela: centavosRenda(totalVariavelJanela),
+        mediaVariavel: centavosRenda(totalVariavelJanela / 6),
+        totalFolha: centavosRenda(grupos.reduce((v, g) => v + g.folha, 0)),
+        totalAdiantamentos: centavosRenda(grupos.reduce((v, g) => v + g.adiantamento, 0)),
+        totalHorasExtras: centavosRenda(grupos.reduce((v, g) => v + g.horasExtras, 0))
+    };
+}
+
+function abrirEditorSalarial() {
+    if (document.getElementById('modalConfiguracaoSalarial')) return;
+    const dados = obterDados(), usuario = obterUsuarioAtual(dados);
+    if (!usuario) return;
+    const conf = normalizarConfiguracaoSalarial(usuario.configuracaoSalarial);
+    const modal = document.createElement('div');
+    modal.className = 'modal-overlay salary-modal-overlay';
+    modal.id = 'modalConfiguracaoSalarial';
+    modal.innerHTML = `
+        <div class="modal-box salary-modal" role="dialog" aria-modal="true" aria-labelledby="salarioModalTitulo">
+            <div class="salary-modal-head">
+                <div><span class="income-eyebrow">REMUNERAÇÃO MENSAL · CLT</span><h3 id="salarioModalTitulo">Configure seu salário</h3>
+                    <p>Informe o valor bruto. Estimamos os descontos para mostrar quanto pode entrar líquido.</p></div>
+                <button type="button" class="salary-close-btn" aria-label="Fechar edição">×</button>
+            </div>
+            <div class="salary-modal-grid">
+                <div class="form-group"><label for="salarioBrutoEditor">Salário bruto mensal (R$)</label>
+                    <input type="number" step="0.01" min="0" max="10000000" id="salarioBrutoEditor" value="${Number(usuario.rendaFixa || 0)}"></div>
+                <div class="form-group"><label for="dependentesSalarioEditor">Dependentes para IRRF</label>
+                    <input type="number" min="0" max="20" step="1" id="dependentesSalarioEditor" value="${conf.dependentes}"></div>
+            </div>
+            <div class="salary-modal-options">
+                <label class="salary-option"><input type="checkbox" id="irrfSalarioEditor" ${conf.irrfAtivo ? 'checked' : ''}><span><strong>Calcular IRRF, quando aplicável</strong><small>Usa a tabela progressiva e a redução mensal de 2026.</small></span></label>
+                <label class="salary-option"><input type="checkbox" id="vtSalarioEditor" ${conf.vtAtivo ? 'checked' : ''}><span><strong>Utilizo vale-transporte</strong><small>Até 6% do salário básico; o desconto real pode ser menor.</small></span></label>
+                <div class="form-group salary-vt-cost"><label for="vtCustoEditor">Custo mensal do transporte (R$, opcional)</label><input type="number" min="0" step="0.01" max="1000000" id="vtCustoEditor" value="${conf.vtCustoMensal || ''}" placeholder="Se vazio, estima 6%"></div>
+            </div>
+            <div class="salary-deductions-head"><div><strong>Outros descontos</strong><p>Academia, alimentação, refeição, sindicato e demais rubricas.</p></div>
+                <button type="button" class="btn-secundario" id="adicionarDescontoSalario">+ Adicionar</button></div>
+            <div id="listaDescontosSalario" class="salary-deductions-list"></div>
+            <div id="previaSalarioLiquido" class="salary-preview" aria-live="polite"></div>
+            <p class="salary-disclaimer">Simulação informativa baseada nas regras gerais CLT de 2026. Contracheque real, 13º, férias e acordos específicos podem gerar valores diferentes.</p>
+            <div class="salary-modal-actions"><span class="salary-editor-feedback" id="feedbackEditorSalario" role="status"></span>
+                <button type="button" class="btn-secundario" id="cancelarEditorSalario">Cancelar</button>
+                <button type="button" id="salvarEditorSalario">Salvar configuração</button>
+            </div>
+        </div>`;
+    document.body.appendChild(modal);
+    const campo = id => modal.querySelector('#' + id);
+    const areaDescontos = campo('listaDescontosSalario');
+    const salvar = campo('salvarEditorSalario');
+    function adicionarLinha(desconto = {}) {
+        if (areaDescontos.children.length >= 20) return;
+        const linha = document.createElement('div');
+        linha.className = 'salary-deduction-row';
+        linha.innerHTML = `
+            <input type="text" class="salary-deduction-name" maxlength="70" aria-label="Nome do desconto" placeholder="Ex.: vale-refeição" value="${escaparHTML(desconto.nome || '')}">
+            <select class="salary-deduction-type" aria-label="Tipo do desconto"><option value="fixo">R$</option><option value="percentual">%</option></select>
+            <input type="number" class="salary-deduction-value" min="0" max="10000000" step="0.01" aria-label="Valor do desconto" value="${Math.max(0, Number(desconto.valor) || 0)}">
+            <button type="button" class="salary-deduction-remove" aria-label="Remover desconto">×</button>`;
+        linha.querySelector('select').value = desconto.tipo === 'percentual' ? 'percentual' : 'fixo';
+        linha.querySelector('button').onclick = () => { linha.remove(); atualizarPrevia(); };
+        areaDescontos.appendChild(linha);
+    }
+    function lerEditor() {
+        const bruto = Number(campo('salarioBrutoEditor').value);
+        const dependentes = Number(campo('dependentesSalarioEditor').value);
+        if (!Number.isFinite(bruto) || bruto < 0 || bruto > 10000000) throw new Error('Informe um salário bruto válido.');
+        if (!Number.isInteger(dependentes) || dependentes < 0 || dependentes > 20) throw new Error('Informe entre 0 e 20 dependentes.');
+        const descontos = [...areaDescontos.children].map((linha, i) => {
+            const nome = linha.querySelector('.salary-deduction-name').value.trim();
+            const tipo = linha.querySelector('.salary-deduction-type').value;
+            const valor = Number(linha.querySelector('.salary-deduction-value').value);
+            if (!nome || !Number.isFinite(valor) || valor < 0 || valor > 10000000 || (tipo === 'percentual' && valor > 100))
+                throw new Error('Revise o nome e o valor dos descontos adicionais (percentual máximo: 100%).');
+            return { id: 'desconto_' + i, nome, tipo, valor };
+        });
+        const vtCusto = Number(campo('vtCustoEditor').value || 0);
+        if (!Number.isFinite(vtCusto) || vtCusto < 0 || vtCusto > 1000000) throw new Error('Custo de transporte inválido.');
+        return {
+            bruto, configuracao: {
+                vtAtivo: campo('vtSalarioEditor').checked, vtCustoMensal: vtCusto,
+                irrfAtivo: campo('irrfSalarioEditor').checked, dependentes, descontos
+            }
+        };
+    }
+    function atualizarPrevia() {
+        const area = campo('previaSalarioLiquido');
+        try {
+            const { bruto, configuracao } = lerEditor();
+            const c = calcularSalarioLiquido(bruto, configuracao);
+            area.innerHTML = `
+                <div><span>Salário bruto</span><strong>${formatarMoeda(c.bruto)}</strong></div>
+                <div><span>INSS (faixas progressivas)</span><strong>− ${formatarMoeda(c.inss.valor)}</strong></div>
+                <div><span>IRRF estimado</span><strong>− ${formatarMoeda(c.irrf.valor)}</strong></div>
+                <div><span>Vale-transporte</span><strong>− ${formatarMoeda(c.valeTransporte)}</strong></div>
+                <div><span>Outros descontos</span><strong>− ${formatarMoeda(c.outrosDescontos)}</strong></div>
+                <div class="salary-preview-total"><span>Possível salário líquido</span><strong>${formatarMoeda(c.liquido)}</strong></div>
+                ${c.descontosExcedemBruto ? '<p>Os descontos ultrapassaram o salário bruto. Revise os valores.</p>' : ''}`;
+            campo('feedbackEditorSalario').textContent = '';
+        } catch (e) {
+            area.replaceChildren();
+            campo('feedbackEditorSalario').textContent = e.message;
+        }
+    }
+    conf.descontos.forEach(adicionarLinha);
+    modal.addEventListener('input', atualizarPrevia);
+    modal.addEventListener('change', atualizarPrevia);
+    campo('adicionarDescontoSalario').onclick = () => { adicionarLinha(); atualizarPrevia(); };
+    const fechar = () => modal.remove();
+    modal.querySelector('.salary-close-btn').onclick = fechar;
+    campo('cancelarEditorSalario').onclick = fechar;
+    modal.addEventListener('click', e => { if (e.target === modal) fechar(); });
+    modal.addEventListener('keydown', e => { if (e.key === 'Escape') fechar(); });
+    salvar.onclick = async () => {
+        try {
+            const { bruto, configuracao } = lerEditor();
+            salvar.disabled = true; salvar.textContent = 'Salvando…';
+            const atual = obterDados();
+            const u = obterUsuarioAtual(atual);
+            if (!u) throw new Error('Sessão inválida.');
+            u.rendaFixa = centavosRenda(bruto);
+            u.configuracaoSalarial = normalizarConfiguracaoSalarial(configuracao);
+            registrarLog(atual, 'ATUALIZAÇÃO SALARIAL', 'Remuneração e descontos do próprio usuário atualizados.');
+            await salvarDados(atual);
+            fechar();
+            if (typeof carregarDadosPerfil === 'function') carregarDadosPerfil();
+            if (typeof carregarHistoricoRendimentos === 'function') carregarHistoricoRendimentos();
+            notificarOperacao('Configuração salarial salva. Sincronização em segundo plano.');
+        } catch (e) {
+            campo('feedbackEditorSalario').textContent = e.message;
+            salvar.disabled = false; salvar.textContent = 'Salvar configuração';
+        }
+    };
+    atualizarPrevia();
+    campo('salarioBrutoEditor').focus();
 }
 
 // ============================================================================
@@ -594,12 +883,20 @@ function marcarConflitoSincronizacao(dadosLocais, campos, mensagem) {
     console.error('Sincronização bloqueada:', conflito);
 }
 
-function agendarSincronizacaoSilenciosa() {
+function agendarSincronizacaoSilenciosa(urgente = false) {
     clearTimeout(syncTimer);
+    // Em modo offline, os dados permanecem salvos localmente. A rede ativa o
+    // próximo envio, sem requisições repetidas a cada segundo.
+    if (!navigator.onLine) {
+        syncTimer = null;
+        atualizarIndicadorSyncUI('pending');
+        return;
+    }
+    const atraso = urgente ? 120 : Math.min(SYNC_RETRY_MAX_MS, SYNC_DEBOUNCE_MS * Math.pow(2, Math.min(syncFalhasConsecutivas, 6)));
     syncTimer = setTimeout(() => {
         syncTimer = null;
         sincronizarComServidor();
-    }, SYNC_DEBOUNCE_MS);
+    }, atraso);
 }
 
 async function buscarDadosServidor() {
@@ -676,11 +973,16 @@ function iniciarSincronizacaoSegundoPlano() {
     setTimeout(() => verificarAtualizacaoServidor(), 500);
     setInterval(() => { if (!document.hidden) verificarAtualizacaoServidor(); }, SYNC_CHECK_INTERVAL_MS);
     document.addEventListener('visibilitychange', () => { if (!document.hidden) verificarAtualizacaoServidor(); });
-    window.addEventListener('online', () => verificarAtualizacaoServidor(true));
+    window.addEventListener('online', () => {
+        if (syncPendingData || localStorage.getItem('syncPendente') === 'true') {
+            if (!syncPendingData) syncPendingData = clonarDados(lerJSONLocal(DB_KEY, {}) || {});
+            agendarSincronizacaoSilenciosa(true);
+        } else verificarAtualizacaoServidor(true);
+    });
 }
 
 async function sincronizarComServidor() {
-    if (syncInFlight || !syncPendingData || localStorage.getItem(SYNC_CONFLICT_KEY)) return;
+    if (syncInFlight || !syncPendingData || localStorage.getItem(SYNC_CONFLICT_KEY) || !navigator.onLine) return;
     syncInFlight = true; let payloadAtual = null, tentativas = 0;
     try {
         while (syncPendingData && tentativas < 5 && !localStorage.getItem(SYNC_CONFLICT_KEY)) {
@@ -704,6 +1006,7 @@ async function sincronizarComServidor() {
                 continue;
             }
             if (json.status !== 'sucesso') throw new Error(json.mensagem || 'Erro sync.');
+            syncFalhasConsecutivas = 0;
             const rev = Number(json._revision);
             if (!Number.isFinite(rev)) throw new Error('Revisão inválida.');
             payloadAtual._revision = rev;
@@ -719,6 +1022,7 @@ async function sincronizarComServidor() {
             else { localStorage.setItem('syncPendente', 'true'); atualizarIndicadorSyncUI('pending'); }
         }
     } catch (e) {
+        syncFalhasConsecutivas++;
         console.warn('Sync adiada:', e);
         if (!syncPendingData && payloadAtual) syncPendingData = clonarDados(lerJSONLocal(DB_KEY, payloadAtual) || payloadAtual);
         localStorage.setItem('syncPendente', 'true'); atualizarIndicadorSyncUI('error');
@@ -1066,52 +1370,75 @@ async function verificarSenhaAdmin(nomeSecao = 'esta seção') {
         }
 
         if (dadosResposta.status === 'sucesso') {
-            await mostrarAlertaModal(
-                'Senha administrativa incorreta. Confira a propriedade SENHA_ADMIN nas Propriedades do script do Apps Script. A senha de login do usuário é diferente.'
-            );
+            await mostrarAlertaModal('Senha administrativa incorreta. Tente novamente.');
         } else {
-            await mostrarAlertaModal(
-                `Falha na autenticação da API: ${dadosResposta.mensagem || 'o servidor recusou a requisição'}. Confira se TOKEN_API no script.js corresponde a SENHA_MESTRA_API nas Propriedades do script e se a URL da implantação está correta.`
-            );
+            console.warn('Falha na verificação administrativa:', dadosResposta.mensagem);
+            await mostrarAlertaModal('Não foi possível validar o acesso agora. Tente novamente.');
         }
         return false;
     } catch (erro) {
-        await mostrarAlertaModal(
-            'Não foi possível validar a senha com o servidor. Confira a URL da implantação do Apps Script, as permissões do Web App e tente novamente.'
-        );
+        console.warn('Verificação administrativa indisponível:', erro);
+        await mostrarAlertaModal('Não foi possível validar a senha. Verifique sua conexão e tente novamente.');
         return false;
     }
 }
 
+let temporizadorFeedbackIntegrado = null;
+function atualizarFeedbackIntegrado(mensagem, estado = 'pending', duracao = 0) {
+    const ilha = document.querySelector('.app-top-island');
+    if (!ilha) return false;
+    let indicador = ilha.querySelector('.app-action-status');
+    if (!indicador) {
+        indicador = document.createElement('div');
+        indicador.className = 'app-action-status';
+        indicador.setAttribute('role', 'status');
+        indicador.setAttribute('aria-live', 'polite');
+        indicador.innerHTML = '<span class="app-action-indicator" aria-hidden="true"></span><span class="app-action-message"></span>';
+        ilha.append(indicador);
+    }
+    clearTimeout(temporizadorFeedbackIntegrado);
+    indicador.dataset.state = estado;
+    indicador.querySelector('.app-action-message').textContent = mensagem;
+    if (duracao > 0) temporizadorFeedbackIntegrado = setTimeout(() => indicador.remove(), duracao);
+    return true;
+}
+
+function notificarOperacao(mensagem = 'Pronto! Alteração registrada.') {
+    atualizarFeedbackIntegrado(mensagem, 'success', 3300);
+}
+
 function mostrarLoading(mensagem = "Processando...", usarGif = false) {
     const span = document.getElementById('headerLoadingText');
-    const spanVisivel = span && span.offsetParent !== null && document.body.classList.contains('sidebar-open');
     if (span) { span.textContent = mensagem; span.style.display = 'inline-block'; }
 
     const antigo = document.getElementById('loadingOverlay');
     if (antigo) antigo.remove();
 
-    if (!spanVisivel || usarGif) {
+    // Operações comuns mostram progresso na ilha. O GIF maior fica reservado
+    // para tarefas explicitamente demoradas (backup, recuperação e saída).
+    if (!usarGif && atualizarFeedbackIntegrado(mensagem, 'pending')) return;
+
+    {
         const ov = document.createElement('div');
         ov.id = 'loadingOverlay';
         ov.setAttribute('role', 'status');
         ov.setAttribute('aria-live', 'polite');
-        ov.style.cssText = 'position:fixed;top:20px;left:50%;transform:translateX(-50%);z-index:900;background:var(--surface);color:var(--text-main);padding:14px 20px;border-radius:14px;box-shadow:var(--shadow-lg);border:1px solid var(--border);display:flex;align-items:center;gap:12px;font-weight:700;font-size:0.85rem;pointer-events:none;';
+        ov.className = 'app-loading-overlay';
 
         let indicador;
         if (usarGif) {
             indicador = document.createElement('img');
             indicador.src = 'imagens/loading1.gif';
             indicador.alt = '';
-            indicador.style.cssText = 'width:64px;height:64px;object-fit:contain;flex-shrink:0;';
+            indicador.className = 'app-loading-image';
             indicador.onerror = () => {
                 const fallback = document.createElement('div');
-                fallback.style.cssText = 'width:22px;height:22px;border:2px solid var(--border);border-top-color:var(--primary);border-radius:50%;animation:spin .8s linear infinite;flex-shrink:0;';
+                fallback.className = 'app-loading-spinner';
                 indicador.replaceWith(fallback);
             };
         } else {
             indicador = document.createElement('div');
-            indicador.style.cssText = 'width:18px;height:18px;border:2px solid var(--border);border-top-color:var(--primary);border-radius:50%;animation:spin .8s linear infinite;flex-shrink:0;';
+            indicador.className = 'app-loading-spinner';
         }
 
         const texto = document.createElement('span');
@@ -1126,17 +1453,33 @@ function esconderLoading() {
     if (span) { span.style.display = 'none'; span.textContent = ''; }
     const overlay = document.getElementById('loadingOverlay');
     if (overlay) overlay.remove();
+    const integrado = document.querySelector('.app-action-status[data-state="pending"]');
+    if (integrado) integrado.remove();
 }
 
 function definirSidebarAberto(aberto) {
-    document.body.classList.toggle('sidebar-open', aberto);
+    const painel = document.getElementById('appSidebar');
     const botao = document.getElementById('btnSidebarToggle');
+    const focoEstavaDentro = painel && painel.contains(document.activeElement);
+    // Não deixa links invisíveis acessíveis por Tab quando o painel estiver fechado.
+    if (painel && aberto) {
+        painel.inert = false;
+        painel.setAttribute('aria-hidden', 'false');
+    }
+    if (!aberto && focoEstavaDentro) botao?.focus({ preventScroll: true });
+    document.body.classList.toggle('sidebar-open', Boolean(aberto));
+    if (painel && !aberto) {
+        painel.inert = true;
+        painel.setAttribute('aria-hidden', 'true');
+    }
     if (botao) {
         botao.setAttribute('aria-expanded', String(aberto));
         botao.setAttribute('aria-label', aberto ? 'Fechar menu lateral' : 'Abrir menu lateral');
         botao.title = aberto ? 'Fechar menu lateral' : 'Abrir menu lateral';
-        botao.textContent = aberto ? '×' : '☰';
+        const icone = botao.querySelector('.sidebar-toggle-glyph');
+        if (icone) icone.textContent = aberto ? '×' : '☰';
     }
+    if (aberto) painel?.querySelector('.sidebar-close-btn')?.focus({ preventScroll: true });
 }
 
 function alternarSidebar() {
@@ -1147,37 +1490,112 @@ function fecharSidebar() {
     definirSidebarAberto(false);
 }
 
+function alternarSubmenuSidebar() {
+    const grupo = document.querySelector('#appSidebar .nav-dropdown');
+    const botao = grupo?.querySelector('.sidebar-dropdown-trigger');
+    if (!grupo || !botao) return;
+    const expandir = !grupo.classList.contains('active');
+    grupo.classList.toggle('active', expandir);
+    botao.setAttribute('aria-expanded', String(expandir));
+    const conteudo = grupo.querySelector('.nav-dropdown-content');
+    if (conteudo) conteudo.inert = !expandir;
+}
+
+function iconeSidebar(nome) {
+    // SVGs locais: o menu não depende de imagens adicionais nem de bibliotecas externas.
+    const formas = {
+        marca: '<rect x="3.5" y="3.5" width="17" height="17" rx="4"/><path d="M7 15.5l3.2-4 2.6 2.3L17 8.5"/>',
+        inicio: '<rect x="3.5" y="3.5" width="7" height="7" rx="1.2"/><rect x="13.5" y="3.5" width="7" height="7" rx="1.2"/><rect x="3.5" y="13.5" width="7" height="7" rx="1.2"/><rect x="13.5" y="13.5" width="7" height="7" rx="1.2"/>',
+        lancamentos: '<path d="M4 5.5h16M4 11.5h16M4 17.5h10"/><path d="m16 17.5 2 2 3-4"/>',
+        pagamentos: '<rect x="3.5" y="4" width="17" height="16" rx="3"/><path d="M3.5 9h17m-12 6h4"/>',
+        relatorios: '<path d="M4 20.5V14m5 6.5V10m5 10.5V4m5 16.5v-8"/><path d="M2.5 21h19"/>',
+        cadastros: '<rect x="3.5" y="4" width="17" height="16" rx="3"/><path d="M7 9h10M7 13h10M7 17h6"/>',
+        configuracoes: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l-1.87 1.87A1.7 1.7 0 0 0 16 18.4a1.7 1.7 0 0 0-2 1.5h-4a1.7 1.7 0 0 0-2-1.5 1.7 1.7 0 0 0-1.87.34l-1.87-1.87A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-1.5-2v-2A1.7 1.7 0 0 0 4.6 9a1.7 1.7 0 0 0-.34-1.87l1.87-1.87A1.7 1.7 0 0 0 8 5.6a1.7 1.7 0 0 0 2-1.5h4a1.7 1.7 0 0 0 2 1.5 1.7 1.7 0 0 0 1.87-.34l1.87 1.87A1.7 1.7 0 0 0 19.4 9a1.7 1.7 0 0 0 1.5 2v2a1.7 1.7 0 0 0-1.5 2z"/>',
+        perfil: '<circle cx="12" cy="8" r="4"/><path d="M4.5 21c.5-4 3-6 7.5-6s7 2 7.5 6"/>',
+        sair: '<path d="M10 4.5H5.5A2.5 2.5 0 0 0 3 7v10a2.5 2.5 0 0 0 2.5 2.5H10M14 7.5l4.5 4.5-4.5 4.5M8.5 12h10"/>',
+        chevron: '<path d="m6 9 6 6 6-6"/>'
+    };
+    return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">${formas[nome] || formas.inicio}</svg>`;
+}
+
+function destacarPaginaSidebar() {
+    const atual = String(window.location.pathname).split('/').pop().toLowerCase();
+    const redirecionamentos = {
+        'editar-lancamento.html': 'lancamentos.html',
+        'detalhes-central-parcelada.html': 'central-pagamentos.html',
+        'detalhes-financiamento.html': 'financiamentos.html',
+        'admin-logs.html': 'configuracoes.html',
+        'grafico.html': 'relatorios.html'
+    };
+    const destino = redirecionamentos[atual] || atual;
+    const painel = document.getElementById('appSidebar');
+    painel?.querySelectorAll('.sidebar-nav a[href]').forEach(link => {
+        if (link.getAttribute('href') === destino) link.setAttribute('aria-current', 'page');
+    });
+    const grupo = painel?.querySelector('.nav-dropdown');
+    const temSubpaginaAtiva = Boolean(grupo?.querySelector('.nav-dropdown-content a[aria-current="page"]'));
+    if (temSubpaginaAtiva) {
+        grupo.classList.add('active');
+        const acionador = grupo.querySelector('.sidebar-dropdown-trigger');
+        acionador?.setAttribute('aria-expanded', 'true');
+        acionador?.classList.add('is-section-current');
+        grupo.querySelector('.nav-dropdown-content').inert = false;
+    }
+}
+
 function injetarHeader() {
     if (document.querySelector('.app-sidebar')) return;
     const old = document.querySelector('.app-header'); if (old) old.remove();
     document.body.insertAdjacentHTML('afterbegin', `
-    <div class="mobile-overlay" onclick="fecharSidebar()"></div>
-    <aside id="appSidebar" class="app-sidebar" aria-label="Menu principal">
-        <button type="button" class="sidebar-close-btn" onclick="fecharSidebar()" aria-label="Fechar menu lateral" title="Fechar menu lateral">×</button>
-        <div class="sidebar-profile" style="margin-top: 20px;">
-            <div id="usuarioLogadoNome" onclick="window.location.href='perfil.html'" style="display: flex; flex-direction: column; align-items: center; gap: 8px; cursor: pointer;"></div>
-            <span id="headerLoadingText" style="display: none; font-size: 0.75rem; font-weight: 700; color: var(--primary); margin-top: 10px;"></span>
+    <div class="mobile-overlay" aria-hidden="true" onclick="fecharSidebar()"></div>
+    <aside id="appSidebar" class="app-sidebar" aria-label="Menu de navegação" aria-hidden="true" inert>
+        <div class="sidebar-top">
+            <a href="dashboard.html" class="sidebar-brand" aria-label="Ir ao painel">
+                <span class="sidebar-brand-mark">${iconeSidebar('marca')}</span>
+                <span class="sidebar-brand-copy"><strong>Controle Financeiro</strong><small>Seu espaço, suas finanças</small></span>
+            </a>
+            <button type="button" class="sidebar-close-btn" onclick="fecharSidebar()" aria-label="Fechar menu lateral" title="Fechar menu lateral">×</button>
         </div>
-        <nav class="sidebar-nav app-nav-center">
-            <div style="display: flex; justify-content: space-between; padding: 4px; margin-bottom: 6px; border: 1px solid var(--border); border-radius: 12px;">
-                <a href="dashboard.html" style="flex:1; padding:10px; display:flex; justify-content:center;"><img src="imagens/casa.png" style="width:20px;" alt="Início"></a>
-                <div style="width:1px; background:var(--border);"></div>
-                <a href="configuracoes.html" style="flex:1; padding:10px; display:flex; justify-content:center;"><img src="imagens/config.png" style="width:20px;" alt="Configurações"></a>
-            </div>
+        <div class="sidebar-profile">
+            <span class="sidebar-profile-eyebrow">Minha conta</span>
+            <a id="usuarioLogadoNome" href="perfil.html" aria-label="Abrir meu perfil"><span class="sidebar-user-greeting">Meu perfil</span></a>
+            <span id="headerLoadingText" class="sidebar-loading-text"></span>
+        </div>
+        <nav class="sidebar-nav app-nav-center" aria-label="Páginas do sistema">
+            <span class="sidebar-nav-label">Navegação</span>
+            <a class="sidebar-nav-link" href="dashboard.html"><span class="sidebar-nav-icon">${iconeSidebar('inicio')}</span><span>Visão geral</span></a>
+            <a class="sidebar-nav-link" href="lancamentos.html"><span class="sidebar-nav-icon">${iconeSidebar('lancamentos')}</span><span>Lançamentos</span></a>
+            <a class="sidebar-nav-link" href="central-pagamentos.html"><span class="sidebar-nav-icon">${iconeSidebar('pagamentos')}</span><span>Central de pagamentos</span></a>
+            <a class="sidebar-nav-link" href="relatorios.html"><span class="sidebar-nav-icon">${iconeSidebar('relatorios')}</span><span>Relatórios</span></a>
+            <div class="sidebar-divider" aria-hidden="true"></div>
+            <span class="sidebar-nav-label">Organização</span>
             <div class="nav-dropdown">
-                <a href="#" onclick="event.preventDefault(); event.stopPropagation(); this.parentElement.classList.toggle('active');">Cadastros ▾</a>
-                <div class="nav-dropdown-content"><a href="cartoes.html">Cartões</a><a href="categorias.html">Categorias</a><a href="bens.html">Bens</a><a href="financiamentos.html">Financiamentos</a></div>
+                <button type="button" class="sidebar-nav-link sidebar-dropdown-trigger" onclick="alternarSubmenuSidebar()" aria-expanded="false" aria-controls="sidebarCadastros">
+                    <span class="sidebar-nav-icon">${iconeSidebar('cadastros')}</span><span>Cadastros</span><span class="sidebar-chevron">${iconeSidebar('chevron')}</span>
+                </button>
+                <div id="sidebarCadastros" class="nav-dropdown-content" inert><div class="nav-dropdown-content-inner">
+                    <a href="cartoes.html">Cartões</a><a href="categorias.html">Categorias</a><a href="bens.html">Bens</a><a href="financiamentos.html">Financiamentos</a>
+                </div></div>
             </div>
-            <a href="lancamentos.html">Lançamentos</a><a href="central-pagamentos.html">Central de pagamentos</a><a href="relatorios.html">Relatórios</a>
+            <div class="sidebar-divider" aria-hidden="true"></div>
+            <span class="sidebar-nav-label">Minha área</span>
+            <a class="sidebar-nav-link" href="perfil.html"><span class="sidebar-nav-icon">${iconeSidebar('perfil')}</span><span>Meu perfil</span></a>
+            <a class="sidebar-nav-link" href="rendimentos.html"><span class="sidebar-nav-icon">${iconeSidebar('relatorios')}</span><span>Meus rendimentos</span></a>
+            <a class="sidebar-nav-link" href="configuracoes.html"><span class="sidebar-nav-icon">${iconeSidebar('configuracoes')}</span><span>Configurações</span></a>
         </nav>
-        <div class="sidebar-footer"><a href="#" onclick="event.preventDefault(); deslogarSistema(true)" class="btn-sair-sidebar"><img src="imagens/exit.png" alt="Sair"><span>Sair do sistema</span></a></div>
+        <div class="sidebar-footer">
+            <span class="sidebar-footer-note">Tudo organizado em um só lugar</span>
+            <button type="button" onclick="deslogarSistema(true)" class="btn-sair-sidebar">${iconeSidebar('sair')}<span>Sair do sistema</span></button>
+        </div>
     </aside>`);
+    destacarPaginaSidebar();
 
     const p = String(window.location.pathname).split('/').pop().toLowerCase();
     const titulo = p.includes('admin-logs') ? 'Auditoria'
         : p.includes('lancamento') ? 'Lançamentos'
         : p.includes('central') ? 'Central'
         : p.includes('relatorios') ? 'Relatórios'
+        : p.includes('rendimentos') ? 'Meus rendimentos'
         : p.includes('cartoes') ? 'Cartões'
         : p.includes('categorias') ? 'Categorias'
         : p.includes('bens') ? 'Bens'
@@ -1191,7 +1609,7 @@ function injetarHeader() {
         cnt.insertAdjacentHTML('afterbegin', `
         <div class="app-top-island">
             <div class="top-island-leading">
-                <button type="button" id="btnSidebarToggle" class="mobile-menu-btn" onclick="alternarSidebar()" aria-label="Abrir menu lateral" aria-expanded="false" aria-controls="appSidebar" title="Abrir menu lateral">☰</button>
+                <button type="button" id="btnSidebarToggle" class="mobile-menu-btn" onclick="alternarSidebar()" aria-label="Abrir menu lateral" aria-expanded="false" aria-controls="appSidebar" title="Abrir menu lateral"><span class="sidebar-toggle-glyph" aria-hidden="true">☰</span></button>
                 <a class="top-island-brand" href="dashboard.html" title="Ir para o início" aria-label="Controle Financeiro — ir para a página inicial">
                     <img class="top-island-home-icon" src="imagens/home.png" alt="" aria-hidden="true" onerror="this.onerror=null;this.src='imagens/casa.png'">
                     <div class="top-island-brand-copy">
@@ -1218,9 +1636,22 @@ function injetarHeader() {
     }
     definirSidebarAberto(false);
     document.addEventListener('keydown', (e) => {
-        if (e.key === 'Escape' && document.body.classList.contains('sidebar-open')) {
+        if (!document.body.classList.contains('sidebar-open')) return;
+        if (e.key === 'Escape') {
+            e.preventDefault();
             fecharSidebar();
-            document.getElementById('btnSidebarToggle')?.focus();
+            return;
+        }
+        if (e.key === 'Tab') {
+            const itens = [...document.querySelectorAll('#appSidebar a[href], #appSidebar button')]
+                .filter(el => !el.closest('[inert]') && !el.hidden && !el.closest('[hidden]') && el.getClientRects().length);
+            if (!itens.length) return;
+            const primeiro = itens[0], ultimo = itens[itens.length - 1];
+            if (e.shiftKey && document.activeElement === primeiro) {
+                e.preventDefault(); ultimo.focus();
+            } else if (!e.shiftKey && document.activeElement === ultimo) {
+                e.preventDefault(); primeiro.focus();
+            }
         }
     });
     const botaoTema = document.getElementById('btnTemaVisual');
@@ -1241,7 +1672,21 @@ function atualizarHeaderUsuario() {
         const av = u.fotoPerfil || 'data:image/svg+xml;charset=UTF-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22%23a89586%22%3E%3Cpath%20d%3D%22M12%2012c2.21%200%204-1.79%204-4s-1.79-4-4-4-4%201.79-4%204%201.79%204%204%204zm0%202c-2.67%200-8%201.34-8%204v2h16v-2c0-2.66-5.33-4-8-4z%22%2F%3E%3C%2Fsvg%3E';
         const nomeSeguro = u.nome ? String(u.nome) : 'Usuário';
         const primeiroNome = nomeSeguro.split(' ')[0] || 'Usuário';
-        sn.innerHTML = `<img src="${av}" style="width:72px; height:72px; border-radius:50%; object-fit:cover; border:3px solid var(--primary);" alt="Avatar"><span style="margin-top:12px; display:block;">Olá, <b>${escaparHTML(primeiroNome)}</b></span>`;
+        // Foto e nome vêm do banco: usar propriedades de DOM evita injeção HTML.
+        sn.replaceChildren();
+        const avatar = document.createElement('img');
+        avatar.alt = 'Avatar';
+        avatar.className = 'sidebar-user-avatar';
+        const avatarPadrao = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4" fill="#a89586"/><path d="M3 21c0-5 4-8 9-8s9 3 9 8" fill="#a89586"/></svg>');
+        avatar.src = /^(https:\/\/|data:image\/(?:png|jpeg|gif|webp|svg\+xml);)/i.test(String(av)) ? av : avatarPadrao;
+        avatar.onerror = () => { avatar.onerror = null; avatar.src = avatarPadrao; };
+        const saudacao = document.createElement('span');
+        saudacao.className = 'sidebar-user-greeting';
+        saudacao.append('Olá, ');
+        const nome = document.createElement('b');
+        nome.textContent = primeiroNome;
+        saudacao.append(nome);
+        sn.append(avatar, saudacao);
     }
     if (typeof renderizarSinoNotificacoes === 'function') renderizarSinoNotificacoes();
 }
@@ -1430,7 +1875,7 @@ async function adicionarCategoria(nome, tipo) {
         if ((d.categorias || []).some(c => c.tipo === tipo && normalizarTexto(c.nome) === nl)) throw new Error('Categoria já existe.');
         d.categorias.push({ id: d.categorias.reduce((m, c) => Math.max(m, c.id||0), 0)+1, nome: nome.trim(), tipo, classificacao: 'personalizado', criadopor: obterUsuarioAtualId(d) });
         registrarLog(d, 'CADASTRO CATEGORIA', `Criada: ${nome} (${tipo})`);
-        await salvarDados(d); await mostrarAlertaModal('Sucesso!'); return true;
+        await salvarDados(d); notificarOperacao('Categoria adicionada. Sincronização em segundo plano.'); return true;
     } catch (e) { await mostrarAlertaModal(e.message); return false; } finally { esconderLoading(); processandoAcaoModal = false; }
 }
 
@@ -1444,7 +1889,7 @@ async function atualizarCategoria(id, nome, tipo) {
         if (c.tipo !== tipo && ((d.lancamentos||[]).some(l=>String(l.categoriaId)===String(id)) || (d.financiamentos||[]).some(f=>String(f.categoriaId)===String(id)))) throw new Error('Categoria em uso, não pode mudar tipo.');
         c.nome = nome.trim(); c.tipo = tipo;
         registrarLog(d, 'EDIÇÃO CATEGORIA', `Atualizada: ${c.nome}`);
-        await salvarDados(d); await mostrarAlertaModal('Sucesso!'); return true;
+        await salvarDados(d); notificarOperacao('Categoria atualizada. Sincronização em segundo plano.'); return true;
     } catch (e) { await mostrarAlertaModal(e.message); return false; } finally { esconderLoading(); processandoAcaoModal = false; }
 }
 
@@ -1457,7 +1902,7 @@ async function excluirCategoria(id) {
         if ((d.lancamentos||[]).some(l=>String(l.categoriaId)===String(id)) || (d.financiamentos||[]).some(f=>String(f.categoriaId)===String(id))) throw new Error('Em uso.');
         d.categorias = d.categorias.filter(x => String(x.id) !== String(id));
         registrarLog(d, 'EXCLUSÃO CATEGORIA', `Excluída: ${id}`);
-        await salvarDados(d); await mostrarAlertaModal('Sucesso!'); return true;
+        await salvarDados(d); notificarOperacao('Categoria removida. Sincronização em segundo plano.'); return true;
     } catch (e) { await mostrarAlertaModal(e.message); return false; } finally { esconderLoading(); processandoAcaoModal = false; }
 }
 
@@ -1468,11 +1913,17 @@ async function adicionarLancamentoComParcelas(form) {
         const d = obterDados(), uId = Number(obterUsuarioAtualId(d)), vt = numeroSeguro(form.valorTotal);
         const q = Math.min(48, Math.max(1, inteiroSeguro(form.qtdParcelas, 1)));
         if (!form.descricao?.trim() || vt <= 0 || !form.vencimento) throw new Error('Preencha corretamente.');
+        const naturezaRenda = form.tipo === 'entrada' && ['folha', 'adiantamento', 'salarial_extra', 'variavel', 'nao_renda'].includes(form.naturezaRenda)
+            ? form.naturezaRenda : '';
+        const horaExtraInformada = numeroSeguro(form.horaExtra);
+        if (horaExtraInformada < 0 || horaExtraInformada > vt || (horaExtraInformada > 0 && naturezaRenda && naturezaRenda !== 'folha')) {
+            throw new Error('A hora extra deve fazer parte do valor total da folha de pagamento.');
+        }
         const b = form.bemId ? d.bens.find(x => String(x.id) === String(form.bemId)) : null;
         let esc = form.tipo === 'saida' ? (form.escopo || 'casal') : 'casal';
         if (b) esc = b.compartilhado ? 'casal' : esc;
         const valP = dividirValorExato(vt, q);
-        const heP = form.horaExtra ? dividirValorExato(form.horaExtra, q) : Array(q).fill(0);
+        const heP = horaExtraInformada ? dividirValorExato(horaExtraInformada, q) : Array(q).fill(0);
         const dB = criarDataLocal(form.vencimento);
         let nId = d.lancamentos.reduce((m, l) => Math.max(m, l.id||0), 0) + 1;
         const pId = q > 1 ? gerarId('parc') : null;
@@ -1488,8 +1939,10 @@ async function adicionarLancamentoComParcelas(form) {
                 valor: valP[i-1], tipo: form.tipo, categoriaId: form.categoriaId, formaPagamento: form.formaPagamento === 'FIXO' ? 'BOLETO' : form.formaPagamento,
                 cartaoId: form.cartaoId || null, bemId: form.bemId ? Number(form.bemId) : null, dataCompra: form.dataCompra || null,
                 vencimento: vencStr, recorrencia: form.formaPagamento === 'FIXO' ? 'mensal' : 'unica', parcelaAtual: i, totalParcelas: q, parcelamentoId: pId,
-                observacao: form.observacao || '', horaExtra: heP[i-1], servicoEssencial: form.tipo === 'saida' ? (form.servicoEssencial || 'nao') : 'nao',
-                escopo: esc, pago: pg, status: pg ? 'pago' : 'pendente', faturaId: fatId, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString()
+                observacao: form.observacao || '', horaExtra: form.tipo === 'entrada' ? heP[i-1] : 0,
+                naturezaRenda, servicoEssencial: form.tipo === 'saida' ? (form.servicoEssencial || 'nao') : 'nao',
+                escopo: esc, pago: pg, status: pg ? 'pago' : 'pendente', dataPagamento: pg ? vencStr : null,
+                faturaId: fatId, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString()
             });
         }
         if (esc === 'casal') {
@@ -1516,7 +1969,7 @@ async function adicionarLancamentoComParcelas(form) {
         if (typeof salvarMemoriaAdiantamentoSeNecessario === 'function') {
             try { salvarMemoriaAdiantamentoSeNecessario(form.descricao, valP[0]); } catch (_) {}
         }
-        await salvarDados(d); await mostrarAlertaModal("Sucesso!"); return true;
+        await salvarDados(d); notificarOperacao('Lançamento registrado. Sincronização em segundo plano.'); return true;
     } catch (e) { await mostrarAlertaModal(e.message); return false; } finally { esconderLoading(); processandoAcaoModal = false; }
 }
 
@@ -1592,7 +2045,7 @@ async function removerLancamentoInteligente(id) {
         d.lancamentos = d.lancamentos.filter(x => !rIds.has(String(x.id)));
     }
     registrarLog(d, "EXCLUSÃO", `Excluído. Motivo: ${mt}`);
-    await salvarDados(d); esconderLoading(); await mostrarAlertaModal("Sucesso!"); return true;
+    await salvarDados(d); esconderLoading(); notificarOperacao('Lançamento removido. Sincronização em segundo plano.'); return true;
 }
 
 function descreverOrigemLancamento(l, dados = obterDados()) {
@@ -1723,6 +2176,12 @@ async function atualizarLancamentoNoBanco(id, novosDados, opcoes = {}) {
     if (!tipoValido || !categoriaValida) { await mostrarAlertaModal('Selecione uma categoria válida.'); return false; }
     const valorNovo = numeroSeguro(novosDados?.valor, NaN);
     if (!Number.isFinite(valorNovo) || valorNovo <= 0) { await mostrarAlertaModal('O valor deve ser maior que zero.'); return false; }
+    const naturezaNova = novosDados.tipo === 'entrada' && ['folha', 'adiantamento', 'salarial_extra', 'variavel', 'nao_renda'].includes(novosDados.naturezaRenda)
+        ? novosDados.naturezaRenda : '';
+    const horaExtraNova = novosDados.tipo === 'entrada' ? numeroSeguro(novosDados.horaExtra) : 0;
+    if (horaExtraNova < 0 || horaExtraNova > valorNovo || (horaExtraNova > 0 && naturezaNova && naturezaNova !== 'folha')) {
+        await mostrarAlertaModal('A hora extra informada deve estar incluída no valor da folha, sem ultrapassá-lo.'); return false;
+    }
 
     const grupoId = resolverParcelamentoId(lancamento);
     const finId = resolverFinanciamentoIdPorLancamento(lancamento, dados);
@@ -1785,7 +2244,8 @@ async function atualizarLancamentoNoBanco(id, novosDados, opcoes = {}) {
             l.servicoEssencial = novosDados.tipo === 'saida' ? (novosDados.servicoEssencial || 'nao') : 'nao';
             l.escopo = novosDados.tipo === 'saida' ? (novosDados.escopo || 'casal') : 'casal';
 
-            l.horaExtra = novosDados.tipo === 'entrada' ? numeroSeguro(novosDados.horaExtra) : 0;
+            l.horaExtra = horaExtraNova;
+            l.naturezaRenda = naturezaNova;
             l.bemId = (novosDados.tipo === 'saida' && novosDados.bemId != null && novosDados.bemId !== '')
                 ? Number(novosDados.bemId) : null;
 
@@ -1825,7 +2285,8 @@ async function atualizarLancamentoNoBanco(id, novosDados, opcoes = {}) {
         lancamento.vencimento = novosDados.vencimento;
         lancamento.updatedAt = new Date().toISOString();
 
-        lancamento.horaExtra = novosDados.tipo === 'entrada' ? numeroSeguro(novosDados.horaExtra) : 0;
+        lancamento.horaExtra = horaExtraNova;
+        lancamento.naturezaRenda = naturezaNova;
         lancamento.bemId = (novosDados.tipo === 'saida' && novosDados.bemId != null && novosDados.bemId !== '')
             ? Number(novosDados.bemId) : null;
 
@@ -2053,7 +2514,7 @@ async function adicionarContaLotePorPeriodo(descricao, valorParcela, dataInicio,
         }
         registrarLog(dados, 'CONTA LOTE PERÍODO', `Lote: ${descFinal} (${quantidade} meses)`);
         await salvarDados(dados);
-        if (!opcoes.silencioso) await mostrarAlertaModal('Contas em lote criadas com sucesso.');
+        if (!opcoes.silencioso) notificarOperacao('Contas em lote criadas. Sincronização em segundo plano.');
         return true;
     } catch (erro) {
         console.error(erro);
@@ -3044,7 +3505,12 @@ document.addEventListener("DOMContentLoaded", async () => {
     document.addEventListener('click', (e) => {
         const dd = document.querySelector('.nav-dropdown');
         if (!dd || !dd.classList.contains('active')) return;
-        if (!dd.contains(e.target)) dd.classList.remove('active');
+        if (!dd.contains(e.target) && !document.body.classList.contains('sidebar-open')) {
+            dd.classList.remove('active');
+            dd.querySelector('.sidebar-dropdown-trigger')?.setAttribute('aria-expanded', 'false');
+            const conteudo = dd.querySelector('.nav-dropdown-content');
+            if (conteudo) conteudo.inert = true;
+        }
     });
 
     if (!window.location.pathname.endsWith('index.html') && typeof verificarAutenticacao === 'function') {

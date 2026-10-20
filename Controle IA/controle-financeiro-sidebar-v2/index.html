@@ -11,33 +11,21 @@
 
 <body class="login-page">
 
-    <!-- Abertura breve: o teste da API acontece ao mesmo tempo. -->
-    <div class="login-intro" id="loginIntro" aria-hidden="true">
-        <div class="login-intro-mark">R<span>$</span></div>
-        <div class="login-intro-copy">
-            <span>CONTROLE FINANCEIRO</span>
-            <strong>Seu dia, mais leve.</strong>
-        </div>
-    </div>
-
-    <div id="loginLoadingScreen" role="status" aria-live="polite">
-        <div class="loading-profile-wrap">
-            <img id="loadingUserAvatar" src="" alt="Perfil" class="loading-profile-img">
-            <h3 id="loadingWelcomeText" class="loading-fade-text">Tudo certo com sua conta.</h3>
-            <p id="loadingSubtext" class="loading-fade-text">Carregando seus dados...</p>
-            <div class="loading-progress-bar-container">
-                <div id="loadingProgressBarFill" class="loading-progress-bar-fill"></div>
-            </div>
-        </div>
-    </div>
-
-    <button type="button" class="login-theme-toggle" onclick="alternarTemaVisual(event)" title="Alternar tema">
-        <img id="themeImage" class="theme-icon" src="imagens/modo_escuro.jpg" alt="Tema">
+    <button type="button" class="login-theme-toggle" onclick="alternarTemaVisual(event)" title="Alternar tema" aria-label="Alternar tema">
+        <span id="loginThemeGlyph" aria-hidden="true">☾</span>
     </button>
 
     <main class="login-screen">
+        <aside class="login-story" aria-label="Controle Financeiro">
+            <div class="login-story-brand"><span class="login-story-symbol" aria-hidden="true">R<span>$</span></span><span>CONTROLE<br>FINANCEIRO</span></div>
+            <div class="login-story-message">
+                <span class="login-story-kicker"><span aria-hidden="true"></span> SEU ESPAÇO, SEU RITMO</span>
+                <h1>Cuide do que<br>importa. <em>Com calma.</em></h1>
+                <p>Um lugar simples para acompanhar suas finanças e seguir em frente com tranquilidade.</p>
+            </div>
+            <div class="login-story-footer"><span class="login-story-line" aria-hidden="true"></span> Uma visão mais clara do seu dia.</div>
+        </aside>
 
-        <!-- PAINEL DIREITO -->
         <section class="login-form-panel" aria-label="Entrar no sistema">
             <div class="login-form-wrapper">
                 <div class="login-brand-head">
@@ -46,9 +34,9 @@
                 </div>
 
                 <div class="login-heading" id="loginHeadingContainer">
-                    <span class="login-eyebrow" id="loginEyebrowText">SEU ESPAÇO FINANCEIRO</span>
-                    <h2 id="loginTitleText">Vamos entrar?</h2>
-                    <p id="loginSubtitleText">Informe seu usuário para continuar.</p>
+                    <span class="login-eyebrow" id="loginEyebrowText">BOM TER VOCÊ POR AQUI</span>
+                    <h2 id="loginTitleText">Vamos começar?</h2>
+                    <p id="loginSubtitleText">Seu acesso, de forma simples e segura.</p>
                 </div>
 
                 <form id="formLogin" onsubmit="realizarLogin(event)">
@@ -94,20 +82,21 @@
 
                 </form>
 
-                <div class="login-new-user" id="cardPrimeiroAcesso">
+                <div class="login-new-user" id="cardPrimeiroAcesso" hidden>
                     <span>É novo por aqui?</span>
                     <button type="button" id="btnPrimeiroAcesso" onclick="abrirModalPrimeiroAcesso()">Criar acesso <span aria-hidden="true">↗</span></button>
                 </div>
 
-                <div class="login-connection" id="loginConnection" data-state="loading" role="status" aria-live="polite">
+                <div class="login-connection" id="loginConnection" data-state="loading" data-visible="false" role="status" aria-live="polite">
                     <div class="login-connection-main">
                         <span class="login-connection-dot" aria-hidden="true"></span>
-                        <span id="loginStatusText">Conectando ao servidor...</span>
+                        <span id="loginStatusText"></span>
                         <img class="login-status-gif" src="imagens/loading1.gif" alt="" aria-hidden="true">
                         <button type="button" class="login-retry" id="loginRetry" onclick="tentarConexaoNovamente()" hidden>Tentar novamente</button>
                     </div>
                     <div class="login-status-track" aria-hidden="true"><div class="login-status-fill"></div></div>
                 </div>
+                <p class="login-footnote"><span aria-hidden="true">✦</span> Seu espaço financeiro, sempre à mão.</p>
             </div>
         </section>
 
@@ -120,71 +109,62 @@
         let primeiroCadastroDisponivel = false;
         let loginOcupado = false;
         let usuarioSelecionadoParaLogin = null;
+        let conexaoInicialEmAndamento = null;
         const AVATAR_PADRAO = 'data:image/svg+xml;charset=UTF-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22%23a89586%22%3E%3Cpath%20d%3D%22M12%2012c2.21%200%204-1.79%204-4s-1.79-4-4-4-4%201.79-4%204%201.79%204%204%204zm0%202c-2.67%200-8%201.34-8%204v2h16v-2c0-2.66-5.33-4-8-4z%22%2F%3E%3C%2Fsvg%3E';
 
-        function atualizarStatusLogin(mensagem, estado = 'loading') {
+        function atualizarStatusLogin(mensagem, estado = 'loading', visivel = true) {
             const painel = document.getElementById('loginConnection');
             const texto = document.getElementById('loginStatusText');
             if (texto) texto.textContent = mensagem;
-            if (painel) painel.dataset.state = estado;
+            if (painel) {
+                painel.dataset.state = estado;
+                painel.dataset.visible = visivel ? 'true' : 'false';
+            }
             const retry = document.getElementById('loginRetry');
-            if (retry) retry.hidden = estado !== 'error' || bancoInicializado;
+            if (retry) retry.hidden = !visivel || estado !== 'error';
         }
 
-        async function testarConexaoInicial() {
-            const botao = document.getElementById("loginSubmit");
+        function testarConexaoInicial() {
+            if (conexaoInicialEmAndamento) return conexaoInicialEmAndamento;
             const retry = document.getElementById('loginRetry');
-            if (retry) retry.disabled = true;
-            if (botao) botao.disabled = true;
-            bancoInicializado = false;
-            atualizarStatusLogin('Verificando conexão...', 'loading');
-            const controle = new AbortController();
-            const limite = setTimeout(() => controle.abort(), 12000);
-            try {
-                const resposta = await fetch(`${API_URL}?action=ping&token=${encodeURIComponent(TOKEN_API)}`, {
-                    cache: 'no-store', signal: controle.signal
-                });
-                if (!resposta.ok) throw new Error("A API não está acessível.");
-                const json = await resposta.json();
-                if (json.status !== 'sucesso') throw new Error(json.mensagem || 'Servidor não autorizado.');
-                bancoInicializado = true;
-                atualizarStatusLogin('Servidor conectado. Pronto para entrar.', 'success');
+            conexaoInicialEmAndamento = (async () => {
+                if (retry) retry.disabled = true;
+                const controle = new AbortController();
+                const limite = setTimeout(() => controle.abort(), 9000);
                 try {
+                    const resposta = await fetch(`${API_URL}?action=ping&token=${encodeURIComponent(TOKEN_API)}`, {
+                        cache: 'no-store', signal: controle.signal
+                    });
+                    const json = await resposta.json();
+                    if (!resposta.ok || json.status !== 'sucesso') throw new Error('Falha de conexão com o serviço.');
+                    bancoInicializado = true;
+                    // A interface permanece disponível enquanto as verificações ocorrem.
                     const statusResposta = await fetch(`${API_URL}?action=statusCadastro&token=${encodeURIComponent(TOKEN_API)}`, { cache: 'no-store', signal: controle.signal });
                     const statusCadastro = await statusResposta.json();
                     primeiroCadastroDisponivel = statusCadastro.status === 'sucesso' && statusCadastro.primeiroCadastroDisponivel === true;
-                } catch (_) { primeiroCadastroDisponivel = false; }
-                const acessoInicial = document.getElementById('cardPrimeiroAcesso');
-                if (acessoInicial) acessoInicial.style.display = primeiroCadastroDisponivel ? 'flex' : 'none';
-            } catch (erro) {
-                console.warn('Conexão inicial indisponível:', erro);
-                const mensagem = erro.name === 'AbortError'
-                    ? 'Servidor demorou a responder.'
-                    : erro.message === 'Acesso não autorizado'
-                        ? 'Credencial da API não autorizada. Confira a configuração.'
-                        : erro.message.includes('SENHA_')
-                            ? 'Configuração do Apps Script pendente.'
-                            : !navigator.onLine
-                                ? 'Sem conexão com a internet.'
-                                : 'Não foi possível alcançar o servidor.';
-                atualizarStatusLogin(mensagem, 'error');
-            } finally {
-                clearTimeout(limite);
-                if (botao) botao.disabled = !bancoInicializado;
-                if (retry) retry.disabled = false;
-            }
+                    const acessoInicial = document.getElementById('cardPrimeiroAcesso');
+                    if (acessoInicial && !usuarioSelecionadoParaLogin) acessoInicial.hidden = !primeiroCadastroDisponivel;
+                    if (!loginOcupado) atualizarStatusLogin('', 'success', false);
+                } catch (erro) {
+                    console.warn('Pré-verificação de conexão em segundo plano:', erro);
+                    if (!loginOcupado) atualizarStatusLogin('', 'error', false);
+                } finally {
+                    clearTimeout(limite);
+                    if (retry) retry.disabled = false;
+                }
+            })().finally(() => { conexaoInicialEmAndamento = null; });
+            return conexaoInicialEmAndamento;
         }
 
-        function tentarConexaoNovamente() { return testarConexaoInicial(); }
+        function tentarConexaoNovamente() {
+            atualizarStatusLogin('Tentando novamente...', 'loading');
+            return testarConexaoInicial().then(() => {
+                if (!bancoInicializado) atualizarStatusLogin('Sem conexão. Verifique sua internet e tente novamente.', 'error');
+            });
+        }
 
         document.addEventListener('DOMContentLoaded', () => {
             testarConexaoInicial();
-            // A animação acolhe sem segurar a interação por causa da rede.
-            const intro = document.getElementById('loginIntro');
-            setTimeout(() => {
-                intro?.classList.add('saindo');
-                setTimeout(() => intro?.remove(), 550);
-            }, window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : 950);
         });
 
         async function consultarLoginServidor(payload) {
@@ -225,10 +205,6 @@
             const cardPrimeiroAcesso = document.getElementById("cardPrimeiroAcesso");
 
             if (loginOcupado) return;
-            if (!bancoInicializado) {
-                atualizarStatusLogin('Conexão necessária para entrar. Tente novamente.', 'error');
-                return;
-            }
 
             loginOcupado = true;
             if (botao) botao.disabled = true;
@@ -249,8 +225,8 @@
                         senhaHash: 'CHECK_APENAS_USUARIO'
                     });
                     if (resultadoCheck.status !== 'sucesso' || !resultadoCheck.usuario) {
-                        atualizarStatusLogin(resultadoCheck.mensagem || 'Usuário não encontrado.', 'error');
-                        await mostrarAlertaModal(resultadoCheck.mensagem || "Usuário não encontrado no sistema.");
+                        atualizarStatusLogin('Não encontramos esse usuário. Confira e tente novamente.', 'error');
+                        inputUsuario.focus();
                         if (botao) botao.classList.remove("loading");
                         if (spanTextoBotao) spanTextoBotao.textContent = "Continuar";
                         if (setaBotao) setaBotao.style.display = "inline";
@@ -260,7 +236,7 @@
 
                     const usuarioUnico = resultadoCheck.usuario;
                     if (!usuarioUnico) {
-                        await mostrarAlertaModal("Usuário não encontrado no sistema.");
+                        atualizarStatusLogin('Confira o usuário e tente novamente.', 'error');
                         if (botao) botao.classList.remove("loading");
                         if (spanTextoBotao) spanTextoBotao.textContent = "Continuar";
                         if (setaBotao) setaBotao.style.display = "inline";
@@ -270,7 +246,7 @@
 
                     usuarioSelecionadoParaLogin = usuarioUnico;
                     inputUsuario.readOnly = true;
-                    inputUsuario.style.opacity = '0.7';
+                    inputUsuario.classList.add('login-input-locked');
 
                     if (iconeUsuarioPadrao) {
                         iconeUsuarioPadrao.remove();
@@ -279,13 +255,6 @@
                     avatarImg.id = "avatarDinamicoInput";
                     avatarImg.src = usuarioSelecionadoParaLogin.fotoPerfil || AVATAR_PADRAO;
                     avatarImg.alt = "Avatar";
-                    avatarImg.style.width = "34px";
-                    avatarImg.style.height = "34px";
-                    avatarImg.style.borderRadius = "50%";
-                    avatarImg.style.objectFit = "cover";
-                    avatarImg.style.border = "1.5px solid var(--primary)";
-                    avatarImg.style.flexShrink = "0";
-                    avatarImg.style.background = "var(--surface-2)";
                     wrapperInputUsuario.prepend(avatarImg);
 
                     const primeiroNome = usuarioSelecionadoParaLogin.nome.split(' ')[0];
@@ -296,15 +265,14 @@
                         loginSubtitleText.innerHTML = `Digite a sua senha <br><button type="button" class="btn-voltar-usuario" onclick="voltarParaTrocarUsuario()">← Voltar / Trocar usuário</button>`;
                     }
 
-                    if (cardPrimeiroAcesso) cardPrimeiroAcesso.style.display = 'none';
+                    if (cardPrimeiroAcesso) cardPrimeiroAcesso.hidden = true;
 
                     blocoSenha.hidden = false;
-                    blocoSenha.style.display = 'block';
                     if (botao) botao.classList.remove("loading");
                     if (spanTextoBotao) spanTextoBotao.textContent = "Entrar no Sistema";
                     if (setaBotao) setaBotao.style.display = "inline";
                     if (gifLoadingBotao) gifLoadingBotao.style.display = "none";
-                    atualizarStatusLogin('Usuário localizado. Informe sua senha.', 'success');
+                    atualizarStatusLogin('', 'success', false);
                     
                     setTimeout(() => inputSenha.focus(), 50);
                     return;
@@ -313,7 +281,8 @@
                 // PASSO 2: VALIDAR A SENHA DE FORMA OTIMIZADA DIRETAMENTE NA NUVEM
                 const senhaDigitada = inputSenha.value.trim();
                 if (!senhaDigitada) {
-                    await mostrarAlertaModal("Por favor, digite a sua senha.");
+                    atualizarStatusLogin('Digite sua senha para continuar.', 'error');
+                    inputSenha.focus();
                     return;
                 }
 
@@ -330,8 +299,7 @@
                 });
 
                 if (resultadoAuth.status !== 'sucesso' || !resultadoAuth.usuario?.id) {
-                    atualizarStatusLogin(resultadoAuth.mensagem || 'Senha incorreta.', 'error');
-                    await mostrarAlertaModal(resultadoAuth.mensagem || "Palavra-passe incorreta.");
+                    atualizarStatusLogin(resultadoAuth.mensagem === 'Muitas tentativas. Aguarde 15 minutos.' ? resultadoAuth.mensagem : 'Não foi possível entrar. Confira sua senha.', 'error');
                     inputSenha.value = '';
                     inputSenha.focus();
                     if (botao) botao.classList.remove("loading");
@@ -341,7 +309,7 @@
                     return;
                 }
 
-                if (!resultadoAuth.sessao) throw new Error('O servidor não retornou uma sessão de acesso. Atualize também o Code.gs implantado.');
+                if (!resultadoAuth.sessao) throw new Error('Sessão ausente na resposta de autenticação.');
                 const donoPendente = localStorage.getItem(CHAVE_DONO_PENDENCIAS);
                 if (localStorage.getItem('syncPendente') === 'true' && donoPendente && donoPendente !== String(resultadoAuth.usuario.id)) {
                     throw new Error('Existem alterações financeiras não sincronizadas de outra conta neste navegador. Entre primeiro na conta anterior para sincronizá-las.');
@@ -349,57 +317,27 @@
                 sessionStorage.setItem(CHAVE_SESSAO_API, resultadoAuth.sessao);
                 sessionStorage.setItem(CHAVE_USUARIO_SESSAO, String(resultadoAuth.usuario.id));
 
-                // Login confirmado: o progresso agora representa etapas reais.
-                const telaCarregamento = document.getElementById("loginLoadingScreen");
-                const avatarCarregamento = document.getElementById("loadingUserAvatar");
-                const textoBoasVindas = document.getElementById("loadingWelcomeText");
-                const subtextoCarregamento = document.getElementById("loadingSubtext");
-                const barraPreenchimento = document.getElementById("loadingProgressBarFill");
-
-                if (avatarCarregamento) {
-                    avatarCarregamento.src = resultadoAuth.usuario.fotoPerfil || usuarioSelecionadoParaLogin.fotoPerfil || AVATAR_PADRAO;
+                // Com dados locais válidos, a navegação é imediata. A página seguinte
+                // revalida silenciosamente a revisão do servidor em segundo plano.
+                // No primeiro acesso, carregamos o mínimo necessário antes de navegar.
+                atualizarStatusLogin('Preparando seu painel...', 'loading');
+                const cacheAtual = lerJSONLocal(DB_KEY, null);
+                const usuarioEmCache = cacheAtual?.usuarios?.some(u => String(u.id) === String(resultadoAuth.usuario.id) && u.ativo !== false);
+                if (!usuarioEmCache) {
+                    await inicializarBanco();
+                    const dadosCarregados = obterDados();
+                    if (!dadosCarregados.usuarios.some(u => String(u.id) === String(resultadoAuth.usuario.id) && u.ativo !== false)) {
+                        throw new Error('A conta autenticada não está disponível no armazenamento local.');
+                    }
                 }
-                if (textoBoasVindas) {
-                    textoBoasVindas.textContent = `Olá, ${resultadoAuth.usuario.nome}!`;
-                }
-                if (telaCarregamento) {
-                    telaCarregamento.classList.add("ativo");
-                }
-                if (barraPreenchimento) barraPreenchimento.classList.add('indeterminado');
-                if (subtextoCarregamento) subtextoCarregamento.textContent = 'Sincronizando seus dados...';
-                atualizarStatusLogin('Carregando informações da conta...', 'loading');
-
-                await inicializarBanco();
-                const dadosCarregados = obterDados();
-                if (!dadosCarregados.usuarios.some(u => String(u.id) === String(resultadoAuth.usuario.id) && u.ativo !== false)) {
-                    throw new Error('A conta autenticada não foi encontrada nos dados carregados.');
-                }
-                // A sessão só é gravada após os dados essenciais estarem disponíveis.
                 localStorage.setItem('usuarioLogado', String(resultadoAuth.usuario.id));
                 localStorage.setItem('privacidadeAtiva', 'true');
-                if (barraPreenchimento) {
-                    barraPreenchimento.classList.remove('indeterminado');
-                    barraPreenchimento.style.width = '100%';
-                }
-                if (subtextoCarregamento) {
-                    subtextoCarregamento.textContent = window.ultimaOrigemBanco === 'local-pendente'
-                        ? 'Alterações locais pendentes de sincronização.'
-                        : window.ultimaOrigemBanco === 'local-offline'
-                            ? 'Dados locais disponíveis; servidor temporariamente indisponível.'
-                            : 'Tudo pronto! Abrindo seu painel...';
-                }
-                atualizarStatusLogin('Conta pronta. Abrindo o painel...', 'success');
-                if (window.ultimaOrigemBanco === 'local-offline') {
-                    telaCarregamento?.classList.remove('ativo');
-                    await mostrarAlertaModal('A autenticação funcionou, mas a atualização dos dados falhou. Você entrará com os dados locais, que podem estar desatualizados.');
-                }
+                if (spanTextoBotao) spanTextoBotao.textContent = 'Abrindo seu espaço...';
                 window.location.href = resultadoAuth.trocaSenhaObrigatoria ? 'perfil.html' : 'dashboard.html';
                 return true;
 
             } catch (erro) {
                 console.error("Erro no processo de login:", erro);
-                const telaCarregamento = document.getElementById("loginLoadingScreen");
-                if (telaCarregamento) telaCarregamento.classList.remove("ativo");
                 if (botao) botao.classList.remove("loading");
                 if (spanTextoBotao) spanTextoBotao.textContent = usuarioSelecionadoParaLogin ? "Entrar no Sistema" : "Continuar";
                 if (setaBotao) setaBotao.style.display = "inline";
@@ -407,11 +345,10 @@
                 localStorage.removeItem('usuarioLogado');
                 sessionStorage.removeItem(CHAVE_SESSAO_API);
                 sessionStorage.removeItem(CHAVE_USUARIO_SESSAO);
-                atualizarStatusLogin(erro.name === 'AbortError' ? 'Tempo de conexão esgotado. Tente novamente.' : 'Não foi possível concluir o acesso. Verifique a conexão e tente novamente.', 'error');
-                await mostrarAlertaModal(erro.message || 'Não foi possível concluir o acesso.');
+                atualizarStatusLogin(!navigator.onLine ? 'Sem internet. Reconecte e tente novamente.' : 'Não foi possível concluir o acesso. Tente novamente.', 'error');
             } finally {
                 loginOcupado = false;
-                if (botao) botao.disabled = !bancoInicializado;
+                if (botao) botao.disabled = false;
             }
         }
 
@@ -433,7 +370,7 @@
             const cardPrimeiroAcesso = document.getElementById("cardPrimeiroAcesso");
 
             inputUsuario.readOnly = false;
-            inputUsuario.style.opacity = '1';
+            inputUsuario.classList.remove('login-input-locked');
             inputUsuario.value = '';
 
             if (avatarDinamicoInput) {
@@ -447,27 +384,28 @@
                 wrapperInputUsuario.prepend(iconePadrao);
             }
 
-            blocoSenha.style.display = 'none';
             blocoSenha.hidden = true;
             inputSenha.value = '';
 
             if (spanTextoBotao) spanTextoBotao.textContent = "Continuar";
             if (setaBotao) setaBotao.style.display = "inline";
             if (gifLoadingBotao) gifLoadingBotao.style.display = "none";
-            if (loginEyebrowText) loginEyebrowText.textContent = "SEU ESPAÇO FINANCEIRO";
-            if (loginTitleText) loginTitleText.textContent = "Vamos entrar?";
-            if (loginSubtitleText) loginSubtitleText.textContent = "Informe seu usuário para continuar.";
-            if (cardPrimeiroAcesso) cardPrimeiroAcesso.style.display = primeiroCadastroDisponivel ? 'flex' : 'none';
+            if (loginEyebrowText) loginEyebrowText.textContent = "BOM TER VOCÊ POR AQUI";
+            if (loginTitleText) loginTitleText.textContent = "Vamos começar?";
+            if (loginSubtitleText) loginSubtitleText.textContent = "Seu acesso, de forma simples e segura.";
+            if (cardPrimeiroAcesso) cardPrimeiroAcesso.hidden = !primeiroCadastroDisponivel;
 
-            atualizarStatusLogin(bancoInicializado ? 'Servidor conectado. Pronto para entrar.' : 'Sem conexão com o servidor.', bancoInicializado ? 'success' : 'error');
+            atualizarStatusLogin('', 'success', false);
 
             inputUsuario.focus();
         }
 
         function atualizarIconeTemaLogin() {
-            const img = document.getElementById("themeImage");
-            if (!img) return;
-            img.src = "imagens/modo_escuro.jpg";
+            const icone = document.getElementById('loginThemeGlyph');
+            const botao = document.querySelector('.login-theme-toggle');
+            const escuro = document.body.classList.contains('dark-mode');
+            if (icone) icone.textContent = escuro ? '☀' : '☾';
+            if (botao) botao.setAttribute('aria-label', escuro ? 'Usar tema claro' : 'Usar tema escuro');
         }
 
         document.addEventListener("DOMContentLoaded", () => {

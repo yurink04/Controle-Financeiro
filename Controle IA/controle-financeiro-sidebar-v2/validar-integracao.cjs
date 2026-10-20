@@ -9,14 +9,85 @@ const pasta = __dirname;
 function fonte(nome) { return fs.readFileSync(path.join(pasta, nome), 'utf8'); }
 
 ['script.js', 'Code.gs'].forEach(nome => new vm.Script(fonte(nome), { filename: nome }));
-for (const nome of ['index.html', 'perfil.html', 'configuracoes.html', 'admin-logs.html', 'lancamentos.html']) {
+const paginas = fs.readdirSync(pasta).filter(nome => nome.endsWith('.html')).sort();
+assert.equal(paginas.length, 17, 'Esperadas 17 páginas do projeto, incluindo o histórico de rendimentos');
+for (const nome of paginas) {
   const html = fonte(nome);
   for (const [indice, match] of [...html.matchAll(/<script\b(?![^>]*\bsrc\s*=)[^>]*>([\s\S]*?)<\/script>/gi)].entries()) {
     new vm.Script(match[1], { filename: `${nome} #script ${indice + 1}` });
   }
   assert.match(html, /href="style\.css"/);
+  assert.doesNotMatch(html, /<style\b/i, `CSS inline em ${nome}`);
+  const htmlEstatico = html.replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, '');
+  const ids = [...htmlEstatico.matchAll(/\bid\s*=\s*["']([^"']+)["']/g)].map(m => m[1]);
+  assert.equal(new Set(ids).size, ids.length, `IDs de elementos repetidos em ${nome}`);
+  for (const href of html.matchAll(/\bhref\s*=\s*["']([^"'?#]+\.html)(?:[?#][^"']*)?["']/gi)) {
+    const destino = href[1].split('/').pop();
+    assert.ok(paginas.includes(destino), `Página não encontrada em ${nome}: ${href[1]}`);
+  }
 }
 assert.match(fonte('style.css'), /account-hero/);
+assert.match(fonte('style.css'), /login-story/);
+assert.match(fonte('style.css'), /IDENTIDADE UNIFICADA/);
+const estiloSidebar = fonte('style.css');
+const scriptSidebar = fonte('script.js');
+assert.match(estiloSidebar, /\.app-sidebar\s*\{[^}]*background:/s, 'Sidebar precisa ter fundo próprio');
+assert.match(estiloSidebar, /body\.sidebar-open \.app-sidebar\s*\{[^}]*visibility: visible/s, 'Abertura do sidebar');
+assert.match(estiloSidebar, /\.app-sidebar \[hidden\]\s*\{[^}]*display: none !important/s, 'Itens sem permissão devem continuar ocultos');
+const inicioIlha = scriptSidebar.indexOf('<div class="app-top-island">');
+const botaoNaIlha = scriptSidebar.indexOf('id="btnSidebarToggle"', inicioIlha);
+assert.ok(inicioIlha >= 0 && botaoNaIlha > inicioIlha, 'Botão do sidebar dentro da ilha');
+assert.match(scriptSidebar, /function definirSidebarAberto\(aberto\)/, 'Controle unificado do sidebar');
+assert.match(scriptSidebar, /function alternarSubmenuSidebar\(\)/, 'Submenu expansível');
+assert.match(scriptSidebar, /function destacarPaginaSidebar\(\)/, 'Página ativa no sidebar');
+assert.match(fonte('Code.gs'), /'configuracaoSalarial'/, 'Configuração da folha precisa ser sincronizada');
+assert.match(fonte('Code.gs'), /'naturezaRenda'/, 'Classificação dos recebimentos precisa ser sincronizada');
+assert.match(fonte('lancamentos.html'), /id="naturezaRendaLancamento"/, 'Lançamento deve permitir classificar o recebimento');
+assert.match(fonte('editar-lancamento.html'), /id="editNaturezaRenda"/, 'Edição deve preservar a classificação');
+assert.match(fonte('rendimentos.html'), /id="historicoSalarioMensal"/, 'Histórico consolidado deve estar presente');
+
+// Funções financeiras puras, isoladas da interface e sem dados reais.
+const fonteFrontend = fonte('script.js');
+const inicioCalculo = fonteFrontend.indexOf('const REFERENCIA_CALCULO_SALARIAL');
+const fimCalculo = fonteFrontend.indexOf('// 3. UTILITÁRIOS DE DATA E PARCELAMENTO');
+assert.ok(inicioCalculo >= 0 && fimCalculo > inicioCalculo, 'Núcleo de rendimentos encontrado');
+const inicioParte = fonteFrontend.lastIndexOf('// ============================================================================', fimCalculo - 5);
+const salarioCtx = { console, Date, Math, Number, Intl,
+  gerarId: () => 'id_teste',
+  normalizarTexto: texto => String(texto || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLowerCase()
+};
+vm.createContext(salarioCtx);
+vm.runInContext(fonteFrontend.slice(inicioCalculo, inicioParte), salarioCtx);
+function calculo(codigo) { return vm.runInContext(codigo, salarioCtx); }
+const inss3000 = calculo('calcularINSSSalario2026(3000)');
+assert.equal(inss3000.faixas.length, 3);
+assert.ok(Math.abs(inss3000.valor - 248.60) <= 0.02, 'INSS progressivo sobre R$ 3.000');
+const inssAlta = calculo('calcularINSSSalario2026(10000)');
+assert.equal(inssAlta.base, 8475.55, 'INSS limitado ao teto');
+assert.equal(calculo('calcularIRRFSalario2026(4000, 400).valor'), 0, 'Redução integral do IRRF para salário elegível');
+assert.equal(calculo('calcularSalarioLiquido(4000, {vtAtivo:true}).valeTransporte'), 240, 'Vale-transporte limitado a 6%');
+assert.equal(calculo('calcularSalarioLiquido(4000, {vtAtivo:true,vtCustoMensal:140}).valeTransporte'), 140, 'VT usa custo real menor');
+assert.equal(calculo('calcularSalarioLiquido(4000, {descontos:[{nome:"Academia", tipo:"fixo", valor:80},{nome:"Refeição",tipo:"percentual",valor:2}]}).outrosDescontos'), 160);
+const dRenda = {
+  categorias:[{id:1,nome:'Salário'},{id:2,nome:'Renda Extra'},{id:3,nome:'Empréstimos'}], financiamentos:[],
+  lancamentos: [
+    {id:1,usuarioId:1,tipo:'entrada',categoriaId:1,descricao:'Adiantamento de salário',valor:500,vencimento:'2026-10-05',pago:true},
+    {id:2,usuarioId:1,tipo:'entrada',categoriaId:1,descricao:'Folha outubro',valor:1500,horaExtra:200,naturezaRenda:'folha',vencimento:'2026-10-20',pago:true},
+    {id:3,usuarioId:1,tipo:'entrada',categoriaId:2,descricao:'Uber',valor:600,vencimento:'2026-09-25',pago:true},
+    {id:4,usuarioId:1,tipo:'entrada',categoriaId:3,descricao:'Empréstimo',valor:9000,vencimento:'2026-10-21',pago:true},
+    {id:5,usuarioId:1,tipo:'entrada',categoriaId:2,descricao:'Receita não recebida',valor:200,vencimento:'2026-10-25',pago:false},
+    {id:6,usuarioId:2,tipo:'entrada',categoriaId:2,descricao:'De outro usuário',valor:1000,vencimento:'2026-10-20',pago:true},
+    {id:7,usuarioId:1,tipo:'entrada',categoriaId:2,descricao:'Transferência entre contas',valor:300,naturezaRenda:'nao_renda',vencimento:'2026-10-10',pago:true}
+  ]
+};
+salarioCtx.dRenda = dRenda;
+const historicoRenda = calculo('consolidarRendimentosUsuario(dRenda, 1, new Date(2026,9,20))');
+assert.equal(historicoRenda.totalFolha, 1500);
+assert.equal(historicoRenda.totalAdiantamentos, 500);
+assert.equal(historicoRenda.totalHorasExtras, 200, 'Hora extra é informativa, incluída na folha');
+assert.equal(historicoRenda.meses.find(m => m.mes === '2026-10').total, 2000, 'Adiantamento mais folha, sem duplicar hora extra');
+assert.equal(historicoRenda.mediaVariavel, 100, 'Média variável inclui meses zerados');
+assert.equal(historicoRenda.registros.length, 3, 'Empréstimos, pendências e outros usuários excluídos');
 
 const planilhas = new Map();
 const memoriaCache = new Map();
@@ -101,6 +172,13 @@ const dados = get('obterDados', { sessao: sessaoAdmin });
 assert.ok(!('pin' in dados.usuarios[0]), 'O servidor não deve vazar hashes dos usuários');
 const inicial = { ...dados, usuarios: [{ ...dados.usuarios[0], nome: 'Admin Atualizado' }] };
 sucesso(post('salvarDados', { sessao: sessaoAdmin, dados: inicial }), 'Atualização do próprio perfil');
+const perfilComDescontos = get('obterDados', { sessao: sessaoAdmin });
+perfilComDescontos.usuarios[0].rendaFixa = 4000;
+perfilComDescontos.usuarios[0].configuracaoSalarial = {vtAtivo:true, vtCustoMensal:190, irrfAtivo:true, dependentes:0,
+  descontos:[{id:'academia',nome:'Academia',tipo:'fixo',valor:80}]};
+sucesso(post('salvarDados', { sessao: sessaoAdmin, dados: perfilComDescontos }), 'Salvar configuração salarial própria');
+assert.equal(get('obterDados', { sessao: sessaoAdmin }).usuarios[0].configuracaoSalarial.descontos[0].valor, 80,
+  'Descontos personalizados devem sobreviver ao ciclo planilha/API');
 
 const semElevacao = get('obterDados', { sessao: sessaoAdmin });
 semElevacao.usuarios.push({ id: 2, nome: 'Usuária', usuario: 'usuaria', pin: sha('Temporaria@1'), ativo: true,
@@ -159,7 +237,15 @@ reset.usuarios[1].trocaSenhaObrigatoria = true;
 sucesso(post('salvarDados', { sessao: sessaoAdmin, dados: reset }), 'Reset administrativo de senha');
 assert.equal(get('obterDados', { sessao: sessaoUsuario }).status, 'erro', 'Reset de senha revoga sessão antiga');
 
+const recebimento = get('obterDados', { sessao: sessaoAdmin });
+recebimento.lancamentos.push({ id:'salario_1', usuarioId:1, tipo:'entrada', categoriaId:'',
+  descricao:'Folha de pagamento', naturezaRenda:'folha', horaExtra:250, valor:3200,
+  pago:true, status:'pago', vencimento:'2026-10-20' });
+sucesso(post('salvarDados', { sessao: sessaoAdmin, dados: recebimento }), 'Persistência da folha');
+assert.equal(get('obterDados', { sessao: sessaoAdmin }).lancamentos.find(l => l.id === 'salario_1').naturezaRenda,
+  'folha', 'Classificação da renda deve sobreviver ao ciclo planilha/API');
+
 for (let i = 0; i < 6; i++) post('verificarCredenciaisLogin', { usuario: 'usuaria', senhaHash: sha('Incorreta') });
 assert.match(post('verificarCredenciaisLogin', { usuario: 'usuaria', senhaHash: sha('OutraProvisoria@8') }).mensagem, /Muitas tentativas/);
 
-console.log('OK: HTML e JS válidos; sessões, login, autorização, senhas, registros e lembretes testados.');
+console.log('OK: 17 páginas, JS, salário 2026, descontos, adiantamentos, renda variável, gravação, sessões e permissões testados.');

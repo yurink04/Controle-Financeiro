@@ -27,11 +27,13 @@
             <div class="account-section-heading">
                 <div><span class="account-overline">VISÃO GERAL</span><h2 id="tituloRendaPerfil">Seus rendimentos</h2><p>Uma visão rápida de como sua renda está composta.</p></div>
             </div>
-            <div class="account-kpis">
-                <article class="account-kpi"><div class="account-kpi-label"><span>Renda fixa mensal</span><span class="account-kpi-icon">↗</span></div><div class="account-kpi-value" id="cardRendaFixaValor">R$ 0,00</div><button type="button" class="account-text-button" onclick="abrirModalEdicaoRenda()">✎ Ajustar renda</button></article>
-                <article class="account-kpi"><div class="account-kpi-label"><span>Média de ganhos variáveis</span><span class="account-kpi-icon">≋</span></div><div class="account-kpi-value" id="cardMediaVariavel">R$ 0,00</div><p>Baseada no histórico de entradas elegíveis</p></article>
-                <article class="account-kpi account-kpi-featured"><div class="account-kpi-label"><span>Renda total estimada</span><span class="account-kpi-icon">✧</span></div><div class="account-kpi-value" id="cardRendaTotal">R$ 0,00</div><button type="button" id="btnDetalhesRenda" class="account-text-button">Entenda o cálculo →</button></article>
+            <div class="account-kpis income-profile-kpis">
+                <article class="account-kpi"><div class="account-kpi-label"><span>Salário bruto</span><span class="account-kpi-icon">↗</span></div><div class="account-kpi-value" id="cardRendaFixaValor">R$ 0,00</div><button type="button" class="account-text-button" onclick="abrirEditorSalarial()">✎ Configurar descontos</button></article>
+                <article class="account-kpi"><div class="account-kpi-label"><span>Salário líquido estimado</span><span class="account-kpi-icon">−</span></div><div class="account-kpi-value" id="cardRendaLiquida">R$ 0,00</div><p>Após INSS, IRRF e descontos cadastrados.</p></article>
+                <article class="account-kpi"><div class="account-kpi-label"><span>Média de ganhos variáveis</span><span class="account-kpi-icon">≋</span></div><div class="account-kpi-value" id="cardMediaVariavel">R$ 0,00</div><p>Últimos 6 meses, inclusive meses sem entradas.</p></article>
+                <article class="account-kpi account-kpi-featured"><div class="account-kpi-label"><span>Renda disponível estimada</span><span class="account-kpi-icon">✧</span></div><div class="account-kpi-value" id="cardRendaTotal">R$ 0,00</div><a href="rendimentos.html" id="btnDetalhesRenda" class="account-text-button">Entenda cada valor →</a></article>
             </div>
+            <p class="income-profile-note">Projeção mensal ≠ pagamentos registrados. Os adiantamentos, a folha e as horas extras são detalhados no <a href="rendimentos.html">histórico de rendimentos</a>.</p>
         </section>
 
         <div class="account-two-column">
@@ -193,40 +195,12 @@
             document.getElementById('qtdeBens').textContent = bensDoUsuario.length;
             document.getElementById('qtdeCartoes').textContent = cartoesAtivos;
 
-            const entradasUsuario = (dados.lancamentos || []).filter(l => Number(l.usuarioId) === usuarioIdNum && l.tipo === 'entrada');
-            const mesesMap = {};
-            entradasUsuario.forEach(e => {
-    // [FIX #8] Empréstimos NÃO inflam a média de ganhos variáveis
-    const ehEmprestimo = (dados.financiamentos || []).some(f =>
-        String(f.id) === String(e.financiamentoId) && f.tipoContrato === 'emprestimo'
-    );
-    if (ehEmprestimo) return;
-
-    const catObj = (dados.categorias || []).find(c => Number(c.id) === Number(e.categoriaId));
-    const catNome = catObj ? normalizarTexto(catObj.nome) : '';
-    const isFixa = ['salario', 'adiantamento', 'ferias', 'plr', 'decimo', '13'].some(t => catNome.includes(t));
-    
-    if (!isFixa) { 
-        const mesAno = (e.vencimento || e.dataCompra || e.createdAt || '').substring(0, 7);
-        if (mesAno) mesesMap[mesAno] = (mesesMap[mesAno] || 0) + Number(e.valor || 0);
-    }
-});
-            const valoresMensais = Object.values(mesesMap);
-            const totalGanhosHistorico = valoresMensais.reduce((a, b) => a + b, 0);
-            const qtdMesesComEntrada = valoresMensais.length;
-            const mediaVariavel = totalGanhosHistorico / (qtdMesesComEntrada || 1);
-
-            const rendaFixa = Number(usuario.rendaFixa || 0);
-            const rendaTotalEstimada = rendaFixa + mediaVariavel;
-
-            document.getElementById('cardRendaFixaValor').textContent = `R$ ${rendaFixa.toLocaleString('pt-BR', {minimumFractionDigits: 2})}`;
-            document.getElementById('cardMediaVariavel').textContent = `R$ ${mediaVariavel.toLocaleString('pt-BR', {minimumFractionDigits: 2})}`;
-            document.getElementById('cardRendaTotal').textContent = `R$ ${rendaTotalEstimada.toLocaleString('pt-BR', {minimumFractionDigits: 2})}`;
-
-            const btnDetalhes = document.getElementById('btnDetalhesRenda');
-            if (btnDetalhes) {
-                btnDetalhes.onclick = () => mostrarDetalhesRenda(rendaFixa, totalGanhosHistorico, qtdMesesComEntrada, mediaVariavel, rendaTotalEstimada);
-            }
+            const historico = consolidarRendimentosUsuario(dados, usuarioIdNum);
+            const calculo = calcularSalarioLiquido(usuario.rendaFixa, usuario.configuracaoSalarial);
+            document.getElementById('cardRendaFixaValor').textContent = formatarMoeda(calculo.bruto);
+            document.getElementById('cardRendaLiquida').textContent = formatarMoeda(calculo.liquido);
+            document.getElementById('cardMediaVariavel').textContent = formatarMoeda(historico.mediaVariavel);
+            document.getElementById('cardRendaTotal').textContent = formatarMoeda(centavosRenda(calculo.liquido + historico.mediaVariavel));
 
             const tbodyBens = document.getElementById('tabelaBensPerfil');
             tbodyBens.innerHTML = '';
@@ -310,122 +284,7 @@
             marcarPerfilAlterado();
         }
 
-        function abrirModalEdicaoRenda() {
-            const dados = obterDados();
-            const usuarioId = localStorage.getItem('usuarioLogado');
-            const usuario = dados.usuarios.find(u => Number(u.id) === Number(usuarioId));
-            const valorAtual = usuario ? (usuario.rendaFixa || 0) : 0;
-
-            const htmlEdicao = `
-                <div class="account-income-form">
-                    <label for="inputNovaRendaFixa">Novo valor (R$)</label>
-                    <input type="number" id="inputNovaRendaFixa" step="0.01" min="0" class="modal-input" value="${valorAtual}">
-                </div>
-                <div class="modal-buttons account-modal-actions">
-                    <button type="button" class="btn-secundario" data-cancelar>Cancelar</button>
-                    <button type="button" data-confirmar>Confirmar</button>
-                </div>
-            `;
-
-            const overlay = document.createElement('div');
-            overlay.className = 'modal-overlay';
-            overlay.innerHTML = `
-                <div class="modal-box account-income-modal">
-                    <h3>Editar Renda Fixa</h3>
-                    <p>Atualize o valor base da sua renda fixa mensal.</p>
-                    ${htmlEdicao}
-                </div>
-            `;
-            document.body.appendChild(overlay);
-
-            const input = overlay.querySelector('#inputNovaRendaFixa');
-            setTimeout(() => { input.focus(); input.select(); }, 100);
-
-            const fechar = () => fecharModal(overlay);
-
-            overlay.querySelector('[data-cancelar]').onclick = fechar;
-            
-            overlay.querySelector('[data-confirmar]').onclick = async () => {
-                const novoValor = input.value;
-                if (novoValor !== '' && Number.isFinite(Number(novoValor)) && Number(novoValor) >= 0) {
-                    fechar();
-                    await atualizarRendaFixaDireto(novoValor);
-                } else {
-                    input.focus();
-                }
-            };
-            
-            input.addEventListener('keydown', (e) => {
-                if (e.key === 'Enter') overlay.querySelector('[data-confirmar]').click();
-                if (e.key === 'Escape') fechar();
-            });
-            
-            overlay.addEventListener('click', e => { 
-                if (e.target === overlay) fechar(); 
-            });
-        }
-
-        async function atualizarRendaFixaDireto(valor) {
-            const dados = obterDados();
-            const usuarioId = localStorage.getItem('usuarioLogado');
-            const usuario = dados.usuarios.find(u => Number(u.id) === Number(usuarioId));
-            if (usuario) {
-                usuario.rendaFixa = numeroSeguro(valor);
-                registrarLog(dados, "ATUALIZAÇÃO RENDA", `Usuário atualizou a renda fixa para ${formatarMoeda(usuario.rendaFixa)}.`);
-                await salvarDados(dados);
-                carregarDadosPerfil(); 
-            }
-        }
-
-        function mostrarDetalhesRenda(fixa, totalVariavel, meses, mediaVar, totalEstimado) {
-            const htmlDetalhes = `
-                <div class="account-income-details">
-                    <p>A <strong>Renda Total Estimada</strong> é a soma da sua renda fixa preenchida no card com a média histórica das suas entradas variáveis.</p>
-                    <hr>
-                    <ul class="account-income-breakdown">
-                        <li>
-                            <span>1. Renda Fixa Declarada:</span>
-                            <strong>R$ ${fixa.toLocaleString('pt-BR', {minimumFractionDigits: 2})}</strong>
-                        </li>
-                        <li>
-                            <span>2. Entradas Variáveis Acumuladas:</span>
-                            <strong>R$ ${totalVariavel.toLocaleString('pt-BR', {minimumFractionDigits: 2})}</strong>
-                        </li>
-                        <li>
-                            <span>3. Meses com Entradas Variáveis:</span>
-                            <strong>${meses} ${meses === 1 ? 'mês' : 'meses'}</strong>
-                        </li>
-                        <li class="account-income-average">
-                            <span>4. Média Variável (Item 2 ÷ Item 3):</span>
-                            <strong>R$ ${mediaVar.toLocaleString('pt-BR', {minimumFractionDigits: 2})}</strong>
-                        </li>
-                        <hr>
-                        <li class="account-income-total">
-                            <span><strong>Total (1 + 4):</strong></span>
-                            <strong>R$ ${totalEstimado.toLocaleString('pt-BR', {minimumFractionDigits: 2})}</strong>
-                        </li>
-                    </ul>
-                </div>
-            `;
-            
-            const overlay = document.createElement('div');
-            overlay.className = 'modal-overlay';
-            overlay.innerHTML = `
-                <div class="modal-box account-details-modal">
-                    <h3>Detalhes do Cálculo de Renda</h3>
-                    ${htmlDetalhes}
-                    <button type="button" class="btn-fechar account-details-close">Fechar</button>
-                </div>
-            `;
-            document.body.appendChild(overlay);
-
-            const btnFechar = overlay.querySelector('.btn-fechar');
-            btnFechar.onclick = () => fecharModal(overlay);
-            overlay.addEventListener('click', e => {
-                if (e.target === overlay) fecharModal(overlay);
-            });
-        }
-
+        // O editor salarial agora é compartilhado com o histórico de rendimentos.
         async function salvarMeuPerfil(event) {
             event.preventDefault();
             const dados = obterDados();

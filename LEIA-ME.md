@@ -2,6 +2,20 @@
 
 Este pacote reúne **16 páginas HTML**, `style.css`, `script.js` e `Code.gs` com a mesma linguagem visual das páginas de perfil, configurações e auditoria.
 
+## Atualização do sidebar (20/10/2026)
+
+O sidebar foi reconstruído na versão integrada mais recente. Os arquivos `style(20261020-112747).css` e `script(20261020-112747).js` recebidos para diagnóstico continham o menu **anterior**: o botão era injetado fora da ilha e a estilização do painel não acompanhava o cabeçalho novo. Também faltavam, na base integrada, fundo e borda explícitos para o sidebar.
+
+- Menu retrátil em painel com fundo, bordas arredondadas, sombra e cores coordenadas ao tema claro/escuro.
+- Botão **dentro da ilha superior**, sem criar um segundo botão flutuante.
+- Ícones vetoriais integrados para os atalhos; não precisam de novos arquivos de imagem.
+- Página atual destacada, seções organizadas e submenu **Cadastros** com transição suave.
+- Perfil como atalho, ações de sair preservadas, suporte a Esc, fechamento pelo fundo e navegação por teclado.
+- Layout compacto no celular, sem deslocar o conteúdo principal e sem deixar o painel invisível acessível por Tab.
+- As permissões existentes continuam filtrando as páginas visíveis; a autorização real permanece sob responsabilidade do `Code.gs`.
+
+**Importante:** instale o `style.css` e `script.js` **deste pacote juntos**. Misturar os anexos antigos com a versão nova recria o problema. O `Code.gs` não recebeu alterações específicas do sidebar e pode ser mantido se já estiver na mesma versão deste pacote.
+
 ## Principais ajustes
 
 - **Login redesenhado:** tela mais limpa, maior legibilidade, modo claro/escuro, fluxo usuário → senha e mensagem de erro discreta. A pré-verificação do serviço ocorre em segundo plano e **não bloqueia o botão**. A senha só é verificada quando o usuário a informa.

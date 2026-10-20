@@ -55,6 +55,7 @@
         <section class="stat-grid" id="containerStatGrid">
             <!-- Preenchido dinamicamente via JS -->
         </section>
+        <section id="resumoRendaGrafico" class="income-graph-banner" hidden aria-label="Detalhamento das entradas"></section>
 
         <section class="form-card">
             <div class="section-title">
@@ -304,6 +305,7 @@
 
     // [MODO DISCRETO] — esconde KPIs e tabela detalhada
     if (document.body.classList.contains('privacidade-ativa')) {
+        document.getElementById('resumoRendaGrafico').hidden = true;
         const grid = document.getElementById('containerStatGrid');
         if (grid) grid.innerHTML = `
             <div class="stat-box" style="grid-column: 1 / -1;">
@@ -355,6 +357,28 @@
     lista.sort((a, b) => String(b.vencimento || b.dataCompra || '').localeCompare(String(a.vencimento || a.dataCompra || '')));
 
     renderizarCardsDinamicos(lista, cfg, dados);
+    const areaRenda = document.getElementById('resumoRendaGrafico');
+    const exibirRenda = cfg.tipo === 'entradas' || cfg.tipo === 'todos';
+    areaRenda.hidden = !exibirRenda;
+    if (exibirRenda) {
+        const usuarioId = obterUsuarioAtualId(dados);
+        const parciais = { folha: 0, adiantamento: 0, salarial_extra: 0, variavel: 0, horasExtras: 0 };
+        lista.filter(l => l.tipo === 'entrada' && String(l.usuarioId) === String(usuarioId) && (l.pago === true || l.status === 'pago'))
+            .forEach(l => {
+                const classe = classificarEntradaRendimento(l, dados);
+                if (!(classe in parciais)) return;
+                parciais[classe] += Number(l.valor || 0);
+                if (classe === 'folha') parciais.horasExtras += Math.min(Number(l.horaExtra || 0), Number(l.valor || 0));
+            });
+        const linkMes = mes ? '?mes=' + encodeURIComponent(mes) : '';
+        areaRenda.innerHTML = `
+            <div><strong>Suas entradas, explicadas</strong>
+                <p>Folha: ${formatarMoeda(parciais.folha)} · Adiantamentos: ${formatarMoeda(parciais.adiantamento)}
+                · Variáveis: ${formatarMoeda(parciais.variavel)} · Outros salariais: ${formatarMoeda(parciais.salarial_extra)}.
+                Hora extra inclusa na folha: ${formatarMoeda(parciais.horasExtras)}.</p>
+                <p>Valores dos seus lançamentos pagos neste filtro; a projeção de salário líquido é calculada separadamente.</p></div>
+            <a href="rendimentos.html${linkMes}">Ver histórico completo ↗</a>`;
+    }
 
     const tb = document.getElementById('tabelaGraficoDetalhado');
     if (!tb) return;

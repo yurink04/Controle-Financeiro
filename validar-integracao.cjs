@@ -29,6 +29,17 @@ for (const nome of paginas) {
 assert.match(fonte('style.css'), /account-hero/);
 assert.match(fonte('style.css'), /login-story/);
 assert.match(fonte('style.css'), /IDENTIDADE UNIFICADA/);
+const estiloSidebar = fonte('style.css');
+const scriptSidebar = fonte('script.js');
+assert.match(estiloSidebar, /\.app-sidebar\s*\{[^}]*background:/s, 'Sidebar precisa ter fundo próprio');
+assert.match(estiloSidebar, /body\.sidebar-open \.app-sidebar\s*\{[^}]*visibility: visible/s, 'Abertura do sidebar');
+assert.match(estiloSidebar, /\.app-sidebar \[hidden\]\s*\{[^}]*display: none !important/s, 'Itens sem permissão devem continuar ocultos');
+const inicioIlha = scriptSidebar.indexOf('<div class="app-top-island">');
+const botaoNaIlha = scriptSidebar.indexOf('id="btnSidebarToggle"', inicioIlha);
+assert.ok(inicioIlha >= 0 && botaoNaIlha > inicioIlha, 'Botão do sidebar dentro da ilha');
+assert.match(scriptSidebar, /function definirSidebarAberto\(aberto\)/, 'Controle unificado do sidebar');
+assert.match(scriptSidebar, /function alternarSubmenuSidebar\(\)/, 'Submenu expansível');
+assert.match(scriptSidebar, /function destacarPaginaSidebar\(\)/, 'Página ativa no sidebar');
 
 const planilhas = new Map();
 const memoriaCache = new Map();
