@@ -10,7 +10,8 @@ if (!SENHA_MESTRA_API || !SENHA_ADMIN) {
 var SCHEMA = {
   usuarios: [
     'id', 'usuario', 'nome', 'pin', 'rendaFixa', 'parceiroId', 'ativo',
-    'permissoes', 'preferenciasNotificacao', 'fotoPerfil', 'trocaSenhaObrigatoria'
+    'permissoes', 'preferenciasNotificacao', 'fotoPerfil', 'trocaSenhaObrigatoria',
+    'configuracaoSalarial'
   ],
 
   categorias: ['id', 'nome', 'tipo', 'classificacao', 'criadopor'],
@@ -23,7 +24,8 @@ var SCHEMA = {
   lancamentos: [
     'id', 'usuarioId', 'descricao', 'valor', 'tipo', 'categoriaId',
     'formaPagamento', 'cartaoId', 'vencimento', 'recorrencia',
-    'parcelaAtual', 'totalParcelas', 'observacao', 'horaExtra',
+    'parcelaAtual', 'totalParcelas', 'observacao', 'horaExtra', 'horaExtraBruta',
+    'remuneracaoBruta', 'competenciaRenda', 'naturezaRenda',
     'servicoEssencial', 'pago', 'status', 'dataCompra', 'dataPagamento',
     'usuarioPagamentoId', 'financiamentoId', 'parcelamentoId', 'bemId', 'escopo',
     'faturaId',
@@ -80,7 +82,8 @@ var CAMPOS_DATA = {
 
 var CAMPOS_JSON = {
   permissoes: true,
-  preferenciasNotificacao: true
+  preferenciasNotificacao: true,
+  configuracaoSalarial: true
 };
 
 var CAMPOS_BOOLEAN = {
@@ -158,7 +161,7 @@ function conferirAlteracoesUsuarios(original, proposta, usuario, sessao, notific
   var origPorId = {};
   original.forEach(function(u) { origPorId[String(u.id)] = u; });
   var novosIds = {};
-  var camposPermitidos = ['nome', 'usuario', 'rendaFixa', 'preferenciasNotificacao', 'fotoPerfil', 'parceiroId', 'pin', 'trocaSenhaObrigatoria'];
+  var camposPermitidos = ['nome', 'usuario', 'rendaFixa', 'configuracaoSalarial', 'preferenciasNotificacao', 'fotoPerfil', 'parceiroId', 'pin', 'trocaSenhaObrigatoria'];
   var pendentes = notificacoesAntigas.filter(function(n) {
     return n.tipo === 'solicitacao_parceiro' && n.statusAprovacao === 'pendente' && String(n.usuarioDestinoId) === identidade;
   });
@@ -179,6 +182,43 @@ function conferirAlteracoesUsuarios(original, proposta, usuario, sessao, notific
 
     if (elevado) return;
     if (id === identidade) {
+      if (u.configuracaoSalarial != null) {
+        var conf = u.configuracaoSalarial;
+        if (!conf || typeof conf !== 'object' || Array.isArray(conf) || JSON.stringify(conf).length > 12000) {
+          throw new Error('Configuração salarial inválida.');
+        }
+        if (conf.regimeRenda != null && ['clt', 'pj', 'aposentado'].indexOf(conf.regimeRenda) < 0) {
+          throw new Error('Regime de renda inválido.');
+        }
+        if ((conf.utilizaAdiantamento != null && typeof conf.utilizaAdiantamento !== 'boolean') ||
+            (conf.aposentado65Mais != null && typeof conf.aposentado65Mais !== 'boolean')) {
+          throw new Error('Parâmetro de renda inválido.');
+        }
+        var horasPrevistas = Number(conf.horasExtrasPrevistas || 0);
+        if (!Number.isFinite(horasPrevistas) || horasPrevistas < 0 || horasPrevistas > 10000000) {
+          throw new Error('Horas extras previstas inválidas.');
+        }
+        var deps = Number(conf.dependentes || 0);
+        var custoVT = Number(conf.vtCustoMensal || 0);
+        if (!Number.isInteger(deps) || deps < 0 || deps > 20 || !Number.isFinite(custoVT) || custoVT < 0 || custoVT > 1000000) {
+          throw new Error('Dependentes ou vale-transporte inválidos.');
+        }
+        if (conf.descontos != null && (!Array.isArray(conf.descontos) || conf.descontos.length > 20)) {
+          throw new Error('Quantidade de descontos adicionais inválida.');
+        }
+        (conf.descontos || []).forEach(function(d) {
+          var v = Number(d && d.valor);
+          if (!d || typeof d.nome !== 'string' || !d.nome.trim() || d.nome.length > 70 ||
+              ['fixo','percentual'].indexOf(d.tipo) < 0 || !Number.isFinite(v) || v < 0 ||
+              v > (d.tipo === 'percentual' ? 100 : 10000000)) {
+            throw new Error('Desconto salarial inválido.');
+          }
+        });
+      }
+      var salarioBruto = u.rendaFixa == null || u.rendaFixa === '' ? 0 : Number(u.rendaFixa);
+      if (!Number.isFinite(salarioBruto) || salarioBruto < 0 || salarioBruto > 10000000) {
+        throw new Error('Salário bruto inválido.');
+      }
       var proibidos = SCHEMA.usuarios.filter(function(campo) { return camposPermitidos.indexOf(campo) < 0; });
       if (registroAlterado(velho, u, proibidos)) throw new Error('Você não pode alterar suas próprias permissões ou estado da conta.');
       var parceiroAntes = String(velho.parceiroId || '');
@@ -290,6 +330,33 @@ function conferirAlteracoesFinanceiras(antes, depois, usuario) {
       }
       if (dono == null || donosPermitidos.indexOf(String(dono)) < 0) {
         throw new Error('Não é permitido alterar lançamentos de outra conta sem vínculo de parceiro.');
+      }
+      if (nome === 'lancamentos' && novo && (!velho ||
+          registroAlterado(velho, novo, ['categoriaId', 'naturezaRenda', 'tipo']))) {
+        var donoUsuario = (depois.usuarios || []).filter(function(u) { return String(u.id) === String(dono); })[0];
+        var confRenda = donoUsuario && donoUsuario.configuracaoSalarial || {};
+        var regime = ['clt', 'pj', 'aposentado'].indexOf(confRenda.regimeRenda) >= 0 ? confRenda.regimeRenda : 'clt';
+        var categoria = (depois.categorias || []).filter(function(c) { return String(c.id) === String(novo.categoriaId); })[0];
+        var nomeCategoria = String(categoria && categoria.nome || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+        var rubricaAdiantamento = /adiantamento.*salario/.test(nomeCategoria);
+        var rubricaCLT = rubricaAdiantamento || /decimo\s+terceiro|13.*salario|ferias|(^|\s)plr(\s|$)|participacao.*lucro/.test(nomeCategoria);
+        var natureza = String(novo.naturezaRenda || '');
+        if (novo.tipo === 'entrada' && ((regime === 'pj' && (rubricaCLT || natureza === 'salarial_extra' || natureza === 'adiantamento')) ||
+            (regime === 'aposentado' && (rubricaAdiantamento || /ferias|(^|\s)plr(\s|$)/.test(nomeCategoria) || natureza === 'adiantamento')) ||
+            (regime === 'clt' && confRenda.utilizaAdiantamento === false && (rubricaAdiantamento || natureza === 'adiantamento')))) {
+          throw new Error('Esta categoria salarial não está habilitada para o regime da conta.');
+        }
+      }
+      if (nome === 'lancamentos' && novo) {
+        var heBruta = Number(novo.horaExtraBruta || 0);
+        var brutoFolha = Number(novo.remuneracaoBruta || 0);
+        var comp = String(novo.competenciaRenda || '');
+        if (!Number.isFinite(heBruta) || heBruta < 0 || heBruta > 10000000 ||
+            !Number.isFinite(brutoFolha) || brutoFolha < 0 || brutoFolha > 10000000 ||
+            (brutoFolha > 0 && heBruta > brutoFolha) ||
+            (comp && !/^\d{4}-(0[1-9]|1[0-2])$/.test(comp))) {
+          throw new Error('Bruto, horas extras ou competência salarial inválidos.');
+        }
       }
     });
   });

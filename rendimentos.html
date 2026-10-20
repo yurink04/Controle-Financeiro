@@ -35,8 +35,8 @@
 
         <div id="conteudoRendimentos">
             <section class="income-kpis" aria-label="Projeção mensal">
-                <article><span>Salário bruto informado</span><strong id="rendaBrutaCard">R$ 0,00</strong><small>Antes dos descontos da folha</small></article>
-                <article><span>Salário líquido estimado</span><strong id="rendaLiquidaCard">R$ 0,00</strong><small>Depois dos descontos previstos</small></article>
+                <article><span id="rotuloRendaBrutaCard">Renda principal bruta</span><strong id="rendaBrutaCard">R$ 0,00</strong><small>Base + horas extras previstas, se CLT</small></article>
+                <article><span id="rotuloRendaLiquidaCard">Renda principal líquida estimada</span><strong id="rendaLiquidaCard">R$ 0,00</strong><small>Conforme os descontos do seu regime</small></article>
                 <article><span>Renda variável média</span><strong id="mediaVariavelCard">R$ 0,00</strong><small>6 meses, incluindo os sem ganhos</small></article>
                 <article class="income-kpi-featured"><span>Renda disponível estimada</span><strong id="rendaCompostaCard">R$ 0,00</strong><small>Líquido + média variável</small></article>
             </section>
@@ -44,11 +44,11 @@
             <section class="income-two-col">
                 <article class="account-panel income-detail-card">
                     <div class="income-section-heading"><div><span class="income-eyebrow">SIMULAÇÃO · REFERÊNCIA 2026</span><h2>Como o líquido é calculado</h2>
-                        <p>INSS progressivo, IRRF quando aplicável e os descontos que você cadastrou.</p></div>
+                        <p id="descricaoCalculoRegime">Descontos conforme o vínculo configurado no perfil.</p></div>
                         <button type="button" class="btn-secundario" onclick="abrirEditorSalarial()">⚙ Configurar salário</button>
                     </div>
                     <div id="detalheFolhaEstimado" class="income-breakdown"></div>
-                    <details class="income-legal-details"><summary>Como o INSS e o IRRF são apurados?</summary>
+                    <details class="income-legal-details" id="detalheRegrasCLT"><summary>Como o INSS e o IRRF são apurados?</summary>
                         <div id="detalheFaixasINSS"></div>
                         <p>O IRRF compara as deduções legais com o desconto simplificado mensal e considera a redução prevista em 2026. Valores podem diferir do contracheque.</p>
                     </details>
@@ -62,13 +62,13 @@
             </section>
 
             <section class="account-panel income-history-card">
-                <div class="income-section-heading"><div><span class="income-eyebrow">HISTÓRICO DE SALÁRIO</span><h2>Folha + adiantamentos, mês a mês</h2>
-                    <p>Veja quanto foi realmente lançado e identifique as horas extras já incluídas na folha.</p></div></div>
+                <div class="income-section-heading"><div><span class="income-eyebrow">HISTÓRICO DA RENDA PRINCIPAL</span><h2>Recebimentos consolidados por competência</h2>
+                    <p>Adiantamento e pagamento final entram uma única vez no total recebido; 13º, férias e PLR ficam identificados à parte.</p></div></div>
                 <div class="tabela-container income-responsive-table">
-                    <table class="tabela"><thead><tr><th>Mês</th><th>Folha recebida</th><th>Adiantamentos</th><th>Outros salariais</th><th>Horas extras inclusas</th><th>Total recebido</th></tr></thead>
+                    <table class="tabela"><thead><tr><th>Competência</th><th>Pagamento final</th><th>Adiantamento</th><th id="rotuloExtrasSalariais">13º / férias / PLR</th><th>HE bruta</th><th>Bruto simulado</th><th>Descontos previstos</th><th>Descontos efetivos*</th><th>Descontos de extras*</th><th>Líquido principal previsto</th><th>Total recebido</th></tr></thead>
                         <tbody id="historicoSalarioMensal"></tbody></table>
                 </div>
-                <p class="income-hint">O total recebido soma os lançamentos. As horas extras são apenas uma informação dentro da folha e não são adicionadas novamente.</p>
+                <p class="income-hint">*Desconto efetivo da folha = bruto informado − (adiantamento + pagamento final). Para 13º/férias/PLR, o desconto efetivo é a diferença entre o bruto e o líquido dessas verbas, se todos os seus brutos foram informados. O total recebido soma somente os líquidos lançados. As regras especiais dessas verbas não são confundidas com a tabela comum; sem bruto, não é possível reconstruir os descontos reais.</p>
             </section>
 
             <section class="account-panel income-history-card">
@@ -85,7 +85,7 @@
                 <div class="income-section-heading"><div><span class="income-eyebrow">EXTRATO DE GANHOS</span><h2>Cada lançamento, sem duplicidade</h2>
                     <p>Confira categoria, descrição, tipo de renda, hora extra e valor registrado.</p></div></div>
                 <div class="tabela-container income-responsive-table">
-                    <table class="tabela"><thead><tr><th>Data</th><th>Descrição</th><th>Categoria</th><th>Classificação</th><th>Hora extra (inclusa)</th><th>Recebido</th><th>Abrir</th></tr></thead>
+                    <table class="tabela"><thead><tr><th>Data</th><th>Competência</th><th>Descrição</th><th>Categoria</th><th>Classificação</th><th>HE bruta</th><th>Recebido</th><th>Abrir</th></tr></thead>
                         <tbody id="historicoRendimentosItens"></tbody></table>
                 </div>
             </section>
@@ -129,7 +129,24 @@
             if (discreto) return;
             const dados = obterDados(), usuario = obterUsuarioAtual(dados);
             if (!usuario) return;
-            const calculo = calcularSalarioLiquido(usuario.rendaFixa, usuario.configuracaoSalarial);
+            const conf = normalizarConfiguracaoSalarial(usuario.configuracaoSalarial);
+            const calculo = calcularSalarioLiquido(usuario.rendaFixa, conf);
+            const rotulos = {clt: ['Salário CLT bruto estimado', 'Salário CLT líquido estimado'],
+                pj: ['Faturamento PJ estimado', 'Disponível PJ após descontos informados'],
+                aposentado: ['Benefício bruto mensal', 'Benefício líquido estimado']};
+            document.getElementById('rotuloRendaBrutaCard').textContent = rotulos[conf.regimeRenda][0];
+            document.getElementById('rotuloRendaLiquidaCard').textContent = rotulos[conf.regimeRenda][1];
+            nomesRenda.folha = conf.regimeRenda === 'clt' ? 'Folha de pagamento'
+                : conf.regimeRenda === 'pj' ? 'Recebimento PJ' : 'Aposentadoria / pensão';
+            nomesRenda.salarial_extra = conf.regimeRenda === 'aposentado' ? '13º / benefício extra' : '13º / férias / PLR';
+            document.getElementById('rotuloExtrasSalariais').textContent = conf.regimeRenda === 'pj' ? 'Outros recebimentos'
+                : conf.regimeRenda === 'aposentado' ? '13º / benefícios adicionais' : '13º / férias / PLR';
+            document.getElementById('detalheRegrasCLT').hidden = conf.regimeRenda === 'pj';
+            document.getElementById('descricaoCalculoRegime').textContent = conf.regimeRenda === 'pj'
+                ? 'PJ: sem descontos automáticos de CLT; use os custos e impostos cadastrados (simulação, não cálculo tributário PJ).'
+                : conf.regimeRenda === 'aposentado'
+                    ? 'Aposentadoria: sem INSS de empregado; IRRF estimado e eventual isenção 65+, além dos descontos cadastrados.'
+                    : 'CLT: INSS e IRRF consideram também as horas extras brutas previstas, além dos demais descontos.';
             const consolidado = consolidarRendimentosUsuario(dados, usuario.id);
             const fim = document.getElementById('fimPeriodoRenda').value;
             const qtd = document.getElementById('inicioPeriodoRenda').value;
@@ -141,18 +158,23 @@
             document.getElementById('mediaVariavelCard').textContent = formatarMoeda(consolidado.mediaVariavel);
             document.getElementById('rendaCompostaCard').textContent = formatarMoeda(centavosRenda(calculo.liquido + consolidado.mediaVariavel));
             const itens = [
-                linhaRenda('Salário bruto informado', calculo.bruto),
-                linhaRenda('INSS (progressivo)', -calculo.inss.valor),
-                linhaRenda('IRRF estimado', -calculo.irrf.valor),
-                linhaRenda('Vale-transporte', -calculo.valeTransporte)
+                linhaRenda('Renda-base bruta', calculo.brutoBase),
+                ...(calculo.extraBruta ? [linhaRenda('Horas extras brutas previstas', calculo.extraBruta)] : []),
+                linhaRenda('Renda bruta total estimada', calculo.bruto)
             ];
+            if (conf.regimeRenda === 'clt') itens.push(linhaRenda('INSS (progressivo)', -calculo.inss.valor));
+            if (conf.regimeRenda !== 'pj') itens.push(linhaRenda('IRRF estimado', -calculo.irrf.valor));
+            if (calculo.isencaoAposentadoria) itens.push(linhaRenda('Parcela isenta 65+ na base do IRRF', calculo.isencaoAposentadoria));
+            if (conf.regimeRenda === 'clt') itens.push(linhaRenda('Vale-transporte', -calculo.valeTransporte));
             calculo.descontos.forEach(d => itens.push(linhaRenda(d.nome + (d.tipo === 'percentual' ? ' (' + d.valor + '%)' : ''), -d.calculado)));
             itens.push(linhaRenda('Total dos descontos', -calculo.totalDescontos, 'income-breakdown-subtotal'));
-            itens.push(linhaRenda('Salário líquido projetado', calculo.liquido, 'income-breakdown-total'));
+            itens.push(linhaRenda('Renda líquida projetada', calculo.liquido, 'income-breakdown-total'));
             document.getElementById('detalheFolhaEstimado').innerHTML = itens.join('');
             document.getElementById('detalheFaixasINSS').innerHTML =
-                '<p>O INSS incide por faixas, não por uma alíquota única sobre todo o salário:</p>' +
-                calculo.inss.faixas.map(f => linhaRenda((f.aliquota * 100).toLocaleString('pt-BR') + '% sobre ' + formatarMoeda(f.ate - f.de), f.valor)).join('') +
+                (conf.regimeRenda === 'clt'
+                    ? '<p>O INSS incide por faixas, não por uma alíquota única sobre todo o salário:</p>' +
+                      calculo.inss.faixas.map(f => linhaRenda((f.aliquota * 100).toLocaleString('pt-BR') + '% sobre ' + formatarMoeda(f.ate - f.de), f.valor)).join('')
+                    : '<p>Não há contribuição previdenciária de empregado sobre o benefício nesta simulação.</p>') +
                 '<p>IRRF: base ' + formatarMoeda(calculo.irrf.base || 0) + ', imposto antes da redução ' +
                 formatarMoeda(calculo.irrf.impostoTabela || 0) + ', redução ' + formatarMoeda(calculo.irrf.reducao || 0) + '.</p>';
             const variaveis = consolidado.mesesMedia.map(mes => {
@@ -166,13 +188,18 @@
             const tdVazio = (colunas, texto) => '<tr><td colspan="' + colunas + '" class="income-empty">' + texto + '</td></tr>';
             const mesesSalario = meses.filter(m => m.folha || m.adiantamento || m.salarial_extra);
             document.getElementById('historicoSalarioMensal').innerHTML = mesesSalario.length
-                ? mesesSalario.map(m => '<tr><td data-label="Mês"><strong>' + escaparHTML(mesRendaPtBr(m.mes)) + '</strong></td>' +
+                ? mesesSalario.map(m => '<tr><td data-label="Competência"><strong>' + escaparHTML(mesRendaPtBr(m.mes)) + '</strong></td>' +
                     '<td data-label="Folha">' + formatarMoeda(m.folha) + '</td>' +
                     '<td data-label="Adiantamentos">' + formatarMoeda(m.adiantamento) + '</td>' +
                     '<td data-label="Outros">' + formatarMoeda(m.salarial_extra) + '</td>' +
-                    '<td data-label="Horas extras"><span class="income-extra-badge">' + formatarMoeda(m.horasExtras) + '</span></td>' +
-                    '<td data-label="Total"><strong>' + formatarMoeda(m.folha + m.adiantamento + m.salarial_extra) + '</strong></td></tr>').join('')
-                : tdVazio(6, 'Ainda não há lançamentos salariais neste período.');
+                    '<td data-label="HE bruta"><span class="income-extra-badge">' + (m.horasExtrasBrutas ? formatarMoeda(m.horasExtrasBrutas) : '—') + '</span></td>' +
+                    '<td data-label="Bruto simulado">' + formatarMoeda(m.brutoEstimado) + '</td>' +
+                    '<td data-label="Descontos previstos">' + formatarMoeda(m.calculoFolha.totalDescontos) + '</td>' +
+                    '<td data-label="Descontos efetivos">' + (m.descontosEfetivos == null ? '—' : formatarMoeda(m.descontosEfetivos)) + '</td>' +
+                    '<td data-label="Descontos de extras">' + (m.descontosExtrasEfetivos == null ? '—' : formatarMoeda(m.descontosExtrasEfetivos)) + '</td>' +
+                    '<td data-label="Líquido previsto">' + formatarMoeda(m.calculoFolha.liquido) + '</td>' +
+                    '<td data-label="Total recebido"><strong>' + formatarMoeda(m.totalClt) + '</strong></td></tr>').join('')
+                : tdVazio(11, 'Ainda não há recebimentos principais neste período.');
             const mesesVariavel = meses.filter(m => m.variavel);
             document.getElementById('historicoVariavelMensal').innerHTML = mesesVariavel.length
                 ? mesesVariavel.map(m => '<tr><td data-label="Mês">' + escaparHTML(mesRendaPtBr(m.mes)) + '</td><td data-label="Lançamentos">' +
@@ -196,25 +223,26 @@
                 ? registros.map(r => {
                     const categoria = (dados.categorias || []).find(c => String(c.id) === String(r.categoriaId))?.nome || 'Sem categoria';
                     const data = r.dataPagamento || r.vencimento || r.dataCompra;
-                    return '<tr><td data-label="Data">' + formatarDataBR(data) + '</td><td data-label="Descrição">' +
+                    return '<tr><td data-label="Data">' + formatarDataBR(data) + '</td><td data-label="Competência">' +
+                        escaparHTML(r.mesRenda) + '</td><td data-label="Descrição">' +
                         escaparHTML(r.descricao || 'Sem descrição') + '</td><td data-label="Categoria">' +
                         escaparHTML(categoria) + '</td><td data-label="Tipo"><span class="income-tag">' +
                         escaparHTML(nomesRenda[r.classeRenda]) + '</span></td><td data-label="Hora extra">' +
-                        (r.horasExtrasIncluidas ? formatarMoeda(r.horasExtrasIncluidas) : '—') + '</td><td data-label="Recebido"><strong>' +
+                        (r.horasExtrasBrutas ? formatarMoeda(r.horasExtrasBrutas) : '—') + '</td><td data-label="Recebido"><strong>' +
                         formatarMoeda(r.valor) + '</strong></td><td data-label="Abrir"><a class="income-row-link" href="editar-lancamento.html?id=' +
                         encodeURIComponent(String(r.id)) + '&returnUrl=rendimentos.html">↗</a></td></tr>';
                 }).join('')
-                : tdVazio(7, 'Sem entradas salariais ou variáveis registradas neste período.');
+                : tdVazio(8, 'Sem entradas salariais ou variáveis registradas neste período.');
         }
         function exportarHistoricoRendimentos() {
             if (document.body.classList.contains('privacidade-ativa')) return;
             if (!itensRendaExportacao.length) { notificarOperacao('Não há registros no período para exportar.'); return; }
             const dados = obterDados();
-            const linhas = [['Data','Mês','Descrição','Categoria','Classificação','Hora extra inclusa','Valor recebido']];
+            const linhas = [['Data','Competência','Descrição','Categoria','Classificação','Hora extra bruta','Bruto da folha','Valor recebido']];
             itensRendaExportacao.forEach(r => {
                 const categoria = (dados.categorias || []).find(c => String(c.id) === String(r.categoriaId))?.nome || '';
                 linhas.push([r.dataPagamento || r.vencimento || '', r.mesRenda, r.descricao || '',
-                    categoria, nomesRenda[r.classeRenda], r.horasExtrasIncluidas, r.valor]);
+                    categoria, nomesRenda[r.classeRenda], r.horasExtrasBrutas, r.remuneracaoBruta || '', r.valor]);
             });
             // Planilhas podem executar células começando por operadores, mesmo em campos CSV entre aspas.
             const celulaSegura = valor => {

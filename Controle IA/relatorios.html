@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Análise de receitas, despesas e comparação de categorias do Controle Financeiro.">
+    <title>Relatórios | Controle Financeiro</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body class="report-page">
+    <main class="container">
+        <div class="page-heading" data-overline="ANÁLISE FINANCEIRA · RELATÓRIOS">
+            <div>
+                <h2>Entenda seus números</h2>
+                <p>Investigue resultados, compare receitas com custos e encontre o próximo passo.</p>
+            </div>
+            <div class="rpt-heading-actions">
+                <a class="rpt-link-button" href="dashboard.html">Visão rápida <span aria-hidden="true">↗</span></a>
+                <a class="rpt-link-button" href="grafico.html?tipo=todos">Todos os lançamentos <span aria-hidden="true">↗</span></a>
+            </div>
+        </div>
+
+        <section class="rpt-filter-panel" aria-label="Filtros da análise">
+            <div class="rpt-filter-cell">
+                <label for="filtroMesRelatorio">Mês de referência</label>
+                <input type="month" id="filtroMesRelatorio">
+            </div>
+            <div class="rpt-filter-cell">
+                <label for="rptEscopo">Quais contas?</label>
+                <select id="rptEscopo">
+                    <option value="individual">Somente minhas</option>
+                    <option value="casal">Minhas + parceiro</option>
+                </select>
+            </div>
+            <div class="rpt-filter-cell rpt-filter-wide">
+                <label for="rptSituacao">Considerar valores</label>
+                <select id="rptSituacao">
+                    <option value="realizados">Pagos e recebidos</option>
+                    <option value="todos">Realizados + pendentes</option>
+                </select>
+            </div>
+            <div class="rpt-filter-actions">
+                <button type="button" id="rptExportarCSV" class="rpt-link-button" title="Baixar lançamentos do mês em CSV">Exportar CSV</button>
+                <button type="button" id="rptExportarPDF" class="rpt-link-button" title="Imprimir ou salvar em PDF">Salvar PDF</button>
+            </div>
+        </section>
+        <p class="rpt-method-note">O mês é definido pela data de vencimento do lançamento. “Pagos e recebidos” considera apenas movimentos marcados como concluídos.</p>
+
+        <section class="rpt-intro" aria-labelledby="rptTituloMes">
+            <div>
+                <span class="rpt-eyebrow">FECHAMENTO FINANCEIRO</span>
+                <h2 id="rptTituloMes">Seu mês em análise</h2>
+                <p id="rptResumoTexto" aria-live="polite">Preparando os indicadores do período...</p>
+            </div>
+            <a id="rptPendenciasLink" href="central-pagamentos.html" class="rpt-intro-action">Consultar pendências <span aria-hidden="true">↗</span></a>
+        </section>
+
+        <section class="rpt-kpis" aria-label="Indicadores do período">
+            <article class="rpt-kpi">
+                <span class="rpt-kpi-label">Entradas</span>
+                <strong id="relTotalEntradas" class="rpt-kpi-value rpt-positive">R$ 0,00</strong>
+                <span id="rptEntradasDetalhe" class="rpt-kpi-hint">Receitas no mês</span>
+            </article>
+            <article class="rpt-kpi">
+                <span class="rpt-kpi-label">Saídas</span>
+                <strong id="relTotalSaidas" class="rpt-kpi-value rpt-negative">R$ 0,00</strong>
+                <span id="rptSaidasDetalhe" class="rpt-kpi-hint">Despesas no mês</span>
+            </article>
+            <article class="rpt-kpi rpt-kpi-primary">
+                <span class="rpt-kpi-label">Resultado do mês</span>
+                <strong id="relSaldo" class="rpt-kpi-value">R$ 0,00</strong>
+                <span id="rptSaldoDetalhe" class="rpt-kpi-hint">Entradas menos saídas</span>
+            </article>
+            <article class="rpt-kpi">
+                <span class="rpt-kpi-label">Despesas essenciais / entradas</span>
+                <strong id="relComprometimento" class="rpt-kpi-value">—</strong>
+                <span class="rpt-kpi-hint">Participação no período</span>
+            </article>
+        </section>
+
+        <nav class="rpt-anchors" aria-label="Ir para uma análise">
+            <a href="#comparadorCategorias">Comparar categorias</a>
+            <a href="#rptLeituras">Pontos de atenção</a>
+            <a href="#rptDespesas">Onde concentrei gastos</a>
+            <a href="#rptApoio">Conferir dados</a>
+        </nav>
+
+        <section class="form-card rpt-compare" id="comparadorCategorias" aria-labelledby="rptComparadorTitulo">
+            <div class="rpt-section-head">
+                <div>
+                    <span class="rpt-eyebrow">INVESTIGUE O QUE IMPORTA</span>
+                    <h2 id="rptComparadorTitulo">Receita × custo, lado a lado</h2>
+                    <p>Compare qualquer categoria de entrada com uma de saída. Exemplo: Ganhos Uber e Transporte.</p>
+                </div>
+                <span class="rpt-subtle-badge">Comparação personalizada</span>
+            </div>
+
+            <div class="rpt-compare-filters">
+                <div class="rpt-filter-cell">
+                    <label for="rptCategoriaEntrada"><span class="rpt-key rpt-key-income"></span>Categoria de entrada</label>
+                    <select id="rptCategoriaEntrada" aria-describedby="rptComparadorAjuda"><option value="">Selecione uma receita</option></select>
+                </div>
+                <div class="rpt-filter-cell">
+                    <label for="rptCategoriaSaida"><span class="rpt-key rpt-key-expense"></span>Categoria de saída</label>
+                    <select id="rptCategoriaSaida" aria-describedby="rptComparadorAjuda"><option value="">Selecione um custo</option></select>
+                </div>
+                <div class="rpt-filter-cell">
+                    <label for="rptJanelaComparacao">Janela de análise</label>
+                    <select id="rptJanelaComparacao">
+                        <option value="1">Mês selecionado</option>
+                        <option value="3">Últimos 3 meses</option>
+                        <option value="6" selected>Últimos 6 meses</option>
+                        <option value="12">Últimos 12 meses</option>
+                    </select>
+                </div>
+            </div>
+            <p id="rptComparadorAjuda" class="rpt-method-note">O período termina no mês de referência escolhido acima. Categorias e filtros podem ser alterados a qualquer momento.</p>
+
+            <div id="rptComparadorVazio" class="rpt-empty" hidden>Selecione uma categoria de cada tipo para comparar.</div>
+            <div id="rptComparadorConteudo">
+                <div class="rpt-compare-totals" aria-live="polite">
+                    <div><span id="rptNomeEntrada">Receita selecionada</span><strong id="rptValorEntrada" class="rpt-positive">R$ 0,00</strong><small id="rptQtdEntradas">0 lançamentos</small></div>
+                    <div><span id="rptNomeSaida">Custo selecionado</span><strong id="rptValorSaida" class="rpt-negative">R$ 0,00</strong><small id="rptQtdSaidas">0 lançamentos</small></div>
+                    <div class="rpt-compare-result"><span>Resultado parcial</span><strong id="rptResultadoComparacao">R$ 0,00</strong><small id="rptResultadoPercentual">—</small></div>
+                </div>
+
+                <div class="rpt-chart-header">
+                    <div><h3>Evolução por mês</h3><p id="rptPeriodoGrafico">Receita e custo no período</p></div>
+                    <div class="rpt-chart-legend"><span><i class="rpt-key rpt-key-income"></i>Entrada</span><span><i class="rpt-key rpt-key-expense"></i>Saída</span></div>
+                </div>
+                <div id="rptGraficoCategorias" class="rpt-chart-scroll" aria-label="Comparação mensal de categorias"></div>
+                <p id="rptConclusaoComparacao" class="rpt-conclusion"></p>
+                <div class="rpt-compare-links" id="rptLinksComparacao"></div>
+            </div>
+            <p class="rpt-compare-disclaimer">Resultado parcial = entradas da categoria selecionada − saídas da categoria selecionada. Não é lucro líquido: outros custos, tributos, manutenção ou taxas ficam de fora se lançados em outras categorias.</p>
+        </section>
+
+        <div class="rpt-analysis-grid" id="rptLeituras">
+            <section class="form-card rpt-insights" aria-labelledby="rptInsightsTitulo">
+                <div class="rpt-section-head">
+                    <div>
+                        <span class="rpt-eyebrow">DECISÕES COM CONTEXTO</span>
+                        <h2 id="rptInsightsTitulo">Pontos de atenção</h2>
+                        <p>Observações objetivas, cada uma com um caminho para investigar ou agir.</p>
+                    </div>
+                </div>
+                <div id="containerInsights" class="rpt-insight-list" aria-live="polite"></div>
+            </section>
+
+            <section class="form-card rpt-month-compare" aria-labelledby="rptMudancasTitulo">
+                <div class="rpt-section-head">
+                    <div>
+                        <span class="rpt-eyebrow">EVOLUÇÃO</span>
+                        <h2 id="rptMudancasTitulo">O que mudou?</h2>
+                        <p id="rptComparativoSubtitulo">Comparação com o mês anterior usando os mesmos filtros.</p>
+                    </div>
+                </div>
+                <div id="containerComparativo" class="rpt-delta-list"></div>
+                <a id="rptExplorarGrafico" class="rpt-text-link" href="grafico.html?tipo=todos">Examinar os lançamentos deste mês <span aria-hidden="true">↗</span></a>
+            </section>
+        </div>
+
+        <section class="form-card rpt-spending" id="rptDespesas" aria-labelledby="rptCategoriasTitulo">
+            <div class="rpt-section-head">
+                <div>
+                    <span class="rpt-eyebrow">CONCENTRAÇÃO DE CUSTOS</span>
+                    <h2 id="rptCategoriasTitulo">Para onde foi o dinheiro?</h2>
+                    <p>As cinco categorias com mais saídas. Abra qualquer uma para conferir os lançamentos.</p>
+                </div>
+                <a id="rptVerTodasSaidas" class="rpt-text-link" href="grafico.html?tipo=saidas">Explorar saídas <span aria-hidden="true">↗</span></a>
+            </div>
+            <div id="containerTopCategorias" class="rpt-category-list"></div>
+        </section>
+
+        <section class="rpt-next-steps" aria-labelledby="rptContinuarTitulo">
+            <div class="rpt-section-head">
+                <div>
+                    <span class="rpt-eyebrow">CADA TELA TEM UMA FUNÇÃO</span>
+                    <h2 id="rptContinuarTitulo">Aprofunde ou coloque em prática</h2>
+                </div>
+            </div>
+            <div class="rpt-destination-grid">
+                <a href="dashboard.html"><span class="rpt-destination-index">01 / ACOMPANHAR</span><strong>Dashboard <span aria-hidden="true">↗</span></strong><small>Seu pulso financeiro e atalhos do dia.</small></a>
+                <a id="rptDestinoPagamentos" href="central-pagamentos.html"><span class="rpt-destination-index">02 / RESOLVER</span><strong>Central de pagamentos <span aria-hidden="true">↗</span></strong><small>Pendências, pagamentos e faturas.</small></a>
+                <a id="rptDestinoGrafico" href="grafico.html?tipo=todos"><span class="rpt-destination-index">03 / EXAMINAR</span><strong>Gráficos e lançamentos <span aria-hidden="true">↗</span></strong><small>Confira os registros por trás dos números.</small></a>
+                <a href="rendimentos.html"><span class="rpt-destination-index">04 / ENTENDER</span><strong>Meus rendimentos <span aria-hidden="true">↗</span></strong><small>Salário, adiantamentos e fontes de renda.</small></a>
+            </div>
+        </section>
+
+        <details class="form-card rpt-audit" id="rptApoio">
+            <summary>
+                <span><strong>Conferência dos dados do mês</strong><small>Uma amostra dos lançamentos e acesso à auditoria completa.</small></span>
+                <span class="rpt-audit-chevron" aria-hidden="true">⌄</span>
+            </summary>
+            <div class="rpt-audit-inner">
+                <div class="tabela-container">
+                    <table class="tabela">
+                        <thead><tr><th>Data</th><th>Descrição</th><th>Categoria</th><th>Estado</th><th>Valor</th><th>Abrir</th></tr></thead>
+                        <tbody id="rptTabelaAuditoria"></tbody>
+                    </table>
+                </div>
+                <div class="rpt-audit-footer">
+                    <span id="rptAuditoriaLegenda">Até 20 movimentações do período.</span>
+                    <a id="rptAuditoriaCompleta" href="grafico.html?tipo=todos" class="rpt-text-link">Ver histórico completo <span aria-hidden="true">↗</span></a>
+                </div>
+            </div>
+        </details>
+        <p id="rptFeedback" class="rpt-status" role="status" aria-live="polite"></p>
+    </main>
+
+    <script src="script.js"></script>
+    <script src="relatorios-page.js"></script>
+</body>
+</html>

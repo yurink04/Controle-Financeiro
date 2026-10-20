@@ -115,7 +115,21 @@
                 if (inputInicio && !inputInicio.value) inputInicio.value = dataLocalYYYYMMDD(primeiroDia);
                 if (inputFim && !inputFim.value) inputFim.value = dataLocalYYYYMMDD(ultimoDia);
 
-                carregarCentralPagamentos();
+                // Encaminhamentos de Relatórios preservam a competência analisada.
+                const parametrosRelatorio = new URLSearchParams(window.location.search);
+                const mesRelatorio = parametrosRelatorio.get('mes') || '';
+                if (/^\d{4}-(0[1-9]|1[0-2])$/.test(mesRelatorio)) {
+                    const [anoRef, mesRef] = mesRelatorio.split('-').map(Number);
+                    if (inputInicio) inputInicio.value = mesRelatorio + '-01';
+                    if (inputFim) inputFim.value = dataLocalYYYYMMDD(new Date(anoRef, mesRef, 0));
+                    const filtroCompetencia = document.getElementById('filtroMesCompetencia');
+                    if (filtroCompetencia) filtroCompetencia.value = mesRelatorio;
+                }
+                if (parametrosRelatorio.get('visao') === 'competencia') {
+                    mudarVisaoPagamentos('competencia');
+                } else {
+                    carregarCentralPagamentos();
+                }
             }
 
             document.addEventListener('click', (e) => {

@@ -27,23 +27,41 @@
             <div class="account-section-heading">
                 <div><span class="account-overline">VISÃO GERAL</span><h2 id="tituloRendaPerfil">Seus rendimentos</h2><p>Uma visão rápida de como sua renda está composta.</p></div>
             </div>
-            <div class="account-kpis">
-                <article class="account-kpi"><div class="account-kpi-label"><span>Renda fixa mensal</span><span class="account-kpi-icon">↗</span></div><div class="account-kpi-value" id="cardRendaFixaValor">R$ 0,00</div><button type="button" class="account-text-button" onclick="abrirModalEdicaoRenda()">✎ Ajustar renda</button></article>
-                <article class="account-kpi"><div class="account-kpi-label"><span>Média de ganhos variáveis</span><span class="account-kpi-icon">≋</span></div><div class="account-kpi-value" id="cardMediaVariavel">R$ 0,00</div><p>Baseada no histórico de entradas elegíveis</p></article>
-                <article class="account-kpi account-kpi-featured"><div class="account-kpi-label"><span>Renda total estimada</span><span class="account-kpi-icon">✧</span></div><div class="account-kpi-value" id="cardRendaTotal">R$ 0,00</div><button type="button" id="btnDetalhesRenda" class="account-text-button">Entenda o cálculo →</button></article>
+            <div class="account-kpis income-profile-kpis">
+                <article class="account-kpi"><div class="account-kpi-label"><span id="labelRendaBrutaPerfil">Renda bruta estimada</span><span class="account-kpi-icon">↗</span></div><div class="account-kpi-value" id="cardRendaFixaValor">R$ 0,00</div><button type="button" class="account-text-button" onclick="abrirEditorSalarial()">✎ Regime de renda e descontos</button></article>
+                <article class="account-kpi"><div class="account-kpi-label"><span id="labelRendaLiquidaPerfil">Renda líquida estimada</span><span class="account-kpi-icon">−</span></div><div class="account-kpi-value" id="cardRendaLiquida">R$ 0,00</div><p id="textoRegimePerfil">Conforme seu vínculo e descontos cadastrados.</p></article>
+                <article class="account-kpi"><div class="account-kpi-label"><span>Média de ganhos variáveis</span><span class="account-kpi-icon">≋</span></div><div class="account-kpi-value" id="cardMediaVariavel">R$ 0,00</div><p>Últimos 6 meses, inclusive meses sem entradas.</p></article>
+                <article class="account-kpi account-kpi-featured"><div class="account-kpi-label"><span>Renda disponível estimada</span><span class="account-kpi-icon">✧</span></div><div class="account-kpi-value" id="cardRendaTotal">R$ 0,00</div><a href="rendimentos.html" id="btnDetalhesRenda" class="account-text-button">Entenda cada valor →</a></article>
             </div>
+            <p class="income-profile-note">Configure seu regime (CLT, PJ ou aposentadoria) e se utiliza adiantamento de salário. A projeção mensal é separada dos pagamentos reais no <a href="rendimentos.html">histórico de rendimentos</a>.</p>
         </section>
 
-        <div class="account-two-column">
+        <div class="account-two-column" id="layoutPerfil">
             <aside class="account-sidebar">
                 <section class="account-panel account-identity" aria-label="Resumo do perfil">
-                    <img id="fotoPerfilLateral" class="account-identity-avatar" alt="Foto de perfil" src="">
-                    <h2 id="nomePerfilLateral">Minha conta</h2>
-                    <p id="loginPerfilLateral">Seu perfil financeiro</p>
-                    <span class="account-status"><span></span> Conta ativa</span>
+                    <div class="account-identity-top">
+                        <div class="account-avatar-wrapper">
+                            <img id="fotoPerfilLateral" class="account-identity-avatar" alt="Foto de perfil" src="">
+                            <button type="button" class="account-avatar-edit-trigger" id="btnEditarFotoPerfil" aria-label="Alterar foto de perfil" title="Alterar foto de perfil" onclick="abrirSeletorFotoPerfil()">
+                                <img src="imagens/editar.png" alt="" aria-hidden="true" onload="this.nextElementSibling.hidden=true" onerror="this.hidden=true">
+                                <span aria-hidden="true">✎</span>
+                            </button>
+                        </div>
+                        <div class="account-identity-main">
+                            <h2 id="nomePerfilLateral">Minha conta</h2>
+                            <p id="loginPerfilLateral">Seu perfil financeiro</p>
+                            <div class="account-identity-badges">
+                                <span class="account-status" id="estadoContaPerfil"><span></span> Conta ativa</span>
+                                <span class="account-status account-status-reminders" id="lembretesAtivosPerfil" hidden>◷ Lembretes ativos</span>
+                            </div>
+                        </div>
+                    </div>
+                    <input type="file" id="inputFotoPerfil" accept="image/png,image/jpeg,image/webp" class="account-file-input" aria-label="Escolher nova foto de perfil" onchange="processarFotoPerfil(event)">
+                    <p id="fotoPerfilFeedback" class="account-photo-feedback" role="status" aria-live="polite"></p>
+                    <div class="account-identity-details"><span>Parceiro financeiro</span><strong id="parceiroPerfilResumo">Não vinculado</strong></div>
                     <div class="account-side-divider"></div>
-                    <a href="#dados-pessoais">✎ <span>Editar meus dados</span> <span>→</span></a>
-                    <a href="#patrimonio-perfil">▦ <span>Ver patrimônio</span> <span>→</span></a>
+                    <button type="button" class="account-edit-trigger" id="btnEditarDadosPerfil" aria-controls="dados-pessoais" aria-expanded="false" onclick="alternarModoEdicaoPerfil()"><span aria-hidden="true">✎</span> <span id="rotuloEditarDadosPerfil">Editar meus dados</span><span aria-hidden="true">→</span></button>
+                    <p id="perfilCardFeedback" class="account-card-feedback" role="status" aria-live="polite"></p>
                 </section>
                 <section class="account-panel account-quick-links" aria-label="Atalhos financeiros">
                     <h3>Seu financeiro</h3>
@@ -53,15 +71,12 @@
                 </section>
             </aside>
 
-            <section class="account-panel account-profile-form" id="dados-pessoais">
+            <section class="account-panel account-profile-form" id="dados-pessoais" hidden>
                 <div class="account-panel-heading"><div><span class="account-overline">PREFERÊNCIAS DA CONTA</span><h2>Informações pessoais</h2><p>Atualize somente o que precisar. As alterações serão salvas na sua conta.</p></div></div>
                 <form id="formMeuPerfil" onsubmit="salvarMeuPerfil(event)">
-                    <div class="account-photo-row">
-                        <img id="previewFotoPerfil" src="" alt="Prévia da sua foto de perfil">
-                        <div><h3>Sua foto</h3><p>Uma foto quadrada funciona melhor. Até 5 MB; otimizamos automaticamente.</p>
-                            <input type="file" id="inputFotoPerfil" accept="image/png,image/jpeg,image/webp" class="account-file-input" onchange="processarFotoPerfil(event)">
-                            <div class="account-inline-actions"><button type="button" class="btn-secundario" onclick="document.getElementById('inputFotoPerfil').click()">Trocar foto</button><button type="button" class="account-text-button account-danger-text" onclick="removerFotoPerfil()">Remover</button></div>
-                        </div>
+                    <div class="account-photo-inline-note">
+                        <div><strong>Sua foto de perfil</strong><p>Use o lápis sobre a foto. Alterar ou remover a foto salva automaticamente, sem afetar os outros campos.</p></div>
+                        <button type="button" class="account-text-button account-danger-text" onclick="removerFotoPerfil()">Remover foto agora</button>
                     </div>
                     <div class="account-form-section-title"><span class="account-step-index">01</span><div><h3>Identificação</h3><p>Como você entra e aparece no sistema.</p></div></div>
                     <div class="form-grid-2 account-form-grid">
@@ -90,8 +105,7 @@
 
     <script src="script.js"></script>
     <script>
-        let novaFotoBase64 = null;
-        let desejaRemoverFoto = false;
+        let salvandoFotoPerfil = false;
         let alteracoesPerfilPendentes = false;
         const SVG_AVATAR_PADRAO = 'data:image/svg+xml;charset=UTF-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22%23a89586%22%3E%3Cpath%20d%3D%22M12%2012c2.21%200%204-1.79%204-4s-1.79-4-4-4-4%201.79-4%204%201.79%204%204%204zm0%202c-2.67%200-8%201.34-8%204v2h16v-2c0-2.66-5.33-4-8-4z%22%2F%3E%3C%2Fsvg%3E';
 
@@ -126,6 +140,51 @@
             elemento.dataset.state = estado;
         }
 
+        function definirModoEdicaoPerfil(editar, rolar = true) {
+            const painel = document.getElementById('dados-pessoais');
+            if (!editar) {
+                if (obterUsuarioAtual()?.trocaSenhaObrigatoria) {
+                    definirFeedbackPerfil('Defina sua nova senha para concluir o primeiro acesso.', 'pending');
+                    return false;
+                }
+                if (alteracoesPerfilPendentes) {
+                    definirFeedbackPerfil('Salve ou descarte suas alterações antes de fechar a edição.', 'pending');
+                    painel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                    return false;
+                }
+            }
+            painel.hidden = !editar;
+            document.body.classList.toggle('profile-editing', editar);
+            if (editar) document.getElementById('perfilCardFeedback').textContent = '';
+            document.getElementById('btnEditarDadosPerfil').setAttribute('aria-expanded', String(editar));
+            document.getElementById('rotuloEditarDadosPerfil').textContent = editar ? 'Fechar edição' : 'Editar meus dados';
+            if (rolar) {
+                if (editar) {
+                    painel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                    document.getElementById('meuUsuarioLogin').focus({ preventScroll: true });
+                } else document.getElementById('btnEditarDadosPerfil').focus({ preventScroll: true });
+            }
+            return true;
+        }
+
+        function alternarModoEdicaoPerfil() {
+            definirModoEdicaoPerfil(document.getElementById('dados-pessoais').hidden);
+        }
+
+        function abrirSeletorFotoPerfil() {
+            if (salvandoFotoPerfil) return;
+            if (document.getElementById('btnSalvarPerfil').disabled) {
+                feedbackFotoPerfil('Aguarde a gravação dos seus dados.', 'loading'); return;
+            }
+            document.getElementById('inputFotoPerfil').click();
+        }
+
+        function feedbackFotoPerfil(mensagem, estado = '') {
+            const elemento = document.getElementById('fotoPerfilFeedback');
+            elemento.textContent = mensagem;
+            elemento.dataset.state = estado;
+        }
+
         function marcarPerfilAlterado() {
             alteracoesPerfilPendentes = true;
             document.getElementById('descartarPerfil').hidden = false;
@@ -135,6 +194,7 @@
         function descartarAlteracoesPerfil() {
             carregarDadosPerfil();
             definirFeedbackPerfil('Alterações descartadas. Tudo atualizado.');
+            definirModoEdicaoPerfil(false);
         }
 
         function atualizarLembretePerfil() {
@@ -147,23 +207,25 @@
             const usuario = dados.usuarios.find(u => Number(u.id) === Number(usuarioId));
             if (!usuario) return;
 
-            novaFotoBase64 = null;
-            desejaRemoverFoto = false;
             document.getElementById('inputFotoPerfil').value = '';
             document.getElementById('meuPinAtual').value = '';
             document.getElementById('confirmarSenhaPerfil').value = '';
             document.getElementById('avisoTrocaSenhaObrigatoria').hidden = !usuario.trocaSenhaObrigatoria;
             document.getElementById('rotuloSenhaOpcional').hidden = !!usuario.trocaSenhaObrigatoria;
-            document.getElementById('previewFotoPerfil').src = usuario.fotoPerfil || SVG_AVATAR_PADRAO;
             document.getElementById('fotoPerfilLateral').src = usuario.fotoPerfil || SVG_AVATAR_PADRAO;
             document.getElementById('nomePerfilLateral').textContent = usuario.nome || 'Minha conta';
             document.getElementById('loginPerfilLateral').textContent = '@' + (usuario.usuario || usuario.nome || 'usuário');
+            const estadoConta = document.getElementById('estadoContaPerfil');
+            const ativo = usuario.ativo !== false;
+            estadoConta.innerHTML = '<span></span> ' + (ativo ? 'Conta ativa' : 'Conta inativa');
+            estadoConta.classList.toggle('is-inactive', !ativo);
 
             document.getElementById('meuUsuarioLogin').value = usuario.usuario || usuario.nome || '';
             document.getElementById('meuNome').value = usuario.nome || '';
             
             const prefsNotif = usuario.preferenciasNotificacao || {};
             document.getElementById('notifAtivaVencimento').checked = prefsNotif.ativo !== false;
+            document.getElementById('lembretesAtivosPerfil').hidden = prefsNotif.ativo === false;
             document.getElementById('notifDiasAntecedencia').value = Number.isInteger(Number(prefsNotif.diasAntecedencia)) && Number(prefsNotif.diasAntecedencia) >= 1 && Number(prefsNotif.diasAntecedencia) <= 15 ? prefsNotif.diasAntecedencia : 3;
             atualizarLembretePerfil();
 
@@ -177,6 +239,11 @@
                 if (Number(u.id) === Number(usuario.parceiroId)) opt.selected = true;
                 selectParceiro.appendChild(opt);
             });
+            const parceiro = dados.usuarios.find(u => String(u.id) === String(usuario.parceiroId));
+            const convitePendente = (dados.notificacoes || []).some(n =>
+                n.tipo === 'solicitacao_parceiro' && String(n.remetenteId) === String(usuario.id) && n.statusAprovacao === 'pendente');
+            document.getElementById('parceiroPerfilResumo').textContent = parceiro?.nome ||
+                (convitePendente ? 'Convite aguardando aprovação' : 'Não vinculado');
 
             const usuarioIdNum = Number(usuarioId);
             const financiamentosAtivos = (dados.financiamentos || []).filter(f => Number(f.usuarioId) === usuarioIdNum && f.ativo !== false).length;
@@ -193,40 +260,19 @@
             document.getElementById('qtdeBens').textContent = bensDoUsuario.length;
             document.getElementById('qtdeCartoes').textContent = cartoesAtivos;
 
-            const entradasUsuario = (dados.lancamentos || []).filter(l => Number(l.usuarioId) === usuarioIdNum && l.tipo === 'entrada');
-            const mesesMap = {};
-            entradasUsuario.forEach(e => {
-    // [FIX #8] Empréstimos NÃO inflam a média de ganhos variáveis
-    const ehEmprestimo = (dados.financiamentos || []).some(f =>
-        String(f.id) === String(e.financiamentoId) && f.tipoContrato === 'emprestimo'
-    );
-    if (ehEmprestimo) return;
-
-    const catObj = (dados.categorias || []).find(c => Number(c.id) === Number(e.categoriaId));
-    const catNome = catObj ? normalizarTexto(catObj.nome) : '';
-    const isFixa = ['salario', 'adiantamento', 'ferias', 'plr', 'decimo', '13'].some(t => catNome.includes(t));
-    
-    if (!isFixa) { 
-        const mesAno = (e.vencimento || e.dataCompra || e.createdAt || '').substring(0, 7);
-        if (mesAno) mesesMap[mesAno] = (mesesMap[mesAno] || 0) + Number(e.valor || 0);
-    }
-});
-            const valoresMensais = Object.values(mesesMap);
-            const totalGanhosHistorico = valoresMensais.reduce((a, b) => a + b, 0);
-            const qtdMesesComEntrada = valoresMensais.length;
-            const mediaVariavel = totalGanhosHistorico / (qtdMesesComEntrada || 1);
-
-            const rendaFixa = Number(usuario.rendaFixa || 0);
-            const rendaTotalEstimada = rendaFixa + mediaVariavel;
-
-            document.getElementById('cardRendaFixaValor').textContent = `R$ ${rendaFixa.toLocaleString('pt-BR', {minimumFractionDigits: 2})}`;
-            document.getElementById('cardMediaVariavel').textContent = `R$ ${mediaVariavel.toLocaleString('pt-BR', {minimumFractionDigits: 2})}`;
-            document.getElementById('cardRendaTotal').textContent = `R$ ${rendaTotalEstimada.toLocaleString('pt-BR', {minimumFractionDigits: 2})}`;
-
-            const btnDetalhes = document.getElementById('btnDetalhesRenda');
-            if (btnDetalhes) {
-                btnDetalhes.onclick = () => mostrarDetalhesRenda(rendaFixa, totalGanhosHistorico, qtdMesesComEntrada, mediaVariavel, rendaTotalEstimada);
-            }
+            const historico = consolidarRendimentosUsuario(dados, usuarioIdNum);
+            const confRenda = normalizarConfiguracaoSalarial(usuario.configuracaoSalarial);
+            const calculo = calcularSalarioLiquido(usuario.rendaFixa, confRenda);
+            const labelsRenda = { clt: ['Salário bruto estimado', 'Salário líquido estimado', 'CLT: com INSS, IRRF e descontos previstos.'],
+                pj: ['Receita PJ bruta', 'Disponível PJ estimado', 'PJ: apenas os descontos que você informou, sem retenções automáticas de CLT.'],
+                aposentado: ['Benefício bruto', 'Benefício líquido estimado', 'Aposentadoria: sem INSS de empregado; com IRRF estimado quando aplicável.'] };
+            document.getElementById('labelRendaBrutaPerfil').textContent = labelsRenda[confRenda.regimeRenda][0];
+            document.getElementById('labelRendaLiquidaPerfil').textContent = labelsRenda[confRenda.regimeRenda][1];
+            document.getElementById('textoRegimePerfil').textContent = labelsRenda[confRenda.regimeRenda][2];
+            document.getElementById('cardRendaFixaValor').textContent = formatarMoeda(calculo.bruto);
+            document.getElementById('cardRendaLiquida').textContent = formatarMoeda(calculo.liquido);
+            document.getElementById('cardMediaVariavel').textContent = formatarMoeda(historico.mediaVariavel);
+            document.getElementById('cardRendaTotal').textContent = formatarMoeda(centavosRenda(calculo.liquido + historico.mediaVariavel));
 
             const tbodyBens = document.getElementById('tabelaBensPerfil');
             tbodyBens.innerHTML = '';
@@ -252,6 +298,40 @@
             alteracoesPerfilPendentes = false;
             document.getElementById('descartarPerfil').hidden = true;
             definirFeedbackPerfil('Tudo atualizado.', 'success');
+            if (usuario.trocaSenhaObrigatoria) definirModoEdicaoPerfil(true, false);
+        }
+
+        async function salvarFotoPerfilRapida(fotoNova) {
+            if (salvandoFotoPerfil) return;
+            if (document.getElementById('btnSalvarPerfil').disabled) {
+                feedbackFotoPerfil('Aguarde a gravação dos seus dados.', 'loading'); return;
+            }
+            const dados = obterDados();
+            const usuario = obterUsuarioAtual(dados);
+            if (!usuario) { feedbackFotoPerfil('Acesse novamente sua conta para alterar a foto.', 'error'); return; }
+            const fotoAnterior = usuario.fotoPerfil || null;
+            if (fotoAnterior === fotoNova) { feedbackFotoPerfil('Esta foto já está no seu perfil.', 'success'); return; }
+            const botao = document.getElementById('btnEditarFotoPerfil');
+            salvandoFotoPerfil = true;
+            botao.disabled = true;
+            document.getElementById('fotoPerfilLateral').src = fotoNova || SVG_AVATAR_PADRAO;
+            feedbackFotoPerfil('Salvando foto…', 'loading');
+            try {
+                usuario.fotoPerfil = fotoNova;
+                registrarLog(dados, 'FOTO PERFIL', 'Foto do próprio perfil atualizada.');
+                await salvarDados(dados);
+                atualizarHeaderUsuario();
+                feedbackFotoPerfil('Foto atualizada. Sincronização em segundo plano.', 'success');
+            } catch (erro) {
+                console.error('Erro ao atualizar foto de perfil:', erro);
+                usuario.fotoPerfil = fotoAnterior;
+                document.getElementById('fotoPerfilLateral').src = fotoAnterior || SVG_AVATAR_PADRAO;
+                feedbackFotoPerfil('Não foi possível salvar a foto. Tente novamente.', 'error');
+            } finally {
+                salvandoFotoPerfil = false;
+                botao.disabled = false;
+                document.getElementById('inputFotoPerfil').value = '';
+            }
         }
 
         function processarFotoPerfil(event) {
@@ -259,12 +339,12 @@
             if (!file) return;
 
             if (file.size > 5 * 1024 * 1024) {
-                mostrarAlertaModal('A imagem é muito pesada (maior que 5MB). Escolha uma imagem menor.');
+                feedbackFotoPerfil('Escolha uma imagem de até 5 MB.', 'error');
                 event.target.value = '';
                 return;
             }
             if (!['image/png', 'image/jpeg', 'image/webp'].includes(file.type)) {
-                definirFeedbackPerfil('Escolha uma imagem PNG, JPG ou WEBP.', 'error');
+                feedbackFotoPerfil('Escolha uma imagem PNG, JPG ou WEBP.', 'error');
                 event.target.value = '';
                 return;
             }
@@ -291,143 +371,25 @@
 
                     const base64 = canvas.toDataURL('image/jpeg', 0.8);
                     
-                    document.getElementById('previewFotoPerfil').src = base64;
-                    novaFotoBase64 = base64;
-                    desejaRemoverFoto = false;
-                    marcarPerfilAlterado();
+                    salvarFotoPerfilRapida(base64);
                 };
-                img.onerror = () => definirFeedbackPerfil('Não foi possível ler esta imagem.', 'error');
+                img.onerror = () => feedbackFotoPerfil('Não foi possível ler esta imagem.', 'error');
                 img.src = e.target.result;
             };
+            reader.onerror = () => feedbackFotoPerfil('Não foi possível abrir este arquivo.', 'error');
             reader.readAsDataURL(file);
         }
 
         function removerFotoPerfil() {
-            document.getElementById('previewFotoPerfil').src = SVG_AVATAR_PADRAO;
-            novaFotoBase64 = null;
-            desejaRemoverFoto = true;
-            document.getElementById('inputFotoPerfil').value = '';
-            marcarPerfilAlterado();
+            salvarFotoPerfilRapida(null);
         }
 
-        function abrirModalEdicaoRenda() {
-            const dados = obterDados();
-            const usuarioId = localStorage.getItem('usuarioLogado');
-            const usuario = dados.usuarios.find(u => Number(u.id) === Number(usuarioId));
-            const valorAtual = usuario ? (usuario.rendaFixa || 0) : 0;
-
-            const htmlEdicao = `
-                <div class="account-income-form">
-                    <label for="inputNovaRendaFixa">Novo valor (R$)</label>
-                    <input type="number" id="inputNovaRendaFixa" step="0.01" min="0" class="modal-input" value="${valorAtual}">
-                </div>
-                <div class="modal-buttons account-modal-actions">
-                    <button type="button" class="btn-secundario" data-cancelar>Cancelar</button>
-                    <button type="button" data-confirmar>Confirmar</button>
-                </div>
-            `;
-
-            const overlay = document.createElement('div');
-            overlay.className = 'modal-overlay';
-            overlay.innerHTML = `
-                <div class="modal-box account-income-modal">
-                    <h3>Editar Renda Fixa</h3>
-                    <p>Atualize o valor base da sua renda fixa mensal.</p>
-                    ${htmlEdicao}
-                </div>
-            `;
-            document.body.appendChild(overlay);
-
-            const input = overlay.querySelector('#inputNovaRendaFixa');
-            setTimeout(() => { input.focus(); input.select(); }, 100);
-
-            const fechar = () => fecharModal(overlay);
-
-            overlay.querySelector('[data-cancelar]').onclick = fechar;
-            
-            overlay.querySelector('[data-confirmar]').onclick = async () => {
-                const novoValor = input.value;
-                if (novoValor !== '' && Number.isFinite(Number(novoValor)) && Number(novoValor) >= 0) {
-                    fechar();
-                    await atualizarRendaFixaDireto(novoValor);
-                } else {
-                    input.focus();
-                }
-            };
-            
-            input.addEventListener('keydown', (e) => {
-                if (e.key === 'Enter') overlay.querySelector('[data-confirmar]').click();
-                if (e.key === 'Escape') fechar();
-            });
-            
-            overlay.addEventListener('click', e => { 
-                if (e.target === overlay) fechar(); 
-            });
-        }
-
-        async function atualizarRendaFixaDireto(valor) {
-            const dados = obterDados();
-            const usuarioId = localStorage.getItem('usuarioLogado');
-            const usuario = dados.usuarios.find(u => Number(u.id) === Number(usuarioId));
-            if (usuario) {
-                usuario.rendaFixa = numeroSeguro(valor);
-                registrarLog(dados, "ATUALIZAÇÃO RENDA", `Usuário atualizou a renda fixa para ${formatarMoeda(usuario.rendaFixa)}.`);
-                await salvarDados(dados);
-                carregarDadosPerfil(); 
-            }
-        }
-
-        function mostrarDetalhesRenda(fixa, totalVariavel, meses, mediaVar, totalEstimado) {
-            const htmlDetalhes = `
-                <div class="account-income-details">
-                    <p>A <strong>Renda Total Estimada</strong> é a soma da sua renda fixa preenchida no card com a média histórica das suas entradas variáveis.</p>
-                    <hr>
-                    <ul class="account-income-breakdown">
-                        <li>
-                            <span>1. Renda Fixa Declarada:</span>
-                            <strong>R$ ${fixa.toLocaleString('pt-BR', {minimumFractionDigits: 2})}</strong>
-                        </li>
-                        <li>
-                            <span>2. Entradas Variáveis Acumuladas:</span>
-                            <strong>R$ ${totalVariavel.toLocaleString('pt-BR', {minimumFractionDigits: 2})}</strong>
-                        </li>
-                        <li>
-                            <span>3. Meses com Entradas Variáveis:</span>
-                            <strong>${meses} ${meses === 1 ? 'mês' : 'meses'}</strong>
-                        </li>
-                        <li class="account-income-average">
-                            <span>4. Média Variável (Item 2 ÷ Item 3):</span>
-                            <strong>R$ ${mediaVar.toLocaleString('pt-BR', {minimumFractionDigits: 2})}</strong>
-                        </li>
-                        <hr>
-                        <li class="account-income-total">
-                            <span><strong>Total (1 + 4):</strong></span>
-                            <strong>R$ ${totalEstimado.toLocaleString('pt-BR', {minimumFractionDigits: 2})}</strong>
-                        </li>
-                    </ul>
-                </div>
-            `;
-            
-            const overlay = document.createElement('div');
-            overlay.className = 'modal-overlay';
-            overlay.innerHTML = `
-                <div class="modal-box account-details-modal">
-                    <h3>Detalhes do Cálculo de Renda</h3>
-                    ${htmlDetalhes}
-                    <button type="button" class="btn-fechar account-details-close">Fechar</button>
-                </div>
-            `;
-            document.body.appendChild(overlay);
-
-            const btnFechar = overlay.querySelector('.btn-fechar');
-            btnFechar.onclick = () => fecharModal(overlay);
-            overlay.addEventListener('click', e => {
-                if (e.target === overlay) fecharModal(overlay);
-            });
-        }
-
+        // O editor salarial agora é compartilhado com o histórico de rendimentos.
         async function salvarMeuPerfil(event) {
             event.preventDefault();
+            if (salvandoFotoPerfil) {
+                definirFeedbackPerfil('Aguarde a foto de perfil terminar de salvar.', 'pending'); return;
+            }
             const dados = obterDados();
             const usuarioId = localStorage.getItem('usuarioLogado');
             const usuario = dados.usuarios.find(u => Number(u.id) === Number(usuarioId));
@@ -477,8 +439,6 @@
                 const hashPin = novoPin ? await gerarHash(novoPin) : null;
                 usuario.usuario = novoUsuarioLogin;
                 usuario.nome = novoNome;
-                if (desejaRemoverFoto) usuario.fotoPerfil = null;
-                else if (novaFotoBase64) usuario.fotoPerfil = novaFotoBase64;
                 usuario.preferenciasNotificacao = {
                     ativo: document.getElementById('notifAtivaVencimento').checked,
                     diasAntecedencia
@@ -508,6 +468,9 @@
                 await salvarDados(dados);
                 atualizarHeaderUsuario();
                 carregarDadosPerfil();
+                definirModoEdicaoPerfil(false);
+                const avisoCard = document.getElementById('perfilCardFeedback');
+                avisoCard.textContent = 'Dados salvos. A sincronização continua em segundo plano.' + feedbackParceiro;
                 definirFeedbackPerfil('Alterações salvas! A sincronização continuará em segundo plano.' + feedbackParceiro, 'success');
             } catch (erro) {
                 console.error('Erro ao salvar perfil:', erro);

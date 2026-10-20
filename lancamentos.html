@@ -85,7 +85,7 @@
                     </div>
                     <div class="form-group">
                         <label for="descricaoLancamento">Descrição <span style="color:var(--danger);">*</span></label>
-                        <input type="text" id="descricaoLancamento" maxlength="120" placeholder="Ex.: Mercado, Salário" required>
+                        <input type="text" id="descricaoLancamento" maxlength="120" placeholder="Ex.: Mercado, Salário" oninput="tratarMudancaCategoria()" required>
                     </div>
                 </div>
 
@@ -154,10 +154,37 @@
                     </div>
                 </div>
 
-                <!-- Hora extra (entrada salário) -->
+                <div id="blocoNaturezaRenda" class="form-group" style="display:none; margin-top:16px;">
+                    <label for="naturezaRendaLancamento">Como classificar esta entrada?</label>
+                    <select id="naturezaRendaLancamento" onchange="tratarMudancaCategoria()">
+                        <option value="">Identificar automaticamente pela categoria</option>
+                        <option value="folha">Folha de pagamento / salário</option>
+                        <option value="adiantamento">Adiantamento de salário</option>
+                        <option value="salarial_extra">Férias, 13º ou PLR</option>
+                        <option value="variavel">Ganho variável (Uber, trabalho, venda...)</option>
+                        <option value="nao_renda">Transferência / reembolso / empréstimo</option>
+                    </select>
+                    <small class="muted">Ajuda o sistema a montar o histórico sem misturar salário, ganhos e transferências.</small>
+                </div>
+                <div id="blocoCompetenciaRenda" class="form-group" style="display:none; margin-top:16px;">
+                    <label for="competenciaRendaLancamento">Competência da renda (mês a que pertence)</label>
+                    <input type="month" id="competenciaRendaLancamento">
+                    <small class="muted">Use o mesmo mês para salário e adiantamento, mesmo que recebidos em datas diferentes.</small>
+                </div>
+                <div id="blocoBrutoFolha" style="display:none; margin-top:16px;">
+                    <div class="form-grid-2">
+                        <div class="form-group"><label for="remuneracaoBrutaLancamento" id="labelBrutoLancamento">Bruto total do recebimento (R$, opcional)</label>
+                            <input type="number" step="0.01" min="0" id="remuneracaoBrutaLancamento" placeholder="Incluindo horas extras"></div>
+                        <div class="form-group" id="campoHoraExtraBrutaLancamento"><label for="horaExtraBrutaLancamento">Horas extras brutas (R$, opcionais)</label>
+                            <input type="number" step="0.01" min="0" id="horaExtraBrutaLancamento" placeholder="Composição do bruto"></div>
+                    </div>
+                    <small class="muted" id="avisoBrutoLancamento">O valor principal do lançamento é o líquido recebido. O bruto já inclui as horas extras.</small>
+                </div>
+                <!-- Hora extra (parte do pagamento da folha, não somar novamente) -->
                 <div id="blocoHoraExtra" class="form-group" style="display:none; margin-top:16px;">
-                    <label for="valorHoraExtra">Hora extra inclusa (R$)</label>
+                    <label for="valorHoraExtra">Hora extra líquida inclusa no recebimento (R$, opcional)</label>
                     <input type="number" step="0.01" min="0" id="valorHoraExtra" placeholder="0,00" value="0">
+                    <small class="muted">Apenas para detalhamento: este valor já faz parte do líquido recebido e nunca será somado novamente.</small>
                 </div>
             </div>
 
@@ -251,6 +278,7 @@
             popularSelectsCartoesLote();
 
             const hojeStr = dataLocalYYYYMMDD();
+            document.getElementById('competenciaRendaLancamento').value = hojeStr.slice(0, 7);
             ['vencimentoLancamento', 'dataCompraCartao'].forEach(id => {
                 const el = document.getElementById(id);
                 if (el) el.value = hojeStr;
@@ -333,6 +361,13 @@
                 if (!desc || !cat || val <= 0) {
                     mensagemWizard('Preencha descrição, categoria e um valor maior que zero.', 'error', !cat ? 'categoriaLancamento' : !desc ? 'descricaoLancamento' : 'valorTotalLancamento');
                     return false;
+                }
+                if (wizardState.intent === 'entrada' && document.getElementById('blocoHoraExtra').style.display !== 'none') {
+                    const extra = Number(document.getElementById('valorHoraExtra').value || 0);
+                    if (!Number.isFinite(extra) || extra < 0 || extra > val) {
+                        mensagemWizard('Hora extra deve estar entre zero e o valor total já recebido.', 'error', 'valorHoraExtra');
+                        return false;
+                    }
                 }
                 if (wizardState.intent === 'lote') {
                     const periodo = obterPeriodoLote();
@@ -419,17 +454,39 @@
         }
 
         function tratarMudancaCategoria() {
+            const blocoNatureza = document.getElementById('blocoNaturezaRenda');
+            blocoNatureza.style.display = wizardState.intent === 'entrada' ? 'block' : 'none';
+            document.getElementById('blocoCompetenciaRenda').style.display = wizardState.intent === 'entrada' ? 'block' : 'none';
             if (wizardState.intent !== 'entrada') {
                 document.getElementById('blocoHoraExtra').style.display = 'none';
+                document.getElementById('blocoBrutoFolha').style.display = 'none';
                 return;
             }
+            atualizarOpcoesNaturezaRenda(document.getElementById('naturezaRendaLancamento'));
             const sel = document.getElementById('categoriaLancamento');
             const dados = obterDados();
             const cat = dados.categorias.find(c => String(c.id) === String(sel.value));
-            const nome = cat ? normalizarTexto(cat.nome) : '';
-            const ehSalario = nome.includes('salario') || nome.includes('salário');
-            document.getElementById('blocoHoraExtra').style.display = ehSalario ? 'block' : 'none';
+            const classe = classificarEntradaRendimento({
+                tipo: 'entrada', categoriaId: sel.value,
+                descricao: document.getElementById('descricaoLancamento').value.trim(),
+                naturezaRenda: document.getElementById('naturezaRendaLancamento').value
+            }, dados);
+            const ehSalario = classe === 'folha';
+            const clt = normalizarConfiguracaoSalarial(obterUsuarioAtual(dados)?.configuracaoSalarial).regimeRenda === 'clt';
+            const extraSalarial = classe === 'salarial_extra';
+            document.getElementById('blocoHoraExtra').style.display = ehSalario && clt ? 'block' : 'none';
+            document.getElementById('blocoBrutoFolha').style.display = ehSalario || extraSalarial ? 'block' : 'none';
+            document.getElementById('campoHoraExtraBrutaLancamento').style.display = ehSalario && clt ? 'block' : 'none';
+            document.getElementById('labelBrutoLancamento').textContent = ehSalario ? 'Bruto total da folha (R$, opcional)' : 'Bruto desta verba (R$, opcional)';
+            document.getElementById('avisoBrutoLancamento').textContent = ehSalario
+                ? 'O valor lançado é líquido. O bruto já inclui as horas extras e permite comparar descontos previstos com os efetivos.'
+                : '13º, férias e PLR têm descontos específicos. Informe o bruto e o líquido efetivamente recebidos para apurar a diferença sem aplicar indevidamente a tabela comum.';
             if (!ehSalario) document.getElementById('valorHoraExtra').value = '0';
+            if (!ehSalario && !extraSalarial) {
+                document.getElementById('remuneracaoBrutaLancamento').value = '';
+                document.getElementById('horaExtraBrutaLancamento').value = '';
+            }
+            if (!ehSalario || !clt) document.getElementById('horaExtraBrutaLancamento').value = '';
         }
 
         function atualizarPreviewValor() {
@@ -545,8 +602,23 @@
                 linhas.push(['Repetição', `${qtd} meses`]);
             }
             if (intent === 'entrada') {
+                const selRenda = document.getElementById('naturezaRendaLancamento');
+                const tipoRenda = classificarEntradaRendimento({
+                    tipo: 'entrada', categoriaId: document.getElementById('categoriaLancamento').value,
+                    descricao: document.getElementById('descricaoLancamento').value,
+                    naturezaRenda: selRenda.value
+                }, dados);
+                const nomesTipos = { folha: 'Folha de pagamento', adiantamento: 'Adiantamento de salário', salarial_extra: '13º, férias ou PLR', variavel: 'Renda variável', nao_renda: 'Não contabilizar como renda' };
+                linhas.push(['Classificação da entrada', nomesTipos[tipoRenda] || 'Outra entrada']);
                 const horaExtra = numeroSeguro(document.getElementById('valorHoraExtra').value);
-                if (horaExtra > 0) linhas.push(['Hora extra', formatarMoeda(horaExtra)]);
+                if (horaExtra > 0 && tipoRenda === 'folha') linhas.push(['Hora extra (inclusa no total)', formatarMoeda(horaExtra)]);
+                if (tipoRenda === 'folha' || tipoRenda === 'salarial_extra') {
+                    const bruto = numeroSeguro(document.getElementById('remuneracaoBrutaLancamento').value);
+                    const extraBruta = numeroSeguro(document.getElementById('horaExtraBrutaLancamento').value);
+                    if (bruto) linhas.push(['Bruto do recebimento', formatarMoeda(bruto)]);
+                    if (extraBruta) linhas.push(['Hora extra bruta (inclusa no bruto)', formatarMoeda(extraBruta)]);
+                }
+                linhas.push(['Competência', escaparHTML(document.getElementById('competenciaRendaLancamento').value)]);
             }
             if (intent === 'saida' || intent === 'fixo') {
                 const essencial = document.getElementById('servicoEssencial').value;
@@ -577,6 +649,7 @@
                 else el.value = '';
             });
             const hoje = dataLocalYYYYMMDD();
+            document.getElementById('competenciaRendaLancamento').value = hoje.slice(0, 7);
             ['vencimentoLancamento', 'dataCompraCartao', 'primeiroVencimentoLote', 'ultimoVencimentoLote'].forEach(id => {
                 const campo = document.getElementById(id);
                 if (campo) campo.value = hoje;
@@ -658,6 +731,10 @@
             const bemId = tipo === 'saida' ? (document.getElementById('bemLancamento').value || null) : null;
             const horaExtra = (intent === 'entrada' && document.getElementById('blocoHoraExtra').style.display !== 'none')
                 ? numeroSeguro(document.getElementById('valorHoraExtra').value) : 0;
+            const naturezaRenda = intent === 'entrada' ? document.getElementById('naturezaRendaLancamento').value : '';
+            const competenciaRenda = intent === 'entrada' ? document.getElementById('competenciaRendaLancamento').value : '';
+            const remuneracaoBruta = intent === 'entrada' ? document.getElementById('remuneracaoBrutaLancamento').value : '';
+            const horaExtraBruta = intent === 'entrada' ? document.getElementById('horaExtraBrutaLancamento').value : '';
             const statusInicial = tipo === 'entrada' ? 'pago' : (document.getElementById('statusPagamento').value || 'pendente');
 
             let vencimento, cartaoId = null, dataCompra = null, qtdParcelas = 1;
@@ -679,7 +756,8 @@
             const salvo = await adicionarLancamentoComParcelas({
                 descricao, tipo, categoriaId, bemId, formaPagamento: forma,
                 cartaoId, dataCompra, qtdParcelas, valorTotal, vencimento,
-                observacao, horaExtra, servicoEssencial, escopo, statusInicial
+                observacao, horaExtra, horaExtraBruta, remuneracaoBruta, competenciaRenda,
+                naturezaRenda, servicoEssencial, escopo, statusInicial
             });
             if (!salvo) return;
 

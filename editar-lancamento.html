@@ -53,6 +53,18 @@
                             </select>
                         </div>
                     </div>
+                    <div id="blocoEditNaturezaRenda" class="form-group" style="display:none;margin-top:12px;">
+                        <label for="editNaturezaRenda">Origem do recebimento</label>
+                        <select id="editNaturezaRenda" onchange="tratarMudancaTipoEdicao(false)">
+                            <option value="">Detectar pela categoria</option>
+                            <option value="folha">Folha de pagamento (salário)</option>
+                            <option value="adiantamento">Adiantamento salarial</option>
+                            <option value="salarial_extra">Bônus, 13º, férias ou verba salarial</option>
+                            <option value="variavel">Renda variável / renda extra</option>
+                            <option value="nao_renda">Transferência, empréstimo ou valor não considerado renda</option>
+                        </select>
+                        <p class="muted small">Classifique para manter o histórico de rendimentos correto.</p>
+                    </div>
                 </div>
 
                 <!-- SEÇÃO 2: Valores e datas -->
@@ -70,13 +82,24 @@
                     </div>
                     <div class="form-grid-2" style="margin-top:12px;">
                         <div class="form-group" id="blocoEditHoraExtra" style="display:none;">
-                            <label for="editHoraExtra">Hora extra inclusa (R$)</label>
+                            <label for="editHoraExtra">Hora extra líquida inclusa no recebimento (R$)</label>
                             <input type="number" step="0.01" min="0" id="editHoraExtra" value="0">
                         </div>
                         <div class="form-group" id="blocoEditDataCompra" style="display:none;">
                             <label for="editDataCompra">Data da compra</label>
                             <input type="date" id="editDataCompra">
                         </div>
+                    </div>
+                    <div id="blocoEditCompetenciaRenda" class="form-group" style="display:none; margin-top:12px;">
+                        <label for="editCompetenciaRenda">Competência da renda</label>
+                        <input type="month" id="editCompetenciaRenda">
+                        <small class="muted">Mês do salário/adiantamento, independentemente da data de recebimento.</small>
+                    </div>
+                    <div id="blocoEditBrutoFolha" class="form-grid-2" style="display:none; margin-top:12px;">
+                        <div class="form-group"><label for="editRemuneracaoBruta" id="labelEditBruto">Bruto total do recebimento (R$)</label>
+                            <input type="number" step="0.01" min="0" id="editRemuneracaoBruta"></div>
+                        <div class="form-group" id="campoEditHoraExtraBruta"><label for="editHoraExtraBruta">Horas extras brutas inclusas (R$)</label>
+                            <input type="number" step="0.01" min="0" id="editHoraExtraBruta"></div>
                     </div>
                 </div>
 
@@ -135,7 +158,8 @@
         const returnUrlInformada = urlParams.get('returnUrl') || '';
         const destinosRetornoPermitidos = new Set([
             'dashboard.html', 'central-pagamentos.html', 'lancamentos.html',
-            'relatorios.html', 'cartoes.html', 'financiamentos.html', 'grafico.html'
+            'relatorios.html', 'cartoes.html', 'financiamentos.html', 'grafico.html',
+            'rendimentos.html'
         ]);
         const returnUrl = destinosRetornoPermitidos.has(returnUrlInformada) ? returnUrlInformada : '';
         let lancamentoAtualEdicao = null;
@@ -154,7 +178,8 @@
         function popularCategoriasEdicao(tipo, categoriaPreferida = null) {
             const dados = obterDados();
             const sel = document.getElementById('editCategoria');
-            const categorias = (dados.categorias || []).filter(c => c.tipo === tipo)
+            const categorias = (dados.categorias || []).filter(c => c.tipo === tipo &&
+                (categoriaRendaDisponivel(c, obterUsuarioAtual(dados)) || String(c.id) === String(lancamentoAtualEdicao?.categoriaId)))
                 .sort((a, b) => normalizarTexto(a.nome).localeCompare(normalizarTexto(b.nome), 'pt-BR'));
             sel.replaceChildren();
             categorias.forEach(c => { const o = document.createElement('option'); o.value = String(c.id); o.textContent = c.nome; sel.appendChild(o); });
@@ -232,6 +257,10 @@
             document.getElementById('editServicoEssencial').value = lanc.servicoEssencial || 'nao';
             document.getElementById('editEscopo').value = lanc.escopo || 'casal';
             document.getElementById('editHoraExtra').value = Number(lanc.horaExtra || 0);
+            document.getElementById('editHoraExtraBruta').value = Number(lanc.horaExtraBruta || 0);
+            document.getElementById('editRemuneracaoBruta').value = Number(lanc.remuneracaoBruta || 0) || '';
+            document.getElementById('editCompetenciaRenda').value = lanc.competenciaRenda || obterMesRendimento(lanc);
+            document.getElementById('editNaturezaRenda').value = lanc.naturezaRenda || '';
             document.getElementById('editDataCompra').value = lanc.dataCompra || '';
 
             popularCategoriasEdicao(lanc.tipo === 'entrada' ? 'entrada' : 'saida', lanc.categoriaId);
@@ -260,14 +289,23 @@
             document.getElementById('blocoServicoEssencial').style.display = ehEntrada ? 'none' : 'block';
             document.getElementById('blocoEditEscopo').style.display = ehEntrada ? 'none' : 'block';
             document.getElementById('blocoEditBem').style.display = ehEntrada ? 'none' : 'block';
+            document.getElementById('blocoEditNaturezaRenda').style.display = ehEntrada ? 'block' : 'none';
+            document.getElementById('blocoEditCompetenciaRenda').style.display = ehEntrada ? 'block' : 'none';
+            atualizarOpcoesNaturezaRenda(document.getElementById('editNaturezaRenda'), obterUsuarioAtual(),
+                lancamentoAtualEdicao?.naturezaRenda || '');
 
-            // Hora extra: só para entrada de categoria salário
+            // Hora extra só integra a folha; nunca é somada pela segunda vez à renda.
             const catSel = document.getElementById('editCategoria');
             const dados = obterDados();
-            const cat = dados.categorias.find(c => String(c.id) === String(catSel.value));
-            const nome = cat ? normalizarTexto(cat.nome) : '';
-            const ehSalario = nome.includes('salario') || nome.includes('salário');
-            document.getElementById('blocoEditHoraExtra').style.display = (ehEntrada && ehSalario) ? 'block' : 'none';
+            const amostra = { tipo, categoriaId: catSel.value, descricao: document.getElementById('editDescricao').value,
+                naturezaRenda: document.getElementById('editNaturezaRenda').value };
+            const ehFolha = classificarEntradaRendimento(amostra, dados) === 'folha';
+            const ehExtraSalarial = classificarEntradaRendimento(amostra, dados) === 'salarial_extra';
+            const clt = normalizarConfiguracaoSalarial(obterUsuarioAtual()?.configuracaoSalarial).regimeRenda === 'clt';
+            document.getElementById('blocoEditHoraExtra').style.display = (ehEntrada && ehFolha && clt) ? 'block' : 'none';
+            document.getElementById('blocoEditBrutoFolha').style.display = (ehEntrada && (ehFolha || ehExtraSalarial)) ? 'grid' : 'none';
+            document.getElementById('campoEditHoraExtraBruta').style.display = ehFolha && clt ? 'block' : 'none';
+            document.getElementById('labelEditBruto').textContent = ehFolha ? 'Bruto total da folha (R$)' : 'Bruto da verba (13º/férias/PLR) (R$)';
 
             if (ehEntrada) {
                 document.getElementById('blocoEditCartaoSecao').style.display = 'none';
@@ -288,6 +326,7 @@
         document.addEventListener('change', e => {
             if (e.target.id === 'editCategoria') tratarMudancaTipoEdicao(false);
         });
+        document.getElementById('editDescricao').addEventListener('input', () => tratarMudancaTipoEdicao(false));
 
         async function salvarEdicaoLancamento(event) {
             event.preventDefault();
@@ -305,12 +344,22 @@
             const categoriaId = document.getElementById('editCategoria').value;
             const cartaoId = (tipo === 'saida' && formaPagamento === 'CARTAO') ? (document.getElementById('editCartao').value || null) : null;
             const bemId = tipo === 'saida' ? (document.getElementById('editBem').value || null) : null;
-            const horaExtra = tipo === 'entrada' ? numeroSeguro(document.getElementById('editHoraExtra').value) : 0;
+            const naturezaRenda = tipo === 'entrada' ? document.getElementById('editNaturezaRenda').value : '';
+            const folha = classificarEntradaRendimento({tipo, naturezaRenda, categoriaId, descricao}, dados) === 'folha';
+            const horaExtra = folha ? numeroSeguro(document.getElementById('editHoraExtra').value) : 0;
+            const extraSalarial = classificarEntradaRendimento({tipo, naturezaRenda, categoriaId, descricao}, dados) === 'salarial_extra';
+            const regimeClt = normalizarConfiguracaoSalarial(obterUsuarioAtual()?.configuracaoSalarial).regimeRenda === 'clt';
+            const horaExtraBruta = folha && regimeClt ? document.getElementById('editHoraExtraBruta').value : '';
+            const remuneracaoBruta = folha || extraSalarial ? document.getElementById('editRemuneracaoBruta').value : '';
+            const competenciaRenda = tipo === 'entrada' ? document.getElementById('editCompetenciaRenda').value : '';
             const dataCompra = (tipo === 'saida' && formaPagamento === 'CARTAO') ? (document.getElementById('editDataCompra').value || null) : null;
 
             if (!descricao || !Number.isFinite(valor) || valor <= 0) {
                 await mostrarAlertaModal('Descrição e valor maior que zero são obrigatórios.');
                 return;
+            }
+            if (horaExtra < 0 || horaExtra > valor) {
+                await mostrarAlertaModal('A hora extra precisa fazer parte do valor da folha de pagamento.'); return;
             }
             if (!(dados.categorias || []).some(c => String(c.id) === String(categoriaId) && c.tipo === tipo)) {
                 await mostrarAlertaModal('Selecione uma categoria válida.');
@@ -330,7 +379,8 @@
                 vencimento,
                 servicoEssencial: tipo === 'saida' ? (document.getElementById('editServicoEssencial').value || 'nao') : 'nao',
                 escopo: document.getElementById('editEscopo').value || 'casal',
-                cartaoId, dataCompra, bemId, horaExtra
+                cartaoId, dataCompra, bemId, horaExtra, horaExtraBruta, remuneracaoBruta,
+                competenciaRenda, naturezaRenda
             });
             if (ok) voltarOrigem();
         }
