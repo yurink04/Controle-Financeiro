@@ -9,14 +9,26 @@ const pasta = __dirname;
 function fonte(nome) { return fs.readFileSync(path.join(pasta, nome), 'utf8'); }
 
 ['script.js', 'Code.gs'].forEach(nome => new vm.Script(fonte(nome), { filename: nome }));
-for (const nome of ['index.html', 'perfil.html', 'configuracoes.html', 'admin-logs.html', 'lancamentos.html']) {
+const paginas = fs.readdirSync(pasta).filter(nome => nome.endsWith('.html')).sort();
+assert.equal(paginas.length, 16, 'Esperadas 16 páginas do projeto');
+for (const nome of paginas) {
   const html = fonte(nome);
   for (const [indice, match] of [...html.matchAll(/<script\b(?![^>]*\bsrc\s*=)[^>]*>([\s\S]*?)<\/script>/gi)].entries()) {
     new vm.Script(match[1], { filename: `${nome} #script ${indice + 1}` });
   }
   assert.match(html, /href="style\.css"/);
+  assert.doesNotMatch(html, /<style\b/i, `CSS inline em ${nome}`);
+  const htmlEstatico = html.replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, '');
+  const ids = [...htmlEstatico.matchAll(/\bid\s*=\s*["']([^"']+)["']/g)].map(m => m[1]);
+  assert.equal(new Set(ids).size, ids.length, `IDs de elementos repetidos em ${nome}`);
+  for (const href of html.matchAll(/\bhref\s*=\s*["']([^"'?#]+\.html)(?:[?#][^"']*)?["']/gi)) {
+    const destino = href[1].split('/').pop();
+    assert.ok(paginas.includes(destino), `Página não encontrada em ${nome}: ${href[1]}`);
+  }
 }
 assert.match(fonte('style.css'), /account-hero/);
+assert.match(fonte('style.css'), /login-story/);
+assert.match(fonte('style.css'), /IDENTIDADE UNIFICADA/);
 
 const planilhas = new Map();
 const memoriaCache = new Map();

@@ -1,47 +1,37 @@
-# Controle Financeiro — pacote integrado
+# Controle Financeiro — edição integrada
 
-Pacote de atualização das telas de **perfil**, **configurações**, **auditoria**, **lançamentos** e **login**, junto com `script.js`, `style.css` e o backend `Code.gs`. As demais páginas do seu projeto permanecem como estão e devem ficar na mesma pasta do script e CSS compartilhados.
+Este pacote reúne **16 páginas HTML**, `style.css`, `script.js` e `Code.gs` com a mesma linguagem visual das páginas de perfil, configurações e auditoria.
 
-## Como instalar
+## Principais ajustes
 
-1. **Faça backup** da planilha Google Sheets e da pasta atual do site. Guarde também uma cópia da implantação existente do Apps Script.
-2. Copie `index.html`, `perfil.html`, `configuracoes.html`, `admin-logs.html`, `lancamentos.html`, `script.js` e `style.css` para a pasta raiz do site, substituindo somente esses arquivos. **Mantenha os demais HTMLs e a pasta `imagens/`**. Em especial, `imagens/loading1.gif`, `imagens/home.png` e os ícones que seu site já utiliza continuam sendo necessários.
-3. No editor Google Apps Script ligado à sua planilha, atualize todo o conteúdo do arquivo de backend com `Code.gs`. Confira as propriedades do script:
-   - `SENHA_MESTRA_API`: deve corresponder à constante `TOKEN_API` do `script.js`.
-   - `SENHA_ADMIN`: senha administrativa própria, **diferente da senha de login**.
-4. **Implante uma nova versão** do aplicativo da Web (Gerenciar implantações → Editar → Nova versão). Confirme se a URL `/exec` corresponde à constante `API_URL` do `script.js`. Apenas salvar o código no editor **não** atualiza a versão implantada.
-5. Após fazer o backup, teste primeiro com uma cópia da planilha ou uma implantação de homologação: login, perfil, criação de usuário, mudança de senha, lançamento e sincronização. Limpe/atualize o cache do navegador (`Ctrl+F5`) depois de substituir os arquivos.
-6. Opcional: execute **uma única vez** a função `instalarGatilhoAlertas()` no editor Apps Script, autorizando o gatilho. Ela verifica contas a vencer diariamente, por volta das 8h no fuso do projeto, sem enviar e-mails. Também há lembretes gerados quando a pessoa entra no sistema. Confira o fuso do projeto nas configurações do Apps Script.
+- **Login redesenhado:** tela mais limpa, maior legibilidade, modo claro/escuro, fluxo usuário → senha e mensagem de erro discreta. A pré-verificação do serviço ocorre em segundo plano e **não bloqueia o botão**. A senha só é verificada quando o usuário a informa.
+- **Transição de acesso:** com cache válido, a navegação para o painel ocorre logo após a autenticação; a checagem de atualizações continua na tela seguinte. No primeiro acesso, os dados essenciais são baixados antes da abertura.
+- **Visual compartilhado:** cabeçalhos com a identidade do perfil, cartões e filtros harmonizados, grade de indicadores 2×2 no celular, menu lateral retrátil dentro da ilha, navegação por ícones em telas compactas.
+- **Carregamentos curtos:** status discreto integrado à ilha do cabeçalho; o GIF maior continua disponível para tarefas demoradas. Confirmações importantes e erros continuam explícitos.
+- **Sincronização:** gravação local imediata e envio automático, revisão periódica da nuvem, preservação de alterações pendentes e tratamento de conflito. Quando a rede falha, o reenvio aguarda de forma progressiva (até 90 segundos), retomando imediatamente quando a conexão volta.
+- **Segurança:** manutenção de sessão autenticada, validação de permissões no Apps Script, validação administrativa para operações protegidas, bloqueio de elevação de privilégios e de alterações indevidas. O avatar no cabeçalho agora é criado por DOM, evitando interpolar dados do usuário dentro de HTML.
+- **CSS consolidado:** o bloco de estilos do dashboard foi movido para `style.css`; os arquivos HTML não contêm elementos `<style>`.
+- **Fluxos preservados:** lançamentos por etapas (inclusive contas em lote), edição, cartões, patrimônio, relatórios, central de pagamentos, financiamentos, perfil, configurações e auditoria.
 
-## O que mudou
+## Como atualizar
 
-- CSS das páginas de conta consolidado no `style.css`, com melhorias de legibilidade. O `<style>` existente no login foi movido para esse arquivo.
-- Novos usuários recebem **login e senha provisória** configurados pelo administrador. Senhas novas precisam de pelo menos oito caracteres, maiúscula, minúscula, número e símbolo; no próximo acesso a troca de senha é obrigatória.
-- A redefinição de senha deixa de apagar a senha do usuário. Operações de cadastro/alteração de contas exigem validação administrativa adicional.
-- Login fornece sessão temporária; consultas, sincronização e ações de administração exigem sessão e permissões. Sessões são revogadas ao trocar a senha de outra conta ou desativá-la.
-- O servidor não envia hashes de senha na consulta de dados. A gravação preserva as senhas armazenadas sem expô-las ao navegador.
-- Limite de tentativas de login; proteção contra promoção indevida de permissões e alteração de movimentos sem autorização.
-- Auditoria antiga sem identificador recebe um ID de compatibilidade, preservado na próxima gravação.
-- Lembretes de vencimento respeitam a preferência do perfil e evitam duplicações; notificações aparecem no sino existente.
-- A página de login esconde a opção de cadastro inicial quando o sistema já tem usuários. Em instalação vazia, o cadastro inicial exige `SENHA_ADMIN`. Cadastros posteriores são feitos em Configurações por pessoa autorizada.
-- Mudanças pendentes de sincronização ficam vinculadas à conta que as criou, evitando misturá-las às de outra conta no mesmo navegador.
+1. Faça um backup da pasta atual e da planilha no Google Sheets.
+2. Extraia **todos os arquivos** deste ZIP na pasta do projeto, substituindo os arquivos de mesmo nome. Não misture `script.js` ou `style.css` desta versão com páginas anteriores.
+3. **Mantenha a sua pasta `imagens/` original.** Ela não veio nos anexos e não está neste ZIP. O sistema espera imagens como `home.png`, `loading1.gif`, `sincronizar.png`, `modo_escuro.jpg` e outras já utilizadas.
+4. No projeto do Google Apps Script, atualize o conteúdo de `Code.gs` e faça uma **nova implantação / atualização da implantação**. Confira `SENHA_MESTRA_API` e `SENHA_ADMIN` nas Propriedades do Script — nunca publique os valores dessas propriedades em documentação ou prints.
+5. Confirme se o endereço `API_URL` no início de `script.js` aponta para a implantação correta e se o token público de integração corresponde ao valor configurado no servidor.
+6. Recarregue com **Ctrl + Shift + R** para impedir que o navegador use CSS/JS antigo.
 
-## Segurança e limites importantes
+## Validação
 
-- **A chave `TOKEN_API` no JavaScript do navegador é pública**: não deve ser tratada como uma senha administrativa. O servidor protege operações com sessões e permissões, mas você deve cuidar da senha `SENHA_ADMIN` nas *Script Properties* e nunca incluí-la no HTML/JS. Como a chave anterior já esteve em código distribuído, é recomendável trocá-la nas propriedades e no JS ao implantar.
-- Os dados financeiros continuam **compartilhados entre as contas autenticadas do mesmo sistema**, conforme o modelo do projeto. Agora existe restrição de gravação por papel e titularidade/parceiro, mas não foi criada uma separação absoluta entre espaços privados. Se pretende contas totalmente isoladas, isso exige uma revisão maior do modelo de dados e das telas.
-- O navegador mantém cache local para permitir o fluxo de sincronização. Evite dispositivos compartilhados sem proteção e não exporte backups com informações pessoais para locais públicos.
-- O modelo antigo de hash SHA-256 do PIN foi preservado para não bloquear acessos existentes. Usuários legados com PIN curto devem redefinir suas senhas; uma migração futura para hash com sal e derivação de chave no servidor é recomendável.
-- **Teste real** de publicação, autenticação e escrita na sua planilha deve ser feito na implantação Apps Script. O script de teste incluído usa uma planilha simulada, sem tocar em dados reais.
+Execute `node validar-integracao.cjs` na pasta descompactada. O verificador cobre a sintaxe de `script.js`, `Code.gs` e os scripts das 16 páginas, vínculos HTML locais, IDs duplicados e cenários simulados de autenticação, permissões, sessões, alterações, reset de senha e alertas.
 
-## Verificações locais
+**Ainda é necessário testar no navegador e no Apps Script real:** primeiro acesso, login, edição, lançamentos em lote, reconexão offline, troca de usuário com alterações pendentes, permissões de administrador e modo celular. O teste local usa simulações e não escreve na planilha.
 
-Com Node.js instalado, na pasta destes arquivos:
+## Limites de segurança da arquitetura atual
 
-```bash
-node validar-integracao.cjs
-```
+- `TOKEN_API` está no JavaScript do navegador. **Ele não é um segredo**: o Apps Script deve continuar exigindo uma sessão válida e conferir permissões no servidor para cada ação. Não trate a chave de integração como autenticação de usuário.
+- A sincronização atual usa um **snapshot financeiro compartilhado** para as contas autenticadas. É adequada somente a um grupo de confiança (ex.: núcleo familiar); não garante isolamento de dados entre usuários independentes. Para oferecer privacidade por usuário, é preciso evoluir o backend para consultas e atualizações filtradas por proprietário, em vez de sincronização integral.
+- O sistema usa hash SHA-256 para senha por compatibilidade com a base existente. Para um produto comercial com dados sensíveis e muitos usuários, é recomendado autenticação gerenciada e hash de senha com salt e fator de custo em backend próprio. Não existe promessa de segurança absoluta com frontend estático e Apps Script público.
 
-O teste verifica a sintaxe dos scripts, sessões, validação administrativa, bloqueio de alterações indevidas, redefinição de senhas, parceiros e avisos de vencimento com dados simulados.
-
-Se uma sincronização antiga permanecer pendente após a instalação, faça backup do navegador e reconcilie-a com a **mesma conta** antes de tentar entrar por outra. Não apague armazenamento local enquanto houver modificações sem envio.
+Se surgir conflito de sincronização, **não descarte os dados locais sem fazer backup**. Use o indicador de sincronização da ilha para decidir a recuperação.

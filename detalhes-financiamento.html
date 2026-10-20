@@ -9,7 +9,7 @@
 <body>
 
     <main class="container">
-        <div class="page-heading">
+        <div class="page-heading" data-overline="PLANEJAMENTO · CONTRATO">
             <div><h2 id="tituloFinanciamentoDetalhe">Detalhes do contrato</h2><p>Acompanhe o progresso, o valor recebido e as parcelas do contrato.</p></div>
             <a href="financiamentos.html" class="text-link">← Voltar para os seus financiamentos</a>
         </div>
@@ -460,7 +460,7 @@
 
             registrarLog(dados, 'EDIÇÃO FINANCIAMENTO', `Contrato ID ${financiamentoId} atualizado para: ${novoNome} (${novoTotal} meses)`);
             await salvarDados(dados);
-            await mostrarAlertaModal('Financiamento atualizado com sucesso.');
+            notificarOperacao('Contrato atualizado. Sincronização em segundo plano.');
             carregarDetalhesFinanciamentoPagina();
         }
 
@@ -478,7 +478,7 @@
             lanc.updatedAt = new Date().toISOString();
             registrarLog(dados, 'EDIÇÃO PARCELA FINANCIAMENTO', `Parcela ID ${lancamentoId} alterada para ${formatarMoeda(novoValor)}`);
             await salvarDados(dados);
-            await mostrarAlertaModal('Valor da parcela atualizado com sucesso.');
+            notificarOperacao('Valor atualizado. Sincronização em segundo plano.');
             carregarDetalhesFinanciamentoPagina();
         }
 

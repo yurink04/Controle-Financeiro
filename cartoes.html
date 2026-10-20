@@ -9,7 +9,7 @@
 <body>
 
     <main class="container">
-        <div class="page-heading"><div><h2>Cartões</h2><p>Acompanhe limites de crédito e saldos de benefícios (VR/VA).</p></div></div>
+        <div class="page-heading" data-overline="SUAS FINANÇAS · CARTÕES"><div><h2>Cartões</h2><p>Acompanhe limites de crédito e saldos de benefícios (VR/VA).</p></div></div>
 
         <section class="form-card">
             <div class="section-title"><div><h2 id="tituloFormCartao">Novo cartão</h2><p>Cadastre cartões de crédito ou de benefício.</p></div></div>
@@ -146,7 +146,7 @@
             await salvarDados(dados);
             cancelarEdicaoCartao();
             renderizarCartoes();
-            await mostrarAlertaModal("Cartão salvo com sucesso!");
+            notificarOperacao('Cartão salvo. Sincronização em segundo plano.');
         }
 
         function renderizarCartoes() {

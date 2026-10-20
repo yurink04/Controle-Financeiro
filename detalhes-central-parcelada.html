@@ -9,7 +9,7 @@
 <body>
 
     <main class="container">
-        <div class="page-heading">
+        <div class="page-heading" data-overline="CENTRAL DE CONTROLE · PARCELAS">
             <div>
                 <h2 id="tituloParcelamentoDetalhe">Detalhes do Parcelamento</h2>
                 <p>Acompanhe o progresso, os valores e o status de cada parcela desta compra.</p>
@@ -262,7 +262,7 @@
             lanc.updatedAt = new Date().toISOString();
             registrarLog(dados, 'EDIÇÃO VALOR PARCELA', `Parcela ID ${lancamentoId} alterada para ${formatarMoeda(novoValor)}`);
             await salvarDados(dados);
-            await mostrarAlertaModal('Valor atualizado com sucesso.');
+            notificarOperacao('Valor atualizado. Sincronização em segundo plano.');
             carregarDetalhesParceladaPagina();
         }
 

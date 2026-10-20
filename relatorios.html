@@ -9,7 +9,7 @@
 <body>
 
     <main class="container">
-        <div class="page-heading">
+        <div class="page-heading" data-overline="INTELIGÊNCIA FINANCEIRA · RELATÓRIOS">
             <div>
                 <h2>Relatório Gerencial</h2>
                 <p>Análise do mês, comparativo e alertas para decisões financeiras.</p>
@@ -209,40 +209,6 @@
             if (fats) fats.style.display = (p.faturas || p.financiamentos) ? 'grid' : 'none';
         }
 
-        /* ============================================================
-           MODO DISCRETO — placeholders das seções sensíveis
-           Mesmo padrão visual do dashboard: substitui o conteúdo por
-           um bloco neutro com cadeado, mantendo a estrutura do card.
-           ============================================================ */
-        function aplicarPlaceholdersRelatorioPrivado() {
-            const corpoPlaceholder = (mensagem) => `
-                <div><strong>${mensagem}</strong></div>
-                <div style="font-size:0.82rem;font-weight:500;">Use o botão de privacidade na barra superior para revelar.</div>`;
-
-            const substituirContainer = (id, mensagem) => {
-                const el = document.getElementById(id);
-                if (el) el.innerHTML = `<div class="privacy-section-placeholder">${corpoPlaceholder(mensagem)}</div>`;
-            };
-            const substituirTabela = (tbodyId, colspan, mensagem) => {
-                const tbody = document.getElementById(tbodyId);
-                if (tbody) {
-                    tbody.innerHTML = `<tr><td colspan="${colspan}" style="padding:0;border:none;">
-                        <div class="privacy-section-placeholder" style="margin:8px 0;">${corpoPlaceholder(mensagem)}</div>
-                    </td></tr>`;
-                }
-            };
-
-            substituirContainer('containerInsights', 'Insights e alertas ocultos');
-            substituirContainer('containerTopCategorias', 'Top categorias oculto');
-
-            substituirTabela('tabelaContasPagas', 4, 'Contas pagas ocultas');
-            substituirTabela('tabelaContasAbertas', 4, 'Contas em aberto ocultas');
-            substituirTabela('tabelaFaturasRelatorio', 5, 'Faturas ocultas');
-            substituirTabela('tabelaFinanciamentosRelatorio', 3, 'Contratos ocultos');
-            substituirTabela('tabelaBensRelatorio', 4, 'Bens ocultos');
-            substituirTabela('tabelaExtratoRelatorio', 7, 'Extrato oculto');
-        }
-
         function carregarRelatorioMensal() {
             const filtro = document.getElementById('filtroMesRelatorio');
             if (!filtro || !filtro.value) return;
@@ -363,10 +329,6 @@
             renderizarInsights(dados, movimentosMes, totalEntradas, totalSaidas, totEssencial, somasCat, mesSelecionado);
             renderizarComparativo(dados, mesSelecionado, totalEntradas, totalSaidas, totEssencial);
             renderizarTopCategorias(dados, somasCat, totalSaidas);
-
-            // [MODO DISCRETO] KPIs/comparativo/classificação já mascarados por formatarMoeda.
-            // Substitui as seções com dados sensíveis por placeholders com cadeado.
-            if (privacidadeAtiva()) aplicarPlaceholdersRelatorioPrivado();
         }
 
         function renderizarInsights(dados, movs, ent, sai, ess, somasCat, mes) {

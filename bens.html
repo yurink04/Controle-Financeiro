@@ -8,7 +8,7 @@
 </head>
 <body>
     <main class="container">
-        <div class="page-heading">
+        <div class="page-heading" data-overline="SEU PATRIMÔNIO · ORGANIZAÇÃO">
             <div>
                 <h2>Bens Patrimoniais</h2>
                 <p>Cadastre e acompanhe automóveis, imóveis e bens de valor do casal.</p>
@@ -165,7 +165,7 @@
         registrarLog(dados, "EDIÇÃO BEM", `Bem atualizado: ${nome}`);
         await salvarDados(dados);
         esconderLoading(); fecharModalNovoBem(); carregarTabelaBensGeral();
-        await mostrarAlertaModal("Bem atualizado com sucesso!");
+        notificarOperacao('Bem atualizado. Sincronização em segundo plano.');
         return;
     }
 
@@ -183,7 +183,7 @@
         const criar = await mostrarConfirmacaoModal("Bem cadastrado! Deseja criar o financiamento agora?");
         if (criar) window.location.href = 'financiamentos.html';
     } else {
-        await mostrarAlertaModal("Bem cadastrado com sucesso!");
+        notificarOperacao('Bem cadastrado. Sincronização em segundo plano.');
     }
 }
 
