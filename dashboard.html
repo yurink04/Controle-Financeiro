@@ -6,88 +6,11 @@
     <title>Painel Financeiro | Controle Financeiro</title>
     <link rel="stylesheet" href="style.css">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <style>
-        .btn-acao-secundario {
-            display: inline-flex;
-            align-items: center;
-            gap: 8px;
-            padding: 10px 18px;
-            font-weight: 700;
-            font-size: 0.88rem;
-            border-radius: 8px;
-            border: 1.5px solid var(--primary);
-            background: transparent;
-            color: var(--primary);
-            text-decoration: none;
-            cursor: pointer;
-            transition: var(--transition-fast);
-            white-space: nowrap;
-        }
-        .btn-acao-secundario:hover { background: var(--primary-soft); transform: translateY(-1px); }
-        body.dark-mode .btn-acao-secundario { color: var(--primary); border-color: var(--primary); }
-        body.dark-mode .btn-acao-secundario:hover { background: var(--primary-soft); }
-        body.privacidade-ativa .btn-acao-secundario {
-            pointer-events: none;
-            opacity: 0.35;
-            filter: grayscale(1);
-            cursor: not-allowed;
-        }
-
-        .pulso-card {
-            display: flex; align-items: center; gap: 18px;
-            padding: 22px 26px; border-radius: 16px;
-            border: 1px solid var(--border); border-left-width: 6px;
-            margin-bottom: 18px;
-            animation: pulsoIn 0.35s cubic-bezier(.22, 1, .36, 1) both;
-            position: relative; overflow: hidden;
-        }
-        .pulso-card::after { content: ''; position: absolute; inset: 0; background: radial-gradient(circle at right center, rgba(255,255,255,0.06), transparent 60%); pointer-events: none; }
-        .pulso-card.perigo { background: linear-gradient(135deg, var(--danger-soft) 0%, transparent 80%); border-left-color: var(--danger); }
-        .pulso-card.atencao { background: linear-gradient(135deg, var(--warning-soft) 0%, transparent 80%); border-left-color: var(--warning); }
-        .pulso-card.saudavel { background: linear-gradient(135deg, var(--success-soft) 0%, transparent 80%); border-left-color: var(--success); }
-        .pulso-card.neutro { background: linear-gradient(135deg, var(--surface-2) 0%, transparent 80%); border-left-color: var(--text-muted); }
-        .pulso-icone { font-size: 2.6rem; line-height: 1; flex-shrink: 0; filter: drop-shadow(0 3px 6px rgba(0, 0, 0, 0.12)); }
-        .pulso-conteudo { flex: 1; min-width: 0; }
-        .pulso-eyebrow { font-size: 0.68rem; font-weight: 850; letter-spacing: 0.1em; text-transform: uppercase; margin-bottom: 4px; opacity: 0.7; }
-        .pulso-card.perigo .pulso-eyebrow, .pulso-card.perigo .pulso-titulo { color: var(--danger); }
-        .pulso-card.atencao .pulso-eyebrow, .pulso-card.atencao .pulso-titulo { color: var(--warning); }
-        .pulso-card.saudavel .pulso-eyebrow, .pulso-card.saudavel .pulso-titulo { color: var(--success); }
-        .pulso-titulo { font-size: clamp(1.1rem, 2.2vw, 1.35rem); font-weight: 850; letter-spacing: -0.02em; line-height: 1.25; margin-bottom: 4px; }
-        .pulso-detalhe { font-size: 0.88rem; color: var(--text-muted); line-height: 1.45; }
-
-        .categoria-barra { padding: 12px 0; border-bottom: 1px solid var(--border); }
-        .categoria-barra:first-child { padding-top: 0; }
-        .categoria-barra:last-child { border-bottom: 0; padding-bottom: 0; }
-        .categoria-barra-header { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; margin-bottom: 8px; flex-wrap: wrap; }
-        .categoria-barra-info { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
-        .categoria-barra-pos { display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; border-radius: 50%; background: var(--primary-soft); color: var(--primary); font-size: 0.72rem; font-weight: 900; flex-shrink: 0; }
-        .categoria-barra-nome { font-weight: 700; font-size: 0.92rem; color: var(--text-main); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-        .categoria-barra-valores { display: flex; align-items: baseline; gap: 8px; flex-shrink: 0; }
-        .categoria-barra-valor { font-weight: 850; font-size: 0.95rem; color: var(--text-main); }
-        .categoria-barra-pct { font-size: 0.75rem; color: var(--text-muted); font-weight: 600; }
-        .categoria-barra-track { height: 10px; background: var(--surface-2); border-radius: 99px; overflow: hidden; border: 1px solid var(--border); }
-        .categoria-barra-fill { height: 100%; border-radius: 99px; background: linear-gradient(90deg, var(--primary), color-mix(in srgb, var(--primary) 60%, var(--warning))); transition: width 0.55s cubic-bezier(0.22, 1, 0.36, 1); }
-        .categoria-barra-fill.essencial { background: linear-gradient(90deg, var(--danger), color-mix(in srgb, var(--danger) 55%, var(--warning))); }
-
-        @keyframes pulsoIn { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: translateY(0); } }
-
-        @media (max-width: 760px) {
-            .toolbar-actions { display: flex; flex-direction: column; width: 100%; gap: 8px !important; }
-            .toolbar-actions > * { width: 100% !important; }
-            .btn-acao-secundario { justify-content: center; padding: 12px 16px; }
-            .pulso-card { padding: 16px 18px; gap: 12px; border-left-width: 5px; }
-            .pulso-icone { font-size: 2rem; }
-            .pulso-titulo { font-size: 1rem; }
-            .pulso-detalhe { font-size: 0.82rem; }
-            .categoria-barra-header { flex-direction: column; align-items: stretch; gap: 4px; }
-            .categoria-barra-valores { justify-content: space-between; }
-        }
-    </style>
 </head>
 <body class="dashboard-page">
 
     <main class="container">
-        <div class="page-heading">
+        <div class="page-heading" data-overline="VISÃO GERAL · SUA VIDA FINANCEIRA">
             <div>
                 <h2>Painel Financeiro</h2>
                 <p>O que entra, o que sai e para onde vai — em um olhar. Aja agora, detalhe em <a href="relatorios.html" class="text-link">Relatórios</a>.</p>
@@ -117,22 +40,22 @@
             </div>
         </div>
 
-        <section class="form-card filter-bar dashboard-summary-filters" id="dashboardResumoFiltros">
+        <section class="form-card filter-bar">
             <div>
-                <div class="section-title dashboard-summary-title"><h2>Resumo mensal</h2></div>
+                <div class="section-title" style="margin-bottom: 2px;"><h2>Resumo mensal</h2></div>
                 <p class="muted small">Ajuste período e escopo para recalcular o pulso.</p>
             </div>
-            <div class="dashboard-summary-controls">
+            <div style="display: flex; gap: 12px; flex-wrap: wrap;">
                 <div class="filter-group">
                     <label for="filtroEscopoDashboardGeral">Escopo</label>
-                    <select id="filtroEscopoDashboardGeral" onchange="carregarDashboard()">
+                    <select id="filtroEscopoDashboardGeral" onchange="carregarDashboard()" style="width:auto; min-width:140px;">
                         <option value="casal">Casal / Casa</option>
                         <option value="individual">Individual</option>
                     </select>
                 </div>
                 <div class="filter-group">
                     <label for="filtroMesAno">Mês / Ano</label>
-                    <input type="month" id="filtroMesAno" onchange="carregarDashboard()">
+                    <input type="month" id="filtroMesAno" onchange="carregarDashboard()" style="width:auto; min-width:150px;">
                 </div>
             </div>
         </section>
@@ -239,12 +162,12 @@
             </article>
         </section>
 
-        <section class="form-card" id="cardUltimosLancamentos">
-            <div class="section-title dashboard-ultimos-heading">
+        <section class="form-card" id="cardUltimosLancamentos" style="margin-top: 16px;">
+            <div class="section-title">
                 <div><h2>Últimos lançamentos do mês</h2><p>Histórico recente para conferência rápida.</p></div>
-                <div class="filter-group dashboard-ultimos-filter">
+                <div class="filter-group">
                     <label for="filtroTipoUltimosLancamentos">Exibir</label>
-                    <select id="filtroTipoUltimosLancamentos" onchange="carregarDashboard()">
+                    <select id="filtroTipoUltimosLancamentos" onchange="carregarDashboard()" style="width:auto;">
                         <option value="todos">Todos</option>
                         <option value="entrada">Entradas</option>
                         <option value="saida">Saídas</option>
@@ -353,17 +276,14 @@
         }
 
         cont.innerHTML = `
-            <a class="pulso-card ${nivel}" href="relatorios.html"
-               title="Clique aqui para ver mais detalhes no relatório"
-               aria-label="Pulso do mês: ${escaparHTML(titulo)}. Clique para abrir os relatórios">
-                <div class="pulso-icone" aria-hidden="true">${icone}</div>
+            <div class="pulso-card ${nivel}">
+                <div class="pulso-icone">${icone}</div>
                 <div class="pulso-conteudo">
                     <div class="pulso-eyebrow">Pulso do mês</div>
                     <div class="pulso-titulo">${escaparHTML(titulo)}</div>
                     <div class="pulso-detalhe">${escaparHTML(detalhe)}</div>
-                    <span class="pulso-dica">Clique aqui para ver mais detalhes no relatório ↗</span>
                 </div>
-            </a>`;
+            </div>`;
     }
 
     /* 💸 ONDE O DINHEIRO FOI — totalmente oculto no modo discreto */

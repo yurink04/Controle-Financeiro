@@ -3,7 +3,7 @@
 // ============================================================================
 const DB_KEY = 'sistemaFinanceiroCompartilhado';
 const BACKUP_TESTE_KEY = 'sistemaFinanceiroBackupTeste';
-const API_URL = "https://script.google.com/macros/s/AKfycbx6L5cRMrcP0y-Zdx9f5aH40RrJdbw50EKxseTvU4z4Q8T7L_6yo6_i4jLxTqoL8nXk/exec";
+const API_URL = "https://script.google.com/macros/s/AKfycbxOTWLwazFf7hO7scTIRlKAOxHUdB0CroAVuAyfnC6Xsq2XMql7vvyTzNwJ0d1se1MW/exec";
 const TOKEN_API = "PLANOF1NALPRAS4AIRD@MERDA";
 const CHAVE_SESSAO_API = 'financeiroSessaoSegura';
 const CHAVE_USUARIO_SESSAO = 'financeiroSessaoUsuario';
@@ -22,6 +22,7 @@ function conferirSessaoRespostaAPI(resposta) {
 }
 const SCHEMA_VERSION = 5;
 const SYNC_DEBOUNCE_MS = 1500;
+const SYNC_RETRY_MAX_MS = 90000;
 const SYNC_BASELINE_KEY = 'sistemaFinanceiroSnapshotSincronizado';
 const SYNC_CONFLICT_KEY = 'sistemaFinanceiroConflitoSync';
 const COLECOES_DADOS = ['usuarios', 'categorias', 'cartoes', 'lancamentos', 'financiamentos', 'bens', 'notificacoes', 'logs', 'exclusao_movimento', 'edicao_movimento', 'fatura_cartao'];
@@ -29,6 +30,7 @@ const COLECOES_DADOS = ['usuarios', 'categorias', 'cartoes', 'lancamentos', 'fin
 let syncTimer = null;
 let syncPendingData = null;
 let syncInFlight = false;
+let syncFalhasConsecutivas = 0;
 let processandoAcaoModal = false;
 let processandoSaidaSistema = false;
 let memoriaSistema = null;
@@ -594,12 +596,20 @@ function marcarConflitoSincronizacao(dadosLocais, campos, mensagem) {
     console.error('Sincronização bloqueada:', conflito);
 }
 
-function agendarSincronizacaoSilenciosa() {
+function agendarSincronizacaoSilenciosa(urgente = false) {
     clearTimeout(syncTimer);
+    // Em modo offline, os dados permanecem salvos localmente. A rede ativa o
+    // próximo envio, sem requisições repetidas a cada segundo.
+    if (!navigator.onLine) {
+        syncTimer = null;
+        atualizarIndicadorSyncUI('pending');
+        return;
+    }
+    const atraso = urgente ? 120 : Math.min(SYNC_RETRY_MAX_MS, SYNC_DEBOUNCE_MS * Math.pow(2, Math.min(syncFalhasConsecutivas, 6)));
     syncTimer = setTimeout(() => {
         syncTimer = null;
         sincronizarComServidor();
-    }, SYNC_DEBOUNCE_MS);
+    }, atraso);
 }
 
 async function buscarDadosServidor() {
@@ -676,11 +686,16 @@ function iniciarSincronizacaoSegundoPlano() {
     setTimeout(() => verificarAtualizacaoServidor(), 500);
     setInterval(() => { if (!document.hidden) verificarAtualizacaoServidor(); }, SYNC_CHECK_INTERVAL_MS);
     document.addEventListener('visibilitychange', () => { if (!document.hidden) verificarAtualizacaoServidor(); });
-    window.addEventListener('online', () => verificarAtualizacaoServidor(true));
+    window.addEventListener('online', () => {
+        if (syncPendingData || localStorage.getItem('syncPendente') === 'true') {
+            if (!syncPendingData) syncPendingData = clonarDados(lerJSONLocal(DB_KEY, {}) || {});
+            agendarSincronizacaoSilenciosa(true);
+        } else verificarAtualizacaoServidor(true);
+    });
 }
 
 async function sincronizarComServidor() {
-    if (syncInFlight || !syncPendingData || localStorage.getItem(SYNC_CONFLICT_KEY)) return;
+    if (syncInFlight || !syncPendingData || localStorage.getItem(SYNC_CONFLICT_KEY) || !navigator.onLine) return;
     syncInFlight = true; let payloadAtual = null, tentativas = 0;
     try {
         while (syncPendingData && tentativas < 5 && !localStorage.getItem(SYNC_CONFLICT_KEY)) {
@@ -704,6 +719,7 @@ async function sincronizarComServidor() {
                 continue;
             }
             if (json.status !== 'sucesso') throw new Error(json.mensagem || 'Erro sync.');
+            syncFalhasConsecutivas = 0;
             const rev = Number(json._revision);
             if (!Number.isFinite(rev)) throw new Error('Revisão inválida.');
             payloadAtual._revision = rev;
@@ -719,6 +735,7 @@ async function sincronizarComServidor() {
             else { localStorage.setItem('syncPendente', 'true'); atualizarIndicadorSyncUI('pending'); }
         }
     } catch (e) {
+        syncFalhasConsecutivas++;
         console.warn('Sync adiada:', e);
         if (!syncPendingData && payloadAtual) syncPendingData = clonarDados(lerJSONLocal(DB_KEY, payloadAtual) || payloadAtual);
         localStorage.setItem('syncPendente', 'true'); atualizarIndicadorSyncUI('error');
@@ -1066,52 +1083,75 @@ async function verificarSenhaAdmin(nomeSecao = 'esta seção') {
         }
 
         if (dadosResposta.status === 'sucesso') {
-            await mostrarAlertaModal(
-                'Senha administrativa incorreta. Confira a propriedade SENHA_ADMIN nas Propriedades do script do Apps Script. A senha de login do usuário é diferente.'
-            );
+            await mostrarAlertaModal('Senha administrativa incorreta. Tente novamente.');
         } else {
-            await mostrarAlertaModal(
-                `Falha na autenticação da API: ${dadosResposta.mensagem || 'o servidor recusou a requisição'}. Confira se TOKEN_API no script.js corresponde a SENHA_MESTRA_API nas Propriedades do script e se a URL da implantação está correta.`
-            );
+            console.warn('Falha na verificação administrativa:', dadosResposta.mensagem);
+            await mostrarAlertaModal('Não foi possível validar o acesso agora. Tente novamente.');
         }
         return false;
     } catch (erro) {
-        await mostrarAlertaModal(
-            'Não foi possível validar a senha com o servidor. Confira a URL da implantação do Apps Script, as permissões do Web App e tente novamente.'
-        );
+        console.warn('Verificação administrativa indisponível:', erro);
+        await mostrarAlertaModal('Não foi possível validar a senha. Verifique sua conexão e tente novamente.');
         return false;
     }
 }
 
+let temporizadorFeedbackIntegrado = null;
+function atualizarFeedbackIntegrado(mensagem, estado = 'pending', duracao = 0) {
+    const ilha = document.querySelector('.app-top-island');
+    if (!ilha) return false;
+    let indicador = ilha.querySelector('.app-action-status');
+    if (!indicador) {
+        indicador = document.createElement('div');
+        indicador.className = 'app-action-status';
+        indicador.setAttribute('role', 'status');
+        indicador.setAttribute('aria-live', 'polite');
+        indicador.innerHTML = '<span class="app-action-indicator" aria-hidden="true"></span><span class="app-action-message"></span>';
+        ilha.append(indicador);
+    }
+    clearTimeout(temporizadorFeedbackIntegrado);
+    indicador.dataset.state = estado;
+    indicador.querySelector('.app-action-message').textContent = mensagem;
+    if (duracao > 0) temporizadorFeedbackIntegrado = setTimeout(() => indicador.remove(), duracao);
+    return true;
+}
+
+function notificarOperacao(mensagem = 'Pronto! Alteração registrada.') {
+    atualizarFeedbackIntegrado(mensagem, 'success', 3300);
+}
+
 function mostrarLoading(mensagem = "Processando...", usarGif = false) {
     const span = document.getElementById('headerLoadingText');
-    const spanVisivel = span && span.offsetParent !== null && document.body.classList.contains('sidebar-open');
     if (span) { span.textContent = mensagem; span.style.display = 'inline-block'; }
 
     const antigo = document.getElementById('loadingOverlay');
     if (antigo) antigo.remove();
 
-    if (!spanVisivel || usarGif) {
+    // Operações comuns mostram progresso na ilha. O GIF maior fica reservado
+    // para tarefas explicitamente demoradas (backup, recuperação e saída).
+    if (!usarGif && atualizarFeedbackIntegrado(mensagem, 'pending')) return;
+
+    {
         const ov = document.createElement('div');
         ov.id = 'loadingOverlay';
         ov.setAttribute('role', 'status');
         ov.setAttribute('aria-live', 'polite');
-        ov.style.cssText = 'position:fixed;top:20px;left:50%;transform:translateX(-50%);z-index:900;background:var(--surface);color:var(--text-main);padding:14px 20px;border-radius:14px;box-shadow:var(--shadow-lg);border:1px solid var(--border);display:flex;align-items:center;gap:12px;font-weight:700;font-size:0.85rem;pointer-events:none;';
+        ov.className = 'app-loading-overlay';
 
         let indicador;
         if (usarGif) {
             indicador = document.createElement('img');
             indicador.src = 'imagens/loading1.gif';
             indicador.alt = '';
-            indicador.style.cssText = 'width:64px;height:64px;object-fit:contain;flex-shrink:0;';
+            indicador.className = 'app-loading-image';
             indicador.onerror = () => {
                 const fallback = document.createElement('div');
-                fallback.style.cssText = 'width:22px;height:22px;border:2px solid var(--border);border-top-color:var(--primary);border-radius:50%;animation:spin .8s linear infinite;flex-shrink:0;';
+                fallback.className = 'app-loading-spinner';
                 indicador.replaceWith(fallback);
             };
         } else {
             indicador = document.createElement('div');
-            indicador.style.cssText = 'width:18px;height:18px;border:2px solid var(--border);border-top-color:var(--primary);border-radius:50%;animation:spin .8s linear infinite;flex-shrink:0;';
+            indicador.className = 'app-loading-spinner';
         }
 
         const texto = document.createElement('span');
@@ -1126,6 +1166,8 @@ function esconderLoading() {
     if (span) { span.style.display = 'none'; span.textContent = ''; }
     const overlay = document.getElementById('loadingOverlay');
     if (overlay) overlay.remove();
+    const integrado = document.querySelector('.app-action-status[data-state="pending"]');
+    if (integrado) integrado.remove();
 }
 
 function definirSidebarAberto(aberto) {
@@ -1241,7 +1283,21 @@ function atualizarHeaderUsuario() {
         const av = u.fotoPerfil || 'data:image/svg+xml;charset=UTF-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22%23a89586%22%3E%3Cpath%20d%3D%22M12%2012c2.21%200%204-1.79%204-4s-1.79-4-4-4-4%201.79-4%204%201.79%204%204%204zm0%202c-2.67%200-8%201.34-8%204v2h16v-2c0-2.66-5.33-4-8-4z%22%2F%3E%3C%2Fsvg%3E';
         const nomeSeguro = u.nome ? String(u.nome) : 'Usuário';
         const primeiroNome = nomeSeguro.split(' ')[0] || 'Usuário';
-        sn.innerHTML = `<img src="${av}" style="width:72px; height:72px; border-radius:50%; object-fit:cover; border:3px solid var(--primary);" alt="Avatar"><span style="margin-top:12px; display:block;">Olá, <b>${escaparHTML(primeiroNome)}</b></span>`;
+        // Foto e nome vêm do banco: usar propriedades de DOM evita injeção HTML.
+        sn.replaceChildren();
+        const avatar = document.createElement('img');
+        avatar.alt = 'Avatar';
+        avatar.className = 'sidebar-user-avatar';
+        const avatarPadrao = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4" fill="#a89586"/><path d="M3 21c0-5 4-8 9-8s9 3 9 8" fill="#a89586"/></svg>');
+        avatar.src = /^(https:\/\/|data:image\/(?:png|jpeg|gif|webp|svg\+xml);)/i.test(String(av)) ? av : avatarPadrao;
+        avatar.onerror = () => { avatar.onerror = null; avatar.src = avatarPadrao; };
+        const saudacao = document.createElement('span');
+        saudacao.className = 'sidebar-user-greeting';
+        saudacao.append('Olá, ');
+        const nome = document.createElement('b');
+        nome.textContent = primeiroNome;
+        saudacao.append(nome);
+        sn.append(avatar, saudacao);
     }
     if (typeof renderizarSinoNotificacoes === 'function') renderizarSinoNotificacoes();
 }
@@ -1430,7 +1486,7 @@ async function adicionarCategoria(nome, tipo) {
         if ((d.categorias || []).some(c => c.tipo === tipo && normalizarTexto(c.nome) === nl)) throw new Error('Categoria já existe.');
         d.categorias.push({ id: d.categorias.reduce((m, c) => Math.max(m, c.id||0), 0)+1, nome: nome.trim(), tipo, classificacao: 'personalizado', criadopor: obterUsuarioAtualId(d) });
         registrarLog(d, 'CADASTRO CATEGORIA', `Criada: ${nome} (${tipo})`);
-        await salvarDados(d); await mostrarAlertaModal('Sucesso!'); return true;
+        await salvarDados(d); notificarOperacao('Categoria adicionada. Sincronização em segundo plano.'); return true;
     } catch (e) { await mostrarAlertaModal(e.message); return false; } finally { esconderLoading(); processandoAcaoModal = false; }
 }
 
@@ -1444,7 +1500,7 @@ async function atualizarCategoria(id, nome, tipo) {
         if (c.tipo !== tipo && ((d.lancamentos||[]).some(l=>String(l.categoriaId)===String(id)) || (d.financiamentos||[]).some(f=>String(f.categoriaId)===String(id)))) throw new Error('Categoria em uso, não pode mudar tipo.');
         c.nome = nome.trim(); c.tipo = tipo;
         registrarLog(d, 'EDIÇÃO CATEGORIA', `Atualizada: ${c.nome}`);
-        await salvarDados(d); await mostrarAlertaModal('Sucesso!'); return true;
+        await salvarDados(d); notificarOperacao('Categoria atualizada. Sincronização em segundo plano.'); return true;
     } catch (e) { await mostrarAlertaModal(e.message); return false; } finally { esconderLoading(); processandoAcaoModal = false; }
 }
 
@@ -1457,7 +1513,7 @@ async function excluirCategoria(id) {
         if ((d.lancamentos||[]).some(l=>String(l.categoriaId)===String(id)) || (d.financiamentos||[]).some(f=>String(f.categoriaId)===String(id))) throw new Error('Em uso.');
         d.categorias = d.categorias.filter(x => String(x.id) !== String(id));
         registrarLog(d, 'EXCLUSÃO CATEGORIA', `Excluída: ${id}`);
-        await salvarDados(d); await mostrarAlertaModal('Sucesso!'); return true;
+        await salvarDados(d); notificarOperacao('Categoria removida. Sincronização em segundo plano.'); return true;
     } catch (e) { await mostrarAlertaModal(e.message); return false; } finally { esconderLoading(); processandoAcaoModal = false; }
 }
 
@@ -1516,7 +1572,7 @@ async function adicionarLancamentoComParcelas(form) {
         if (typeof salvarMemoriaAdiantamentoSeNecessario === 'function') {
             try { salvarMemoriaAdiantamentoSeNecessario(form.descricao, valP[0]); } catch (_) {}
         }
-        await salvarDados(d); await mostrarAlertaModal("Sucesso!"); return true;
+        await salvarDados(d); notificarOperacao('Lançamento registrado. Sincronização em segundo plano.'); return true;
     } catch (e) { await mostrarAlertaModal(e.message); return false; } finally { esconderLoading(); processandoAcaoModal = false; }
 }
 
@@ -1592,7 +1648,7 @@ async function removerLancamentoInteligente(id) {
         d.lancamentos = d.lancamentos.filter(x => !rIds.has(String(x.id)));
     }
     registrarLog(d, "EXCLUSÃO", `Excluído. Motivo: ${mt}`);
-    await salvarDados(d); esconderLoading(); await mostrarAlertaModal("Sucesso!"); return true;
+    await salvarDados(d); esconderLoading(); notificarOperacao('Lançamento removido. Sincronização em segundo plano.'); return true;
 }
 
 function descreverOrigemLancamento(l, dados = obterDados()) {
@@ -2053,7 +2109,7 @@ async function adicionarContaLotePorPeriodo(descricao, valorParcela, dataInicio,
         }
         registrarLog(dados, 'CONTA LOTE PERÍODO', `Lote: ${descFinal} (${quantidade} meses)`);
         await salvarDados(dados);
-        if (!opcoes.silencioso) await mostrarAlertaModal('Contas em lote criadas com sucesso.');
+        if (!opcoes.silencioso) notificarOperacao('Contas em lote criadas. Sincronização em segundo plano.');
         return true;
     } catch (erro) {
         console.error(erro);
