@@ -3,13 +3,18 @@
 // ============================================================================
 const DB_KEY = 'sistemaFinanceiroCompartilhado';
 const BACKUP_TESTE_KEY = 'sistemaFinanceiroBackupTeste';
-const API_URL = "https://script.google.com/macros/s/AKfycbyruw58ZO8R86R_ik9zuiPmAGr24tVph8W4RWFYVelvgPMUFebophETJ15c9JL3CD1cmQ/exec";
+const API_URL = "https://script.google.com/macros/s/AKfycbzPhP0Cwdc88v6FCvac1sMiiN4oJtR2oyXP6BO9THr2iEuwsrSYDRG9KGkJEjUeqxkG7g/exec";
 const TOKEN_API = "PLANOF1NALPRAS4AIRD@MERDA";
 const CHAVE_SESSAO_API = 'financeiroSessaoSegura';
 const CHAVE_USUARIO_SESSAO = 'financeiroSessaoUsuario';
 const CHAVE_DONO_PENDENCIAS = 'financeiroSyncUsuario';
 const obterSessaoAPI = () => sessionStorage.getItem(CHAVE_SESSAO_API) || '';
 
+function ehModoTesteAtivo(usuario) {
+  return Boolean(usuario)
+    && normalizarTexto(usuario.nome) === 'teste'
+    && Boolean(localStorage.getItem(BACKUP_TESTE_KEY));
+}
 function conferirSessaoRespostaAPI(resposta) {
     if (resposta?.status === 'erro' && /sess[aã]o (expirada|inv[aá]lida)/i.test(String(resposta.mensagem || ''))) {
         sessionStorage.removeItem(CHAVE_SESSAO_API);
@@ -19,6 +24,34 @@ function conferirSessaoRespostaAPI(resposta) {
         throw new Error('Sua sessão expirou. Entre novamente para continuar a sincronização.');
     }
     return resposta;
+}
+
+// Requisições de sincronização com tempo máximo e erros legíveis. Mantém o
+// Content-Type simples para evitar um preflight desnecessário no Apps Script.
+async function executarPostAPI(acao, campos = {}, tempoLimiteMs = 35000) {
+    const controlador = new AbortController();
+    const temporizador = setTimeout(() => controlador.abort(), tempoLimiteMs);
+    try {
+        const resposta = await fetch(API_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+            cache: 'no-store',
+            signal: controlador.signal,
+            body: JSON.stringify({ action: acao, token: TOKEN_API, ...campos })
+        });
+        if (!resposta.ok) throw new Error(`Servidor indisponível (HTTP ${resposta.status}).`);
+        const texto = await resposta.text();
+        let dados;
+        try { dados = JSON.parse(texto); }
+        catch (_) { throw new Error('A API não retornou JSON. Verifique o link /exec e as permissões da implantação.'); }
+        return conferirSessaoRespostaAPI(dados);
+    } catch (erro) {
+        if (erro?.name === 'AbortError') throw new Error('Tempo limite ao comunicar com o Google Sheets. Os dados continuam salvos neste navegador.');
+        if (erro instanceof TypeError) throw new Error('Falha de conexão com o Google Apps Script. Verifique sua rede, a URL /exec e a implantação publicada.');
+        throw erro;
+    } finally {
+        clearTimeout(temporizador);
+    }
 }
 const SCHEMA_VERSION = 5;
 const SYNC_DEBOUNCE_MS = 1500;
@@ -31,6 +64,7 @@ let syncTimer = null;
 let syncPendingData = null;
 let syncInFlight = false;
 let syncFalhasConsecutivas = 0;
+let reenvioEmAndamento = false;
 let processandoAcaoModal = false;
 let processandoSaidaSistema = false;
 let memoriaSistema = null;
@@ -52,10 +86,6 @@ function formatarMoedaPrivada(v) {
     if (privacidadeAtiva()) return 'R$ •••,••';
     return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(numeroSeguro(v));
 }
-function formatarPercentualPrivado(v, casas = 0) {
-    if (privacidadeAtiva()) return '••%';
-    return Number(v).toFixed(casas) + '%';
-}
 
 // ============================================================================
 // 2. UTILITÁRIOS BASE
@@ -75,7 +105,9 @@ const formatarMoeda = v => {
 
 const normalizarTexto = t => String(t || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLowerCase();
 const escaparHTML = v => { const d = document.createElement('div'); d.textContent = v == null ? '' : String(v); return d.innerHTML; };
-const clonarDados = d => JSON.parse(JSON.stringify(d));
+// Na mesclagem de sincronização, undefined representa um registro removido.
+// JSON.parse(undefined) causava erro e interrompia conflitos entre dispositivos.
+const clonarDados = d => d === undefined ? undefined : JSON.parse(JSON.stringify(d));
 const validarComplexidadeSenha = s => /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[\W_]).{8,}$/.test(String(s || ''));
 
 const gerarId = (prefixo = 'id') => {
@@ -83,7 +115,23 @@ const gerarId = (prefixo = 'id') => {
     return `${prefixo}_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
 };
 
+// IDs numéricos de lançamentos precisam ser únicos ENTRE aparelhos. "Maior id + 1" gera o mesmo
+// número quando duas contas (ou dois aparelhos) lançam antes de sincronizar, e a mesclagem por id
+// trava a sincronização ou descarta um dos lançamentos. Aqui o id nasce do relógio + sorteio.
+// Fica abaixo de 1e15 (exato na planilha) até ~2041. Devolve o primeiro id de um bloco consecutivo.
+function proximoIdLancamento(lista, quantidade = 1) {
+    const total = Math.max(1, Math.floor(Number(quantidade)) || 1);
+    const usados = new Set((Array.isArray(lista) ? lista : []).map(l => String(l?.id)));
+    const livre = inicio => { for (let k = 0; k < total; k++) if (usados.has(String(inicio + k))) return false; return true; };
+    let inicio = (Date.now() - 1767225600000) * 2048 + Math.floor(Math.random() * 2048);
+    while (!livre(inicio)) inicio += total;
+    return inicio;
+}
+
 async function gerarHash(texto) {
+    if (typeof crypto === 'undefined' || !crypto.subtle?.digest) {
+        throw new Error('A verificação segura de senha exige HTTPS ou localhost. Abra o sistema em uma origem segura.');
+    }
     const data = new TextEncoder().encode(texto);
     const hashBuffer = await crypto.subtle.digest('SHA-256', data);
     return Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2, '0')).join('');
@@ -720,12 +768,6 @@ function aplicarPermissoesNavegacao(usuario = obterUsuarioAtual()) {
     }
 }
 
-async function selecionarUsuario(id) {
-    // Entrada legada sem credenciais removida: somente o login cria uma sessão válida.
-    window.location.href = 'index.html';
-    return false;
-}
-
 async function deslogarSistema(solicitadoPeloUsuario = true) {
     if (processandoSaidaSistema) return false;
     processandoSaidaSistema = true;
@@ -761,7 +803,7 @@ async function deslogarSistema(solicitadoPeloUsuario = true) {
         if (uId) {
             const dados = obterDados();
             const u = dados.usuarios.find(user => Number(user.id) === Number(uId));
-            if (u && normalizarTexto(u.nome) === 'teste') {
+            if (ehModoTesteAtivo(u)) {
                 const bkp = localStorage.getItem(BACKUP_TESTE_KEY);
                 if (bkp) { localStorage.setItem(DB_KEY, bkp); localStorage.removeItem(BACKUP_TESTE_KEY); }
             }
@@ -819,9 +861,9 @@ function verificarAutenticacao() {
                 window.location.href = 'index.html'; return false;
             }
             try {
-                const dadosL = lerJSONLocal(DB_KEY, null);
+                                const dadosL = lerJSONLocal(DB_KEY, null);
                 const uL = (dadosL?.usuarios || []).find(u => String(u.id) === String(uId));
-                if (uL && normalizarTexto(uL.nome) === 'teste' && localStorage.getItem(BACKUP_TESTE_KEY)) {
+                if (ehModoTesteAtivo(uL)) {
                     memoriaSistema = migrarDados(dadosL).dados;
                 } else if (localStorage.getItem(SYNC_CONFLICT_KEY)) {
                     memoriaSistema = migrarDados(dadosL || {}).dados;
@@ -908,7 +950,7 @@ async function salvarDados(dados, opcoes = {}) {
     ].forEach(fn => { try { fn(); } catch (e) { console.error('Falha ao atualizar tela:', e); } });
 
     const u = obterUsuarioAtual(norm);
-    if (opcoes.sincronizar !== false && (!u || normalizarTexto(u.nome) !== 'teste')) {
+    if (opcoes.sincronizar !== false && !ehModoTesteAtivo(u)) {
         syncPendingData = clonarDados(norm);
         localStorage.setItem('syncPendente', 'true');
         if (dono) localStorage.setItem(CHAVE_DONO_PENDENCIAS, dono);
@@ -916,7 +958,7 @@ async function salvarDados(dados, opcoes = {}) {
             atualizarIndicadorSyncUI('pending');
             agendarSincronizacaoSilenciosa();
         } else atualizarIndicadorSyncUI('error');
-    } else if (u && normalizarTexto(u.nome) === 'teste') {
+    } else if (ehModoTesteAtivo(u)) {
         clearTimeout(syncTimer); syncTimer = null; syncPendingData = null; localStorage.removeItem('syncPendente');
     }
     return true;
@@ -991,6 +1033,53 @@ function mesclarSnapshotsTresVias(base, local, remoto) {
     return { dados: res, conflitos: [...new Set(conflitos)] };
 }
 
+// Reenvio de emergência não é uma operação administrativa: perfis de terceiros
+// e campos de segurança da própria conta são sempre mantidos como no servidor.
+// Só as alterações locais efetivamente diferentes do último snapshot entram
+// na mesclagem. Sem base confiável, o reenvio deve parar após gerar o backup.
+function prepararReenvioSeguro(baseOriginal, localOriginal, remotoOriginal, usuarioId) {
+    const idAtual = String(usuarioId || '').trim();
+    if (!idAtual) throw new Error('Usuário não identificado. Entre novamente antes de sincronizar.');
+    if (!baseOriginal || !localOriginal || !remotoOriginal) {
+        throw new Error('Não há histórico de sincronização suficiente para conciliar os dados. O backup local foi preservado.');
+    }
+    const usuariosRemotos = Array.isArray(remotoOriginal.usuarios) ? remotoOriginal.usuarios : [];
+    const porId = usuario => String(usuario?.id ?? '') === idAtual;
+    const usuarioRemoto = usuariosRemotos.find(porId);
+    if (!usuarioRemoto) throw new Error('Sua conta não consta na resposta do servidor. Reenvio interrompido.');
+
+    const camposProtegidos = ['id', 'ativo', 'permissoes', 'trocaSenhaObrigatoria'];
+    const protegerProprioPerfil = usuario => {
+        const protegido = clonarDados(usuario || usuarioRemoto);
+        camposProtegidos.forEach(campo => {
+            if (Object.prototype.hasOwnProperty.call(usuarioRemoto, campo)) {
+                protegido[campo] = clonarDados(usuarioRemoto[campo]);
+            } else delete protegido[campo];
+        });
+        // PIN/senha só podem ser alterados pelo fluxo específico do perfil.
+        delete protegido.pin;
+        delete protegido.senha;
+        return protegido;
+    };
+    const protegerColecaoUsuarios = snapshot => {
+        const proprio = (Array.isArray(snapshot.usuarios) ? snapshot.usuarios : []).find(porId);
+        snapshot.usuarios = usuariosRemotos.map(usuarioRemotoLista =>
+            porId(usuarioRemotoLista) ? protegerProprioPerfil(proprio) : clonarDados(usuarioRemotoLista));
+    };
+
+    const base = clonarDados(baseOriginal);
+    const local = clonarDados(localOriginal);
+    protegerColecaoUsuarios(base);
+    protegerColecaoUsuarios(local);
+    const resultado = mesclarSnapshotsTresVias(base, local, remotoOriginal);
+    // Defesa adicional: a coleção final jamais pode enviar alterações em
+    // terceiros, criar usuários ou excluir contas pelo reenvio comum.
+    const proprioFinal = (resultado.dados.usuarios || []).find(porId);
+    resultado.dados.usuarios = usuariosRemotos.map(usuarioRemotoLista =>
+        porId(usuarioRemotoLista) ? protegerProprioPerfil(proprioFinal) : clonarDados(usuarioRemotoLista));
+    return resultado;
+}
+
 function marcarConflitoSincronizacao(dadosLocais, campos, mensagem) {
     _migracaoCacheRef = null;
     _migracaoCacheDados = null;
@@ -1023,13 +1112,7 @@ function agendarSincronizacaoSilenciosa(urgente = false) {
 }
 
 async function buscarDadosServidor() {
-    const res = await fetch(API_URL, {
-        method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, cache: 'no-store',
-        body: JSON.stringify({ action: 'obterDados', token: TOKEN_API, sessao: obterSessaoAPI() })
-    });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const json = await res.json();
-    conferirSessaoRespostaAPI(json);
+    const json = await executarPostAPI('obterDados', { sessao: obterSessaoAPI() });
     if (json.status === 'erro' || !Array.isArray(json.usuarios)) throw new Error(json.mensagem || 'Dados inválidos.');
     return json;
 }
@@ -1042,23 +1125,17 @@ let _syncBgIniciado = false;
 let _syncBgEmAndamento = false;
 
 async function consultarRevisaoServidor() {
-    const res = await fetch(API_URL, {
-        method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, cache: 'no-store',
-        body: JSON.stringify({ action: 'revisao', token: TOKEN_API, sessao: obterSessaoAPI() })
-    });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const json = await res.json();
-    conferirSessaoRespostaAPI(json);
+    const json = await executarPostAPI('revisao', { sessao: obterSessaoAPI() });
     if (json.status !== 'sucesso' || !Number.isFinite(Number(json._revision))) return null; // Code.gs antigo
     return Number(json._revision);
 }
 
 async function verificarAtualizacaoServidor(forcar = false) {
-    if (_syncBgEmAndamento || syncInFlight || syncPendingData || syncTimer) return;
+    if (_syncBgEmAndamento || syncInFlight || reenvioEmAndamento || syncPendingData || syncTimer) return;
     if (localStorage.getItem('syncPendente') === 'true' || localStorage.getItem(SYNC_CONFLICT_KEY)) return;
     if (!localStorage.getItem('usuarioLogado') || !navigator.onLine) return;
     const u = obterUsuarioAtual();
-    if (u && normalizarTexto(u.nome) === 'teste') return;
+    if (ehModoTesteAtivo(u)) return;
     const agora = Date.now();
     if (!forcar && agora - Number(localStorage.getItem('ultimaChecagemMs') || 0) < SYNC_CHECK_MIN_MS) return;
 
@@ -1068,7 +1145,11 @@ async function verificarAtualizacaoServidor(forcar = false) {
         const revRemota = await consultarRevisaoServidor();
         const revLocal = Number(window.revisaoServidorAtual ?? memoriaSistema?._revision) || 0;
         if (revRemota !== null) {
-            if (revRemota === revLocal) { localStorage.setItem('ultimoSyncMs', String(Date.now())); return; }
+            if (revRemota === revLocal) {
+                localStorage.setItem('ultimoSyncMs', String(Date.now()));
+                atualizarIndicadorSyncUI('success');
+                return;
+            }
         } else if (agora - Number(localStorage.getItem('ultimoSyncMs') || 0) < SYNC_FALLBACK_FULL_MS) {
             return;
         }
@@ -1085,6 +1166,7 @@ async function verificarAtualizacaoServidor(forcar = false) {
         atualizarIndicadorSyncUI('success');
     } catch (e) {
         console.warn('Checagem em segundo plano falhou:', e);
+        atualizarIndicadorSyncUI('error');
     } finally {
         _syncBgEmAndamento = false;
     }
@@ -1105,21 +1187,27 @@ function iniciarSincronizacaoSegundoPlano() {
 }
 
 async function sincronizarComServidor() {
-    if (syncInFlight || !syncPendingData || localStorage.getItem(SYNC_CONFLICT_KEY) || !navigator.onLine) return;
+    if (reenvioEmAndamento || syncInFlight || !syncPendingData || localStorage.getItem(SYNC_CONFLICT_KEY) || !navigator.onLine) return;
     syncInFlight = true; let payloadAtual = null, tentativas = 0;
     try {
         while (syncPendingData && tentativas < 5 && !localStorage.getItem(SYNC_CONFLICT_KEY)) {
             tentativas++; payloadAtual = syncPendingData; syncPendingData = null;
-            const res = await fetch(API_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ action: 'salvarDados', token: TOKEN_API, sessao: obterSessaoAPI(), dados: payloadAtual }) });
-            if (!res.ok) throw new Error(`HTTP ${res.status}`);
-            const json = await res.json();
-            conferirSessaoRespostaAPI(json);
+            const json = await executarPostAPI('salvarDados',
+                { sessao: obterSessaoAPI(), dados: payloadAtual }, 45000);
             if (json.status === 'conflito') {
                 const lAtual = lerJSONLocal(DB_KEY, payloadAtual) || payloadAtual;
                 const base = lerJSONLocal(SYNC_BASELINE_KEY, null);
-                const serv = migrarDados(await buscarDadosServidor()).dados;
+                // O snapshot remoto é a autoridade para campos protegidos.
+                // Migrá-lo antes da conciliação pode introduzir alterações
+                // artificiais em perfis de outros usuários.
+                const serv = clonarDados(await buscarDadosServidor());
                 if (!base) { marcarConflitoSincronizacao(lAtual, [], 'Sem snapshot-base.'); break; }
-                const mescla = mesclarSnapshotsTresVias(migrarDados(base).dados, migrarDados(lAtual).dados, serv);
+                const mescla = prepararReenvioSeguro(
+                    migrarDados(clonarDados(base)).dados,
+                    migrarDados(clonarDados(lAtual)).dados,
+                    serv,
+                    localStorage.getItem('usuarioLogado')
+                );
                 if (mescla.conflitos.length) { marcarConflitoSincronizacao(lAtual, mescla.conflitos, 'Conflito de mesclagem.'); break; }
                 localStorage.setItem(SYNC_BASELINE_KEY, JSON.stringify(serv));
                 mescla.dados._revision = Number(serv._revision) || 0;
@@ -1141,6 +1229,7 @@ async function sincronizarComServidor() {
                 localStorage.removeItem('syncPendente');
                 localStorage.removeItem(CHAVE_DONO_PENDENCIAS);
                 atualizarIndicadorSyncUI('success');
+                atualizarFeedbackIntegrado('Alterações sincronizadas.', 'success', 3000);
             }
             else { localStorage.setItem('syncPendente', 'true'); atualizarIndicadorSyncUI('pending'); }
         }
@@ -1149,6 +1238,8 @@ async function sincronizarComServidor() {
         console.warn('Sync adiada:', e);
         if (!syncPendingData && payloadAtual) syncPendingData = clonarDados(lerJSONLocal(DB_KEY, payloadAtual) || payloadAtual);
         localStorage.setItem('syncPendente', 'true'); atualizarIndicadorSyncUI('error');
+        if (syncFalhasConsecutivas === 1) atualizarFeedbackIntegrado(
+            'Não foi possível sincronizar. Alterações preservadas no navegador; nova tentativa automática.', 'error', 8000);
     } finally {
         syncInFlight = false;
         if (syncPendingData && !localStorage.getItem(SYNC_CONFLICT_KEY)) agendarSincronizacaoSilenciosa();
@@ -1261,12 +1352,26 @@ function migrarDados(dados) {
     });
 
     const mat = dados.usuarios.some(u => u?.permissoes?.paginas && u?.permissoes?.acoes);
-    dados.usuarios.forEach((u, i) => {
-        if (u?.permissoes?.paginas && u?.permissoes?.acoes) return;
+dados.usuarios.forEach((u, i) => {
+    if (!(u?.permissoes?.paginas && u?.permissoes?.acoes)) {
         const p = !mat && i === dados.usuarios.findIndex(us => us?.ativo !== false) ? 'admin' : 'supervisor';
-        u.permissoes = { perfil: p, paginas: { dashboard: true, relatorios: true, lancamentos: true, cartoes: true, categorias: true, configuracoes: p === 'admin' }, acoes: { criarMovimento: p !== 'usuario', excluirMovimento: p !== 'usuario', financiamentos: p !== 'usuario', lotes: p !== 'usuario', usuarios: p === 'admin', logs: p === 'admin' } };
+        u.permissoes = {
+            perfil: p,
+            paginas: { dashboard: true, relatorios: true, lancamentos: true, cartoes: true, categorias: true, configuracoes: p === 'admin' },
+            acoes: { criarMovimento: p !== 'usuario', excluirMovimento: p !== 'usuario', financiamentos: p !== 'usuario', lotes: p !== 'usuario', usuarios: p === 'admin', logs: p === 'admin' }
+        };
         alterou = true;
-    });
+    }
+    // Normaliza campos JSON: evita falso positivo "alterar outro usuário" em cache legado.
+    if (!u.configuracaoSalarial || typeof u.configuracaoSalarial !== 'object' || Array.isArray(u.configuracaoSalarial)) {
+        u.configuracaoSalarial = {};
+        alterou = true;
+    }
+    if (!u.preferenciasNotificacao || typeof u.preferenciasNotificacao !== 'object' || Array.isArray(u.preferenciasNotificacao)) {
+        u.preferenciasNotificacao = {};
+        alterou = true;
+    }
+});
 
     [['exclusao_movimento', 'legacy_exc'], ['edicao_movimento', 'legacy_edit']].forEach(([nc, pref]) => {
         dados[nc].forEach((r, i) => {
@@ -1475,31 +1580,21 @@ async function verificarSenhaAdmin(nomeSecao = 'esta seção') {
     if (senhaInformada === null || !String(senhaInformada).trim()) return false;
 
     try {
-        const resposta = await fetch(API_URL, {
-            method: 'POST',
-            headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-            body: JSON.stringify({
-                action: 'verificarAdmin',
-                token: TOKEN_API,
-                sessao: obterSessaoAPI(),
-                senha: String(senhaInformada).trim()
-            })
+        const resposta = await executarPostAPI('verificarAdmin', {
+            sessao: obterSessaoAPI(),
+            senha: String(senhaInformada).trim()
         });
-        const dadosResposta = await resposta.json();
-        conferirSessaoRespostaAPI(dadosResposta);
-
-        if (dadosResposta.status === 'sucesso' && dadosResposta.autorizado === true) {
-            return true;
-        }
-
-        if (dadosResposta.status === 'sucesso') {
+        if (resposta.status === 'sucesso' && resposta.autorizado === true) return true;
+        if (resposta.status === 'sucesso') {
             await mostrarAlertaModal('Senha administrativa incorreta. Tente novamente.');
         } else {
-            console.warn('Falha na verificação administrativa:', dadosResposta.mensagem);
+            console.warn('Falha na verificação administrativa:', resposta.mensagem);
             await mostrarAlertaModal('Não foi possível validar o acesso agora. Tente novamente.');
         }
         return false;
     } catch (erro) {
+        // executarPostAPI já redirecionou para o login em caso de sessão expirada.
+        if (/sess[aã]o expir/i.test(erro?.message || '')) return false;
         console.warn('Verificação administrativa indisponível:', erro);
         await mostrarAlertaModal('Não foi possível validar a senha. Verifique sua conexão e tente novamente.');
         return false;
@@ -1824,18 +1919,6 @@ function inicializarPrivacidade() {
     atualizarIconePrivacidade();
 }
 
-function injetarBannerPrivacidade() {
-    if (document.getElementById('bannerPrivacidade')) return;
-    const b = document.createElement('button');
-    b.id = 'bannerPrivacidade';
-    b.type = 'button';
-    b.className = 'privacy-banner';
-    b.innerHTML = '🔒 Modo Discreto ativo — <u>revelar valores</u>';
-    b.title = 'Clique para mostrar os valores';
-    b.onclick = alternarPrivacidade;
-    document.body.appendChild(b);
-}
-
 function alternarPrivacidade() {
     const ativa = document.body.classList.toggle('privacidade-ativa');
     localStorage.setItem('privacidadeAtiva', ativa.toString());
@@ -1901,7 +1984,7 @@ function criarIndicadorSincronizacaoUi() {
         const temConflito = localStorage.getItem(SYNC_CONFLICT_KEY) !== null;
 
         if (pendente || temConflito) {
-            const forcar = await mostrarConfirmacaoModal('Atenção! Existem dados locais não enviados ou em conflito. Deseja forçar um novo envio agora (baixando um backup de segurança antes)?');
+            const forcar = await mostrarConfirmacaoModal('Existem alterações locais pendentes ou em conflito. Deseja baixar um backup e tentar conciliá-las com os dados atuais do Sheets? Se houver conflito real, o envio será bloqueado.');
 
             if (forcar) {
                 await forcarEnvioComBackup();
@@ -1931,10 +2014,21 @@ function criarIndicadorSincronizacaoUi() {
 }
 
 async function forcarEnvioComBackup() {
-    mostrarLoading("Criando backup e forçando envio...", true);
+    if (syncInFlight || reenvioEmAndamento) {
+        await mostrarAlertaModal('Já existe uma sincronização em andamento. Aguarde sua conclusão antes de recuperar os dados.');
+        return;
+    }
+    reenvioEmAndamento = true;
+    clearTimeout(syncTimer); syncTimer = null;
+    mostrarLoading('Salvando backup e conciliando informações...', true);
     try {
         const dbLocalStr = localStorage.getItem(DB_KEY);
-        if (!dbLocalStr) throw new Error("Sem dados locais para enviar.");
+        if (!dbLocalStr) throw new Error('Sem dados locais para enviar.');
+        const usuarioId = localStorage.getItem('usuarioLogado');
+        const donoPendencias = localStorage.getItem(CHAVE_DONO_PENDENCIAS);
+        if (!usuarioId || (donoPendencias && String(donoPendencias) !== String(usuarioId))) {
+            throw new Error('Os dados pendentes pertencem a outra sessão. Entre com a conta correspondente antes de reenviar.');
+        }
         const dbLocal = JSON.parse(dbLocalStr);
 
         const blob = new Blob([dbLocalStr], { type: 'text/plain' });
@@ -1944,30 +2038,80 @@ async function forcarEnvioComBackup() {
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
+        setTimeout(() => URL.revokeObjectURL(a.href), 30000);
 
+        const base = lerJSONLocal(SYNC_BASELINE_KEY, null);
+        if (!base || !COLECOES_DADOS.every(nome => Array.isArray(base[nome]))) {
+            throw new Error('Não existe snapshot-base completo para uma recuperação segura. O backup foi gerado; nenhuma alteração foi enviada.');
+        }
         const resGet = await buscarDadosServidor();
+        if (!COLECOES_DADOS.every(nome => Array.isArray(resGet[nome]))) {
+            throw new Error('O servidor retornou coleções incompletas. Reenvio cancelado para proteger os dados.');
+        }
+        if (localStorage.getItem(DB_KEY) !== dbLocalStr) {
+            throw new Error('Os dados locais mudaram durante a recuperação. Tente novamente para incluir os lançamentos recentes.');
+        }
+        const conciliacao = prepararReenvioSeguro(
+            migrarDados(clonarDados(base)).dados,
+            migrarDados(clonarDados(dbLocal)).dados,
+            clonarDados(resGet),
+            usuarioId
+        );
+        if (conciliacao.conflitos.length) {
+            marcarConflitoSincronizacao(dbLocal, conciliacao.conflitos,
+                'Alterações simultâneas precisam ser analisadas antes do reenvio.');
+            throw new Error('Foram encontrados ' + conciliacao.conflitos.length +
+                ' conflitos entre o navegador e o Sheets. Nada foi sobrescrito. O backup local permanece disponível.');
+        }
 
-        dbLocal._revision = resGet._revision;
-        const reqPost = await fetch(API_URL, {
-            method: 'POST',
-            headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-            body: JSON.stringify({ action: 'salvarDados', token: TOKEN_API, sessao: obterSessaoAPI(), dados: dbLocal })
-        });
-        const resPost = await reqPost.json();
+        const dadosConciliados = conciliacao.dados;
+        dadosConciliados._revision = Number(resGet._revision) || 0;
+        const snapshotAntesPost = localStorage.getItem(DB_KEY);
+        const resPost = await executarPostAPI('salvarDados',
+            { sessao: obterSessaoAPI(), dados: dadosConciliados }, 45000);
 
         if (resPost.status === 'sucesso') {
+            const revisao = Number(resPost._revision);
+            if (!Number.isFinite(revisao)) throw new Error('O servidor confirmou sem uma revisão válida; preserve o backup e recarregue os dados antes de reenviar.');
+            dadosConciliados._revision = revisao;
+            clearTimeout(syncTimer); syncTimer = null;
+            syncFalhasConsecutivas = 0;
+            // Pode ter ocorrido um lançamento local durante o POST. Não o
+            // substitua pelo snapshot anterior ao envio já confirmado.
+            if (localStorage.getItem(DB_KEY) !== snapshotAntesPost) {
+                localStorage.setItem(SYNC_BASELINE_KEY, JSON.stringify(dadosConciliados));
+                localStorage.setItem('ultimoSyncMs', String(Date.now()));
+                const novosDados = lerJSONLocal(DB_KEY, null);
+                if (!novosDados) throw new Error('O estado local mudou e não pôde ser lido. Preserve o backup antes de continuar.');
+                novosDados._revision = revisao;
+                memoriaSistema = clonarDados(novosDados);
+                localStorage.setItem(DB_KEY, JSON.stringify(novosDados));
+                syncPendingData = clonarDados(novosDados);
+                localStorage.setItem('syncPendente', 'true');
+                localStorage.removeItem(SYNC_CONFLICT_KEY);
+                atualizarIndicadorSyncUI('pending');
+                await mostrarAlertaModal('O reenvio foi concluído, mas há alterações locais mais recentes. Elas foram preservadas e serão sincronizadas em seguida.');
+                return;
+            }
+            syncPendingData = null;
+            gravarSnapshotLocal(dadosConciliados, true);
             localStorage.removeItem(SYNC_CONFLICT_KEY);
             localStorage.removeItem('syncPendente');
-            localStorage.setItem(SYNC_BASELINE_KEY, JSON.stringify(dbLocal));
-            localStorage.setItem('ultimoSyncMs', Date.now().toString());
-            await mostrarAlertaModal('Sucesso! O backup foi baixado e seus lançamentos foram forçados para o servidor.');
+            localStorage.removeItem(CHAVE_DONO_PENDENCIAS);
+            atualizarIndicadorSyncUI('success');
+            await mostrarAlertaModal('Dados conciliados e sincronizados! Um backup foi baixado antes do envio.');
             location.reload();
+        } else if (resPost.status === 'conflito') {
+            throw new Error('Outra alteração chegou ao Sheets durante a recuperação. Nada foi descartado; tente novamente.');
         } else {
-            await mostrarAlertaModal('Erro do servidor: ' + resPost.mensagem);
+            throw new Error('O servidor recusou o reenvio: ' + (resPost.mensagem || 'erro não identificado'));
         }
     } catch (e) {
+        atualizarIndicadorSyncUI('error');
         await mostrarAlertaModal('Erro na execução: ' + e.message);
     } finally {
+        reenvioEmAndamento = false;
+        if (syncPendingData && !localStorage.getItem(SYNC_CONFLICT_KEY)) agendarSincronizacaoSilenciosa(true);
         esconderLoading();
     }
 }
@@ -2063,7 +2207,7 @@ async function adicionarLancamentoComParcelas(form) {
         const valP = dividirValorExato(vt, q);
         const heP = horaExtraInformada ? dividirValorExato(horaExtraInformada, q) : Array(q).fill(0);
         const dB = criarDataLocal(form.vencimento);
-        let nId = d.lancamentos.reduce((m, l) => Math.max(m, l.id||0), 0) + 1;
+        let nId = proximoIdLancamento(d.lancamentos, q);
         const pId = q > 1 ? gerarId('parc') : null;
 
         for (let i = 1; i <= q; i++) {
@@ -2548,7 +2692,7 @@ async function adicionarFinanciamentoComRecorrencia(nome, recorrente, valorParce
         };
         dados.financiamentos.push(valorContrato);
 
-        let nId = (dados.lancamentos || []).reduce((m, l) => Math.max(m, Number(l.id) || 0), 0) + 1;
+        let nId = proximoIdLancamento(dados.lancamentos, (Number(totalMeses) || 1) + 1);
         const agora = new Date().toISOString();
         const prefixo = tipoContrato === 'emprestimo' ? 'Empréstimo' : 'Financiamento';
 
@@ -2656,7 +2800,7 @@ async function adicionarContaLotePorPeriodo(descricao, valorParcela, dataInicio,
         }
         const observacao = String(opcoes.observacao || '').trim().slice(0, 250) || 'Gerado por lote/período';
         const servicoEssencial = opcoes.servicoEssencial === 'sim' ? 'sim' : 'nao';
-        let nId = (dados.lancamentos || []).reduce((m, l) => Math.max(m, Number(l.id) || 0), 0) + 1;
+        let nId = proximoIdLancamento(dados.lancamentos, quantidade);
         const parcelamentoId = quantidade > 1 ? gerarId('lote') : null;
         const agora = new Date().toISOString(), hoje = dataLocalYYYYMMDD();
 
@@ -2692,144 +2836,8 @@ async function adicionarContaLotePorPeriodo(descricao, valorParcela, dataInicio,
 }
 
 // ============================================================================
-// 7.5 FORMULÁRIO DE LANÇAMENTO
+// 7.5 MEMÓRIA DE ADIANTAMENTO SALARIAL
 // ============================================================================
-function popularSelectsLancamento() {
-    const dados = obterDados();
-    const selectTipo = document.getElementById('tipoLancamento');
-    const selectCartao = document.getElementById('cartaoLancamento');
-    const tipoInicial = selectTipo?.value === 'entrada' ? 'entrada' : 'saida';
-    atualizarFiltroCategoriasPorTipo(tipoInicial);
-    if (selectCartao) {
-        selectCartao.innerHTML = '';
-        const uId = Number(obterUsuarioAtualId(dados));
-        const cartoes = dados.cartoes.filter(c => c.ativo !== false && !c.isBeneficio && Number(c.usuarioId) === uId);
-        if (!cartoes.length) {
-            const opt = document.createElement('option');
-            opt.value = ''; opt.textContent = 'Nenhum cartão ativo cadastrado';
-            selectCartao.appendChild(opt); return;
-        }
-        cartoes.forEach(c => {
-            const opt = document.createElement('option');
-            opt.value = c.id; opt.textContent = c.nome;
-            selectCartao.appendChild(opt);
-        });
-    }
-}
-
-function atualizarFiltroCategoriasPorTipo(tipo, categoriaIdPreferida = null) {
-    const dados = obterDados();
-    const sel = document.getElementById('categoriaLancamento');
-    if (!sel) return false;
-    const t = tipo === 'entrada' ? 'entrada' : 'saida';
-    const atual = categoriaIdPreferida ?? sel.value;
-    const usuario = obterUsuarioAtual(dados);
-    const filtradas = dados.categorias.filter(c => c.tipo === t && categoriaRendaDisponivel(c, usuario))
-        .sort((a, b) => normalizarTexto(a.nome).localeCompare(normalizarTexto(b.nome), 'pt-BR'));
-    sel.innerHTML = '';
-    if (!filtradas.length) {
-        const opt = document.createElement('option');
-        opt.value = ''; opt.textContent = `Nenhuma categoria de ${t === 'entrada' ? 'entrada' : 'saída'}`;
-        sel.appendChild(opt); sel.disabled = true; sel.dataset.tipoAtual = t;
-        return false;
-    }
-    sel.disabled = false;
-    filtradas.forEach(c => { const o = document.createElement('option'); o.value = String(c.id); o.textContent = c.nome; sel.appendChild(o); });
-    const existe = filtradas.some(c => String(c.id) === String(atual));
-    sel.value = existe ? String(atual) : String(filtradas[0].id);
-    sel.dataset.tipoAtual = t;
-    return true;
-}
-
-function tratarMudancaTipoLancamento() {
-    const sel = document.getElementById('tipoLancamento');
-    if (!sel) return;
-    const tipo = sel.value === 'entrada' ? 'entrada' : 'saida';
-    atualizarFiltroCategoriasPorTipo(tipo);
-
-    const blHE = document.getElementById('blocoHoraExtra');
-    const blForma = document.getElementById('blocoFormaPagamentoContainer');
-    const blCartao = document.getElementById('blocoCartao');
-    const blEss = document.getElementById('blocoServicoEssencial');
-    const lblData = document.getElementById('labelDataReferencia');
-    const inHE = document.getElementById('valorHoraExtra');
-    const blEsc = document.getElementById('blocoEscopo');
-    const blSt = document.getElementById('blocoStatusPagamento');
-    const blBem = document.getElementById('blocoBemLancamento');
-    const ehEntrada = tipo === 'entrada';
-
-    if (blHE) blHE.style.display = ehEntrada ? 'block' : 'none';
-    if (blForma) blForma.style.display = ehEntrada ? 'none' : 'block';
-    if (blEss) blEss.style.display = ehEntrada ? 'none' : 'block';
-    if (blEsc) blEsc.style.display = ehEntrada ? 'none' : 'block';
-    if (blSt) blSt.style.display = ehEntrada ? 'none' : 'block';
-    if (blBem) blBem.style.display = ehEntrada ? 'none' : 'block';
-    if (lblData) lblData.textContent = ehEntrada ? 'Data de recebimento' : 'Data de vencimento / referência';
-
-    if (ehEntrada) { if (blCartao) blCartao.style.display = 'none'; if (inHE) inHE.value = inHE.value || '0'; }
-    else tratarMudancaFormaPagamento();
-
-    if (typeof verificarCategoriaSalario === 'function') verificarCategoriaSalario();
-}
-
-function tratarMudancaFormaPagamento() {
-    const sel = document.getElementById('formaPagamento');
-    if (!sel) return;
-    const forma = sel.value;
-    const usaCartao = forma === 'CARTAO';
-    const tipo = document.getElementById('tipoLancamento')?.value || 'saida';
-    const blCartao = document.getElementById('blocoCartao');
-    const blVenc = document.getElementById('blocoVencimento');
-    const blSt = document.getElementById('blocoStatusPagamento');
-    const selSt = document.getElementById('statusPagamento');
-    if (blCartao) blCartao.style.display = usaCartao && tipo !== 'entrada' ? 'block' : 'none';
-    if (blVenc) blVenc.style.display = usaCartao && tipo !== 'entrada' ? 'none' : 'block';
-    if (blSt) blSt.style.display = tipo === 'entrada' || usaCartao ? 'none' : 'block';
-    if (selSt && tipo !== 'entrada') {
-        if (usaCartao || forma === 'BOLETO' || forma === 'FIXO') selSt.value = 'pendente';
-        else if (forma === 'DINHEIRO') selSt.value = 'pago';
-    }
-}
-
-function inicializarControlesLancamento() {
-    const selTipo = document.getElementById('tipoLancamento');
-    const selForma = document.getElementById('formaPagamento');
-    if (selTipo && selTipo.dataset.controleInicializado !== 'true') {
-        selTipo.addEventListener('change', tratarMudancaTipoLancamento);
-        selTipo.dataset.controleInicializado = 'true';
-    }
-    if (selForma && selForma.dataset.controleInicializado !== 'true') {
-        selForma.addEventListener('change', tratarMudancaFormaPagamento);
-        selForma.dataset.controleInicializado = 'true';
-    }
-    tratarMudancaTipoLancamento();
-}
-
-function verificarCategoriaSalario() {
-    const sel = document.getElementById('categoriaLancamento');
-    const selTipo = document.getElementById('tipoLancamento');
-    if (!sel || !selTipo || selTipo.value !== 'entrada') return;
-    const dados = obterDados();
-    const cat = dados.categorias.find(c => String(c.id) === String(sel.value));
-    if (cat && normalizarTexto(cat.nome).includes('adiantamento')) carregarEPreencherAdiantamentoMemorizado();
-}
-
-function carregarEPreencherAdiantamentoMemorizado() {
-    const inputValor = document.getElementById('valorTotalLancamento') || document.getElementById('valorTotal') || document.getElementById('valorLancamento');
-    const inputData = document.getElementById('vencimentoLancamento') || document.getElementById('vencimento');
-    const uId = localStorage.getItem('usuarioLogado');
-    const chave = `adiantamentoSalario_u${uId}`;
-    const salvo = localStorage.getItem(chave);
-    if (salvo) {
-        try { const obj = JSON.parse(salvo); if (inputValor && obj?.valor != null) inputValor.value = obj.valor; }
-        catch { localStorage.removeItem(chave); }
-    }
-    if (inputData && inputData.value) {
-        const p = inputData.value.split('-');
-        if (p.length === 3) { p[2] = '15'; inputData.value = p.join('-'); }
-    }
-}
-
 function salvarMemoriaAdiantamentoSeNecessario(descricao, valor) {
     const sel = document.getElementById('categoriaLancamento');
     const dados = obterDados();
@@ -3174,12 +3182,6 @@ function renderizarCentralLembretes(lns, dados, mes) {
     }).join('') : `<li><span class="muted" style="width:100%; text-align:center;">Nada pendente. 🎉</span></li>`;
 }
 
-async function toggleFaturaDaCentral(cId, m, p) {
-    const fatId = `fat_${cId}_${m}`;
-    await alternarStatusFaturaConsolidada(fatId, p);
-    if (typeof carregarDashboard === 'function') carregarDashboard();
-}
-
 function toggleCentralLembretes() {
     const c = document.getElementById('corpoCentralLembretes'), i = document.getElementById('iconeToggleLembretes');
     if (!c) return;
@@ -3188,69 +3190,10 @@ function toggleCentralLembretes() {
 }
 
 function carregarRelatorios() {
-    if (typeof window.carregarRelatorioMensal === 'function') return window.carregarRelatorioMensal();
-    if (typeof Chart === 'undefined') return;
-    const dados = obterDados();
-    const mes = document.getElementById('filtroMesAnoRelatorio')?.value || '';
-    const servFiltro = document.getElementById('filtroServicoEssencialDashboard')?.value || 'todos';
-    const uFiltro = document.getElementById('filtroUsuarioGraficos')?.value || 'todos';
-    const periodo = dados.lancamentos.filter(l =>
-        (!mes || String(l.vencimento || l.data || l.dataCompra || l.createdAt || '').startsWith(mes)) &&
-        (servFiltro === 'todos' || (l.tipo === 'saida' && l.servicoEssencial === servFiltro) || (l.tipo === 'entrada' && servFiltro !== 'sim'))
-    );
-    const setTxt = (id, v) => { const e = document.getElementById(id); if (e) e.textContent = v; };
-    let eS = 0, sS = 0, eM = 0, sM = 0;
-    periodo.forEach(l => {
-        const v = Number(l.valor);
-        if (Number(l.usuarioId) === 1) l.tipo === 'entrada' ? eS += v : sS += v;
-        else if (Number(l.usuarioId) === 2) l.tipo === 'entrada' ? eM += v : sM += v;
-    });
-    setTxt('relatorioEntradaSamuel', formatarMoeda(eS));
-    setTxt('relatorioSaidaSamuel', formatarMoeda(sS));
-    setTxt('relatorioEntradaMariana', formatarMoeda(eM));
-    setTxt('relatorioSaidaMariana', formatarMoeda(sM));
-    let tE = 0, tS = 0;
-    periodo.forEach(l => {
-        if (uFiltro !== 'todos' && Number(l.usuarioId) !== Number(uFiltro)) return;
-        l.tipo === 'entrada' ? tE += Number(l.valor) : tS += Number(l.valor);
-    });
-    const cES = document.getElementById('graficoRelatorioEntradasSaidas');
-    if (cES) {
-        if (charts.relatorioES) charts.relatorioES.destroy();
-        charts.relatorioES = new Chart(cES, {
-            type: 'pie',
-            data: { labels: ['Entradas', 'Saídas'], datasets: [{ data: (tE > 0 || tS > 0) ? [tE, tS] : [1,1], backgroundColor: (tE > 0 || tS > 0) ? ['#10b981', '#ef4444'] : ['#cbd5e1','#cbd5e1'], borderWidth: 1 }] },
-            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom', labels: { boxWidth: 12 } } } }
-        });
-    }
-    const somCat = {};
-    periodo.filter(l => l.tipo === 'saida' && (uFiltro === 'todos' || Number(l.usuarioId) === Number(uFiltro)))
-        .forEach(l => somCat[l.categoriaId] = (somCat[l.categoriaId] || 0) + Number(l.valor));
-    const labelsCat = [], valoresCat = [], cores = ['#3b82f6','#f59e0b','#10b981','#8b5cf6','#ec4899','#06b6d4','#64748b','#ef4444'];
-    for (const catId in somCat) {
-        const c = dados.categorias.find(x => Number(x.id) === Number(catId));
-        labelsCat.push(c ? c.nome : 'Outros'); valoresCat.push(somCat[catId]);
-    }
-    const cCat = document.getElementById('graficoRelatorioCategorias');
-    if (cCat) {
-        if (charts.relatorioCat) charts.relatorioCat.destroy();
-        charts.relatorioCat = new Chart(cCat, {
-            type: 'pie',
-            data: { labels: valoresCat.length ? labelsCat : ['Sem gastos'], datasets: [{ data: valoresCat.length ? valoresCat : [1], backgroundColor: valoresCat.length ? cores.slice(0, valoresCat.length) : ['#cbd5e1'], borderWidth: 1 }] },
-            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom', labels: { boxWidth: 12 } } } }
-        });
-    }
-    let ess = 0, naoEss = 0;
-    periodo.filter(l => l.tipo === 'saida' && (uFiltro === 'todos' || Number(l.usuarioId) === Number(uFiltro)))
-        .forEach(l => l.servicoEssencial === 'sim' ? ess += Number(l.valor) : naoEss += Number(l.valor));
-    const cSrv = document.getElementById('graficoServicosEssenciais');
-    if (cSrv) {
-        if (charts.servicosEssenciaisRel) charts.servicosEssenciaisRel.destroy();
-        charts.servicosEssenciaisRel = new Chart(cSrv, {
-            type: 'pie',
-            data: { labels: ['Essenciais', 'Não Essenciais'], datasets: [{ data: (ess > 0 || naoEss > 0) ? [ess, naoEss] : [1], backgroundColor: (ess > 0 || naoEss > 0) ? ['#10b981', '#f59e0b'] : ['#cbd5e1'], borderWidth: 1 }] },
-            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom', labels: { boxWidth: 12 } } } }
-        });
+    // Compatibilidade: quando existe a página de relatórios dedicada, delega
+    // para carregarRelatorioMensal. O código legado não é mais necessário.
+    if (typeof window.carregarRelatorioMensal === 'function') {
+        return window.carregarRelatorioMensal();
     }
 }
 
@@ -3319,23 +3262,6 @@ function renderizarCategorias() {
         li.append(desc, acoes);
         lista.appendChild(li);
     });
-}
-
-function abrirDetalhamentoFatura(cartaoId, anoMes) {
-    const dados = obterDados();
-    const cartao = dados.cartoes.find(c => Number(c.id) === Number(cartaoId));
-    const nomeCartao = cartao ? cartao.nome : 'Cartão';
-    const itens = dados.lancamentos.filter(l => Number(l.cartaoId) === Number(cartaoId) && l.vencimento && l.vencimento.startsWith(anoMes));
-    let linhas = '';
-    if (!itens.length) linhas = `<tr><td colspan="4" style="text-align:center;">Nenhuma compra encontrada.</td></tr>`;
-    else itens.forEach(it => {
-        const parc = Number(it.totalParcelas) > 1 ? `${escaparHTML(it.parcelaAtual)}/${escaparHTML(it.totalParcelas)}` : 'À vista';
-        linhas += `<tr><td>${escaparHTML(it.descricao || '-')}</td><td style="text-align:center;">${parc}</td><td style="text-align:right;">${escaparHTML(formatarMoeda(it.valor))}</td><td style="text-align:center;">${escaparHTML(formatarDataBR(it.vencimento))}</td></tr>`;
-    });
-    const overlay = document.createElement('div');
-    overlay.className = 'modal-overlay';
-    overlay.innerHTML = `<div class="modal-box" style="max-width:800px;width:95%;"><h3>Detalhamento da Fatura: ${escaparHTML(nomeCartao)}</h3><p style="margin-bottom:14px;font-size:.9rem;">Competência: ${escaparHTML(anoMes)}</p><div class="tabela-container" style="max-height:400px;overflow-y:auto;margin-bottom:20px;"><table class="tabela" style="width:100%;"><thead><tr><th>Descrição</th><th style="text-align:center;width:100px;">Parcela</th><th style="text-align:right;width:120px;">Valor</th><th style="text-align:center;width:140px;">Vencimento</th></tr></thead><tbody>${linhas}</tbody></table></div><button onclick="this.closest('.modal-overlay').remove()" style="width:100%;background-color:var(--primary);">Fechar</button></div>`;
-    document.body.appendChild(overlay);
 }
 
 function abrirDetalhamentoParcelamento(lancamentoId, paginaAtual = 1) {
@@ -3495,22 +3421,6 @@ async function limparNotificacoes() {
     if (ov) fecharModal(ov);
     renderizarSinoNotificacoes();
     await mostrarAlertaModal("Notificações excluídas.");
-}
-
-function criarNotificacao(usuarioDestinoId, titulo, mensagem, tipo = 'info') {
-    const d = obterDados();
-    if (!Array.isArray(d.notificacoes)) d.notificacoes = [];
-    d.notificacoes.push({
-        id: gerarId('notif'),
-        usuarioDestinoId: String(usuarioDestinoId),
-        remetenteId: Number(obterUsuarioAtualId()),
-        tipo, titulo, mensagem,
-        lida: false,
-        statusAprovacao: '',
-        createdAt: new Date().toISOString()
-    });
-    salvarDados(d);
-    renderizarSinoNotificacoes();
 }
 
 // Um aviso por conta/vencimento: a chave estável evita duplicações ao navegar.

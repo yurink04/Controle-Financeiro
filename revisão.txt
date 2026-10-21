@@ -1,0 +1,11 @@
+Estou com erro na sincronização de dados e preciso validar o que está ocorrendo. No site, retorna a seguinte mensagem: 
+
+5
+script.js:1238
+ Sync adiada: Error: Error: Alterar outro usuário exige autorização administrativa.
+    at sincronizarComServidor (script.js:1219:50)
+sincronizarComServidor	@	script.js:1238
+
+Verifica se o problema não é algo no style.css ou se né no perfil... Vou te mandar todas as minhas páginas para você validar se o problema está em algum parâmetro delas. Valida os parâmetros, as chamadas, a forma que as informações são inseridas, puxadas e lançadas no servidor.
+
+Validar páginas html e css - erro de sincronização. Mantenha o arquivo bem estrutado, com lógica funcional e sem sobreposição ou redundâncias no código. Eu mandei também os arquivos 'estCode.gs' e o 'estscrip.js' que são os arquivos de backup. Ou seja, na versão que estava nesses arquivos, estava funcionando e sincronizando de forma correta, caso você queira comparar como estava funcionando anteriormente o que mudou para parar de funcionar. Valida tudo o que foi implementado, se a sua implementação faz sentido de acordo com o que estou mandando e se o que eu implementei também faz sentido.

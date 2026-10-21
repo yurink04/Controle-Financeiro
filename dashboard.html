@@ -347,7 +347,7 @@
         }).join('');
     }
 
-    document.addEventListener('DOMContentLoaded', async () => {
+        document.addEventListener('DOMContentLoaded', async () => {
         injetarHeader();
 
         const dd = document.querySelector('.dropdown-acao');
@@ -358,11 +358,6 @@
             });
             document.addEventListener('click', () => dd.classList.remove('aberto'));
         }
-
-        if (localStorage.getItem('usuarioLogado') && localStorage.getItem(DB_KEY)) {
-            try { carregarDashboard(); } catch (e) { console.warn(e); }
-        }
-
         if (await verificarAutenticacao()) carregarDashboard();
     });
     </script>

@@ -18,7 +18,6 @@
             </div>
         </div>
 
-        <!-- ══════════ WIZARD DE NOVO LANÇAMENTO ══════════ -->
         <section class="form-card" id="cardNovoLancamento">
             <div class="section-title">
                 <div><h2>Novo lançamento</h2><p>Guiado em etapas — só o que importa aparece.</p></div>
@@ -44,7 +43,6 @@
                 </div>
             </div>
 
-            <!-- ETAPA 1: TIPO -->
             <div class="wizard-step-content active" data-step="1">
                 <p class="muted small" style="margin-bottom:14px;">O que você quer lançar?</p>
                 <div class="tipo-cards">
@@ -76,7 +74,6 @@
                 </div>
             </div>
 
-            <!-- ETAPA 2: ESSENCIAIS -->
             <div class="wizard-step-content" data-step="2">
                 <div class="form-grid-2">
                     <div class="form-group">
@@ -100,7 +97,6 @@
                     </div>
                 </div>
 
-                <!-- Lote: usa categoria, descrição e valor do próprio assistente. -->
                 <div id="blocoPeriodoLote" class="lote-wizard-section" hidden>
                     <div class="lote-section-heading">
                         <strong>Como essas contas serão lançadas?</strong>
@@ -136,7 +132,6 @@
 
                 <div class="valor-preview" id="valorPreview" style="display:none;"></div>
 
-                <!-- Cartão -->
                 <div id="blocoCartao" style="display:none; margin-top:16px; padding-top:16px; border-top:1px solid var(--border);">
                     <div class="form-grid-3">
                         <div class="form-group"><label for="cartaoLancamento">Cartão <span style="color:var(--danger);">*</span></label><select id="cartaoLancamento"></select></div>
@@ -145,7 +140,6 @@
                     </div>
                 </div>
 
-                <!-- Fixo -->
                 <div id="blocoQtdParcelasFixo" style="display:none; margin-top:16px; padding-top:16px; border-top:1px solid var(--border);">
                     <div class="form-group">
                         <label for="qtdParcelasFixo">Repetir por quantos meses?</label>
@@ -180,7 +174,6 @@
                     </div>
                     <small class="muted" id="avisoBrutoLancamento">O valor principal do lançamento é o líquido recebido. O bruto já inclui as horas extras.</small>
                 </div>
-                <!-- Hora extra (parte do pagamento da folha, não somar novamente) -->
                 <div id="blocoHoraExtra" class="form-group" style="display:none; margin-top:16px;">
                     <label for="valorHoraExtra">Hora extra líquida inclusa no recebimento (R$, opcional)</label>
                     <input type="number" step="0.01" min="0" id="valorHoraExtra" placeholder="0,00" value="0">
@@ -188,7 +181,6 @@
                 </div>
             </div>
 
-            <!-- ETAPA 3: DETALHES -->
             <div class="wizard-step-content" data-step="3">
                 <p class="muted small" style="margin-bottom:14px;">Estes campos são opcionais — pule se não precisar.</p>
                 <div class="form-grid-2">
@@ -221,7 +213,6 @@
                 </div>
             </div>
 
-            <!-- ETAPA 4: REVISÃO -->
             <div class="wizard-step-content" data-step="4">
                 <div class="resumo-final" id="resumoFinal"></div>
             </div>
@@ -234,14 +225,10 @@
                 <button type="button" class="btn-salvar" id="btnSalvarWizard" onclick="salvarLancamentoWizard(event)" style="display:none;">✓ Salvar lançamento</button>
             </div>
         </section>
-
     </main>
 
     <script src="script.js"></script>
     <script>
-        // ═══════════════════════════════════════════════════════════════════
-        // ESTADO DO WIZARD
-        // ═══════════════════════════════════════════════════════════════════
         const wizardState = { step: 1, intent: null, saving: false, avancoPendente: null };
 
         function mensagemWizard(texto, estado = 'error', campo = null) {
@@ -289,7 +276,6 @@
             if (el2) el2.value = hojeStr;
             tratarMudancaFormaLote();
 
-            // Suporta deep-link: lancamentos.html?tipo=entrada&forma=CARTAO&cartaoId=5
             const params = new URLSearchParams(window.location.search);
             const qsTipo = params.get('tipo');
             const qsForma = params.get('forma');
@@ -310,9 +296,6 @@
             }
         });
 
-        // ═══════════════════════════════════════════════════════════════════
-        // NAVEGAÇÃO DO WIZARD
-        // ═══════════════════════════════════════════════════════════════════
         function atualizarWizard() {
             document.querySelectorAll('.wizard-step-content').forEach(c => {
                 c.classList.toggle('active', Number(c.dataset.step) === wizardState.step);
@@ -409,9 +392,6 @@
             return true;
         }
 
-        // ═══════════════════════════════════════════════════════════════════
-        // ESCOLHA DE TIPO E CONFIGURAÇÃO DE CAMPOS
-        // ═══════════════════════════════════════════════════════════════════
         function escolherIntent(intent) {
             if (wizardState.saving) return;
             clearTimeout(wizardState.avancoPendente);
@@ -466,6 +446,19 @@
             const sel = document.getElementById('categoriaLancamento');
             const dados = obterDados();
             const cat = dados.categorias.find(c => String(c.id) === String(sel.value));
+
+            // Reaproveita o valor do último adiantamento digitado (mesma conta).
+            // Mantém o comportamento que existia antes da consolidação do wizard.
+            if (cat && /adiantamento/i.test(normalizarTexto(cat.nome))) {
+                const campoValor = document.getElementById('valorTotalLancamento');
+                if (campoValor && !campoValor.value) {
+                    try {
+                        const salvo = JSON.parse(localStorage.getItem('adiantamentoSalario_u' + obterUsuarioAtualId()) || '{}');
+                        if (salvo && salvo.valor) campoValor.value = salvo.valor;
+                    } catch (_) {}
+                }
+            }
+
             const classe = classificarEntradaRendimento({
                 tipo: 'entrada', categoriaId: sel.value,
                 descricao: document.getElementById('descricaoLancamento').value.trim(),
@@ -521,9 +514,6 @@
             }
         }
 
-        // ═══════════════════════════════════════════════════════════════════
-        // RESUMO FINAL
-        // ═══════════════════════════════════════════════════════════════════
         function renderizarResumoFinal() {
             const intent = wizardState.intent;
             const dados = obterDados();
@@ -637,9 +627,6 @@
             `;
         }
 
-        // ═══════════════════════════════════════════════════════════════════
-        // SALVAR
-        // ═══════════════════════════════════════════════════════════════════
         function reiniciarWizard() {
             clearTimeout(wizardState.avancoPendente);
             document.querySelectorAll('.tipo-card').forEach(c => c.classList.remove('selected'));
@@ -764,9 +751,6 @@
             reiniciarWizard();
         }
 
-        // ═══════════════════════════════════════════════════════════════════
-        // SELECTS COMPARTILHADOS ENTRE O LANÇAMENTO E O LOTE
-        // ═══════════════════════════════════════════════════════════════════
         function popularSelectsBens() {
             const dados = obterDados();
             const usuario = obterUsuarioAtual();

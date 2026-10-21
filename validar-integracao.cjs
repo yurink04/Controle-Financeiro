@@ -10,7 +10,6 @@ function fonte(nome) { return fs.readFileSync(path.join(pasta, nome), 'utf8'); }
 
 ['script.js', 'Code.gs'].forEach(nome => new vm.Script(fonte(nome), { filename: nome }));
 const paginas = fs.readdirSync(pasta).filter(nome => nome.endsWith('.html')).sort();
-// O arquivo opcional de auditoria não foi enviado nesta revisão.
 assert.ok(paginas.length >= 16 && paginas.includes('rendimentos.html'), 'Páginas essenciais do projeto');
 for (const nome of paginas) {
   const html = fonte(nome);
@@ -24,7 +23,7 @@ for (const nome of paginas) {
   assert.equal(new Set(ids).size, ids.length, `IDs de elementos repetidos em ${nome}`);
   for (const href of html.matchAll(/\bhref\s*=\s*["']([^"'?#]+\.html)(?:[?#][^"']*)?["']/gi)) {
     const destino = href[1].split('/').pop();
-    assert.ok(paginas.includes(destino) || destino === 'admin-logs.html', `Página não encontrada em ${nome}: ${href[1]}`);
+    assert.ok(paginas.includes(destino), `Página não encontrada em ${nome}: ${href[1]}`);
   }
 }
 assert.match(fonte('style.css'), /account-hero/);
@@ -88,7 +87,6 @@ assert.match(fonte('lancamentos.html'), /id="naturezaRendaLancamento"/, 'Lançam
 assert.match(fonte('editar-lancamento.html'), /id="editNaturezaRenda"/, 'Edição deve preservar a classificação');
 assert.match(fonte('rendimentos.html'), /id="historicoSalarioMensal"/, 'Histórico consolidado deve estar presente');
 
-// Funções financeiras puras, isoladas da interface e sem dados reais.
 const fonteFrontend = fonte('script.js');
 const inicioCalculo = fonteFrontend.indexOf('const REFERENCIA_CALCULO_SALARIAL');
 const fimCalculo = fonteFrontend.indexOf('// 3. UTILITÁRIOS DE DATA E PARCELAMENTO');
@@ -287,7 +285,6 @@ sucesso(post('salvarDados', { sessao: sessaoUsuario, dados: troca }), 'Troca de 
 assert.equal(post('verificarCredenciaisLogin', { usuario: 'usuaria', senhaHash: sha('Temporaria@1') }).status, 'erro');
 sucesso(post('verificarCredenciaisLogin', { usuario: 'usuaria', senhaHash: sha('SenhaNova@4') }), 'Nova senha');
 
-// Aprovação de vínculo: só a destinatária pode confirmar a solicitação.
 const convite = get('obterDados', { sessao: sessaoAdmin });
 convite.notificacoes.push({ id: 'solicitacao_1', usuarioDestinoId: 2, remetenteId: 1, tipo: 'solicitacao_parceiro', titulo: 'Convite',
   mensagem: 'Aprovar?', lida: false, statusAprovacao: 'pendente', createdAt: new Date().toISOString() });
@@ -337,4 +334,4 @@ assert.equal(folhaPersistida.competenciaRenda, '2026-09', 'Competência salarial
 for (let i = 0; i < 6; i++) post('verificarCredenciaisLogin', { usuario: 'usuaria', senhaHash: sha('Incorreta') });
 assert.match(post('verificarCredenciaisLogin', { usuario: 'usuaria', senhaHash: sha('OutraProvisoria@8') }).mensagem, /Muitas tentativas/);
 
-console.log(`OK: ${paginas.length} páginas fornecidas${paginas.includes('admin-logs.html') ? '' : ' (admin-logs.html opcional ausente)'}, regimes CLT/PJ/aposentadoria, descontos, competência, horas extras, histórico, gravação, sessões e permissões testados.`);
+console.log(`OK: ${paginas.length} páginas fornecidas, regimes CLT/PJ/aposentadoria, descontos, competência, horas extras, histórico, gravação, sessões e permissões testados.`);

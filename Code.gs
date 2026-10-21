@@ -109,7 +109,91 @@ function tokenValido(token) {
 
 // O token de integração identifica o aplicativo, NÃO um usuário autenticado.
 // Sessões de curta duração impedem o uso da API apenas com a chave pública do JS.
-var DURACAO_SESSAO_SEGUNDOS = 21600;
+// [FIX] Reduzido de 21600 (6h) para 3600 (1h): diminui a janela de uso de um
+// token/sessão vazado. Usuário reloga em cada uso.
+var DURACAO_SESSAO_SEGUNDOS = 3600;
+var VERSAO_ACESSO = '2026-10-20-r2';
+var VERSAO_SINCRONIZACAO = '2026-10-20-pin-protegido';
+
+// Compatibilidade com bancos antigos que armazenavam o PIN sem hash.
+// A API continua recebendo SOMENTE SHA-256; jamais recebe senha em texto claro.
+function hashSenhaSHA256(texto) {
+  var bytes = Utilities.computeDigest(
+    Utilities.DigestAlgorithm.SHA_256, String(texto), Utilities.Charset.UTF_8
+  );
+  return bytes.map(function(byte) {
+    return ('0' + ((byte + 256) % 256).toString(16)).slice(-2);
+  }).join('');
+}
+
+// Atualiza uma única célula do usuário. Não regrava a planilha inteira.
+// O chamador é responsável por adquirir o ScriptLock antes desta operação.
+function atualizarHashUsuarioNaPlanilha(usuarioId, hashNovo, credencialEsperada) {
+  if (!hashValido(hashNovo)) throw new Error('Hash de senha inválido.');
+  var aba = ss.getSheetByName('usuarios');
+  if (!aba || aba.getLastRow() < 2) throw new Error('Aba de usuários ausente ou vazia.');
+  var cabecalhos = aba.getRange(1, 1, 1, aba.getLastColumn()).getValues()[0].map(function(c) {
+    return String(c || '').trim();
+  });
+  var indiceId = cabecalhos.indexOf('id');
+  var indicePin = cabecalhos.indexOf('pin');
+  var indiceSenha = cabecalhos.indexOf('senha');
+  if (indiceId < 0 || (indicePin < 0 && indiceSenha < 0)) {
+    throw new Error('Estrutura da aba usuarios incompatível: colunas id/pin ausentes.');
+  }
+  var linhas = aba.getRange(2, 1, aba.getLastRow() - 1, aba.getLastColumn()).getValues();
+  for (var i = 0; i < linhas.length; i++) {
+    if (String(linhas[i][indiceId]) !== String(usuarioId)) continue;
+    var anterior = String((indicePin >= 0 && linhas[i][indicePin]) ||
+      (indiceSenha >= 0 && linhas[i][indiceSenha]) || '').trim();
+    if (credencialEsperada != null && anterior !== String(credencialEsperada)) {
+      return false; // A credencial mudou entre a leitura e a tentativa de atualizar.
+    }
+    if (indicePin < 0) {
+      indicePin = aba.getLastColumn();
+      aba.getRange(1, indicePin + 1).setValue('pin');
+    }
+    aba.getRange(i + 2, indicePin + 1).setValue(hashNovo);
+    // Remove o segredo legado somente depois de gravar o hash com sucesso.
+    if (indiceSenha >= 0) aba.getRange(i + 2, indiceSenha + 1).clearContent();
+    return true;
+  }
+  return false;
+}
+
+// Recuperação manual: executar SOMENTE no editor do Apps Script, por quem
+// administra a planilha. Não existe ação HTTP que chame esta função.
+// Antes de executar, configurar três Script Properties temporárias:
+// RECUPERACAO_LOGIN, RECUPERACAO_NOVA_SENHA, RECUPERACAO_CONFIRMAR=SIM.
+function recuperarAcessoPeloEditor() {
+  var props = PropertiesService.getScriptProperties();
+  var login = String(props.getProperty('RECUPERACAO_LOGIN') || '').trim();
+  var novaSenha = String(props.getProperty('RECUPERACAO_NOVA_SENHA') || '');
+  var lockRecuperacao = LockService.getScriptLock();
+  var bloqueioAdquirido = false;
+  try {
+    if (props.getProperty('RECUPERACAO_CONFIRMAR') !== 'SIM' || !login ||
+        !/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^a-zA-Z0-9]).{8,}$/.test(novaSenha)) {
+      throw new Error('Preencha as propriedades de recuperação e use uma senha forte de ao menos 8 caracteres.');
+    }
+    lockRecuperacao.waitLock(15000);
+    bloqueioAdquirido = true;
+    var conta = lerAba('usuarios').find(function(u) {
+      return String(u.usuario || '').trim().toLowerCase() === login.toLowerCase();
+    });
+    if (!conta) throw new Error('Login informado não encontrado na aba usuarios.');
+    if (!atualizarHashUsuarioNaPlanilha(conta.id, hashSenhaSHA256(novaSenha), null)) {
+      throw new Error('Não foi possível localizar a linha da conta para recuperação.');
+    }
+    CacheService.getScriptCache().remove('tentativas_' + String(conta.id));
+    return 'Senha redefinida com sucesso para o login informado. Publique a versão atualizada e entre novamente.';
+  } finally {
+    props.deleteProperty('RECUPERACAO_LOGIN');
+    props.deleteProperty('RECUPERACAO_NOVA_SENHA');
+    props.deleteProperty('RECUPERACAO_CONFIRMAR');
+    if (bloqueioAdquirido) lockRecuperacao.releaseLock();
+  }
+}
 
 function criarSessaoUsuario(usuario) {
   var chave = Utilities.getUuid().replace(/-/g, '') + Utilities.getUuid().replace(/-/g, '');
@@ -165,22 +249,41 @@ function conferirAlteracoesUsuarios(original, proposta, usuario, sessao, notific
   var pendentes = notificacoesAntigas.filter(function(n) {
     return n.tipo === 'solicitacao_parceiro' && n.statusAprovacao === 'pendente' && String(n.usuarioDestinoId) === identidade;
   });
-  proposta.forEach(function(u) {
-    var id = String(u.id);
-    if (!id || novosIds[id]) throw new Error('Identificador de usuário inválido ou duplicado.');
-    novosIds[id] = true;
-    var velho = origPorId[id];
-    if (!velho) {
-      if (!elevado) throw new Error('Somente um administrador autorizado pode cadastrar usuários.');
-      if (!hashValido(u.pin)) throw new Error('Uma senha inicial válida é obrigatória.');
-      return;
-    }
-    var pinNovo = String(u.pin || '').trim();
-    var pinAnterior = String(velho.pin || velho.senha || '').trim();
-    if (pinNovo && pinNovo !== pinAnterior && !hashValido(pinNovo)) throw new Error('Formato de senha inválido.');
-    if (!pinNovo) u.pin = pinAnterior; // O hash nunca é enviado na leitura da API.
+ // Code.gs — dentro de conferirAlteracoesUsuarios, no início do forEach de proposta
+proposta.forEach(function(u) {
+  var id = String(u.id);
+  if (!id || novosIds[id]) throw new Error('Identificador de usuário inválido ou duplicado.');
+  novosIds[id] = true;
+  var velho = origPorId[id];
+  if (!velho) {
+    if (!elevado) throw new Error('Somente um administrador autorizado pode cadastrar usuários.');
+    if (!hashValido(u.pin)) throw new Error('Uma senha inicial válida é obrigatória.');
+    return;
+  }
+  var pinNovo = String(u.pin || '').trim();
+  var pinAnterior = String(velho.pin || velho.senha || '').trim();
+  if (pinNovo && pinNovo !== pinAnterior && !hashValido(pinNovo)) throw new Error('Formato de senha inválido.');
+  if (!pinNovo) u.pin = pinAnterior; // O hash nunca é enviado na leitura da API.
 
-    if (elevado) return;
+  // ── MIGRAÇÃO: normaliza JSONs vazios antes de comparar ──
+  if (!u.configuracaoSalarial || typeof u.configuracaoSalarial !== 'object' || Array.isArray(u.configuracaoSalarial)) {
+    u.configuracaoSalarial = {};
+  }
+  if (!u.preferenciasNotificacao || typeof u.preferenciasNotificacao !== 'object' || Array.isArray(u.preferenciasNotificacao)) {
+    u.preferenciasNotificacao = {};
+  }
+  // ── FIM ──
+
+  if (elevado) return;
+  // ... resto do código sem alterações
+});
+    // O navegador completa automaticamente permissões antigas (sem 'paginas'/'acoes').
+    // Isso não é uma tentativa de alteração: mantém o valor gravado e segue em frente.
+    // Qualquer outra mudança em permissões continua sendo rejeitada abaixo.
+    if (!(velho.permissoes && velho.permissoes.paginas && velho.permissoes.acoes) &&
+        registroAlterado(velho, u, ['permissoes'])) {
+      u.permissoes = velho.permissoes;
+    }
     if (id === identidade) {
       if (u.configuracaoSalarial != null) {
         var conf = u.configuracaoSalarial;
@@ -304,7 +407,13 @@ function conferirAlteracoesFinanceiras(antes, depois, usuario) {
   if (usuario.permissoes && usuario.permissoes.perfil === 'admin') return;
   var acoes = usuario.permissoes && usuario.permissoes.acoes || {};
   var donosPermitidos = [String(usuario.id)];
-  if (usuario.parceiroId != null && usuario.parceiroId !== '') donosPermitidos.push(String(usuario.parceiroId));
+  // O vínculo só vale se for recíproco no registro gravado do parceiro (aprovado pelas duas contas).
+  if (usuario.parceiroId != null && usuario.parceiroId !== '') {
+    var registroParceiro = (antes.usuarios || []).filter(function(u) { return String(u.id) === String(usuario.parceiroId); })[0];
+    if (registroParceiro && String(registroParceiro.parceiroId || '') === String(usuario.id)) {
+      donosPermitidos.push(String(usuario.parceiroId));
+    }
+  }
   var colecoes = ['lancamentos', 'cartoes', 'financiamentos', 'bens', 'fatura_cartao', 'categorias'];
   colecoes.forEach(function(nome) {
     var antigos = {};
@@ -320,7 +429,25 @@ function conferirAlteracoesFinanceiras(antes, depois, usuario) {
       if (!mudou) return;
       if (!acoes.criarMovimento) throw new Error('Seu perfil não permite alterar informações financeiras.');
       if (!novo && !acoes.excluirMovimento) throw new Error('Seu perfil não permite excluir registros financeiros.');
-      if (nome === 'categorias') return; // Catálogo compartilhado do sistema.
+      // [FIX] Categorias continuam compartilhadas, mas o backend agora valida
+      // que só o criador pode editar/excluir. Antes isso só era checado no frontend.
+      if (nome === 'categorias') {
+        if (velho && String(velho.criadopor) !== String(usuario.id)) {
+          throw new Error('Só o criador pode editar esta categoria.');
+        }
+        return;
+      }
+      // Lançamentos: novos registros nascem sempre no usuário autenticado e o dono nunca muda.
+      if (nome === 'lancamentos') {
+        var donoAntes = velho && velho.usuarioId != null && velho.usuarioId !== '' ? String(velho.usuarioId) : '';
+        var donoDepois = novo && novo.usuarioId != null && novo.usuarioId !== '' ? String(novo.usuarioId) : '';
+        if (novo && !velho && donoDepois !== String(usuario.id)) {
+          throw new Error('Novos lançamentos só podem ser criados em nome do usuário autenticado.');
+        }
+        if (velho && novo && donoAntes && donoDepois !== donoAntes) {
+          throw new Error('O dono de um lançamento não pode ser alterado.');
+        }
+      }
       var dono = novo && novo.usuarioId != null && novo.usuarioId !== '' ? novo.usuarioId : velho && velho.usuarioId;
       if (nome === 'fatura_cartao') {
         var cartaoId = novo && novo.cartaoId || velho && velho.cartaoId;
@@ -330,6 +457,15 @@ function conferirAlteracoesFinanceiras(antes, depois, usuario) {
       }
       if (dono == null || donosPermitidos.indexOf(String(dono)) < 0) {
         throw new Error('Não é permitido alterar lançamentos de outra conta sem vínculo de parceiro.');
+      }
+      // [FIX] Parceiro só altera lançamentos de escopo 'casal'. Sem esta
+      // verificação, um cliente malicioso poderia editar lançamentos
+      // individuais do parceiro, mesmo que o frontend os escondesse.
+      if (nome === 'lancamentos' && String(dono) !== String(usuario.id)) {
+        var escopoEfetivo = (novo && novo.escopo) || (velho && velho.escopo) || 'casal';
+        if (escopoEfetivo !== 'casal') {
+          throw new Error('Lançamentos individuais do parceiro só podem ser editados pelo dono.');
+        }
       }
       if (nome === 'lancamentos' && novo && (!velho ||
           registroAlterado(velho, novo, ['categoriaId', 'naturezaRenda', 'tipo']))) {
@@ -422,7 +558,9 @@ function doGet(e) {
     }
 
     if (action === 'statusCadastro') {
-      return respostaJson({ status: 'sucesso', primeiroCadastroDisponivel: lerAba('usuarios').length === 0 });
+      return respostaJson({ status: 'sucesso', versaoAcesso: VERSAO_ACESSO,
+        versaoSincronizacao: VERSAO_SINCRONIZACAO,
+        primeiroCadastroDisponivel: lerAba('usuarios').length === 0 });
     }
 
     if (action === 'obterDados') {
@@ -449,6 +587,8 @@ function doGet(e) {
       return respostaJson({
         status: 'sucesso',
         mensagem: 'API online',
+        versaoAcesso: VERSAO_ACESSO,
+        versaoSincronizacao: VERSAO_SINCRONIZACAO,
         dataHora: new Date().toISOString()
       });
     }
@@ -564,11 +704,11 @@ function doPost(e) {
       }
 
       if (!usuarioEncontrado) {
-        return respostaJson({ status: 'erro', mensagem: 'Usuário não encontrado.' });
+        return respostaJson({ status: 'erro', codigo: 'USUARIO_NAO_ENCONTRADO', mensagem: 'Usuário não encontrado.' });
       }
 
       if (usuarioEncontrado.ativo === false || usuarioEncontrado.ativo === 'FALSE') {
-        return respostaJson({ status: 'erro', mensagem: 'Este usuário está desativado.' });
+        return respostaJson({ status: 'erro', codigo: 'USUARIO_DESATIVADO', mensagem: 'Este usuário está desativado.' });
       }
 
       // [FIX #2] Retorno mínimo — apenas primeiro nome, sem PII.
@@ -586,7 +726,8 @@ function doPost(e) {
       var cacheLogin = CacheService.getScriptCache();
       var chaveTentativas = 'tentativas_' + String(usuarioEncontrado.id);
       var tentativas = Number(cacheLogin.get(chaveTentativas) || 0);
-      if (tentativas >= 6) return respostaJson({ status: 'erro', mensagem: 'Muitas tentativas. Aguarde 15 minutos.' });
+      if (tentativas >= 6) return respostaJson({ status: 'erro', codigo: 'BLOQUEIO_TEMPORARIO',
+        mensagem: 'Muitas tentativas. Aguarde 15 minutos.' });
 
       var senhaCadastrada = String(usuarioEncontrado.pin || usuarioEncontrado.senha || '').trim();
 
@@ -594,19 +735,38 @@ function doPost(e) {
       if (senhaCadastrada === '') {
         return respostaJson({
           status: 'erro',
+          codigo: 'SENHA_NAO_CONFIGURADA',
           mensagem: 'Este usuário ainda não possui palavra-passe cadastrada. Peça ao administrador para redefinir o acesso.'
         });
       }
 
-      if (senhaCadastrada !== senhaHash) {
+      var senhaLegadaConfere = !hashValido(senhaCadastrada) && hashValido(senhaHash) &&
+        hashSenhaSHA256(senhaCadastrada) === senhaHash.toLowerCase();
+      if (senhaCadastrada !== senhaHash && !senhaLegadaConfere) {
         cacheLogin.put(chaveTentativas, String(tentativas + 1), 900);
-        return respostaJson({ status: 'erro', mensagem: 'Palavra-passe incorreta.' });
+        return respostaJson({ status: 'erro', codigo: 'SENHA_INCORRETA', mensagem: 'Palavra-passe incorreta.' });
+      }
+
+      if (senhaLegadaConfere) {
+        // Transição segura de contas antigas: grava apenas a célula pin.
+        // Não modifica nomes, lançamentos ou demais colunas do Sheets.
+        lock.waitLock(15000);
+        try {
+          if (!atualizarHashUsuarioNaPlanilha(usuarioEncontrado.id, senhaHash, senhaCadastrada)) {
+            return respostaJson({ status: 'erro', codigo: 'CREDENCIAL_MODIFICADA',
+              mensagem: 'A senha foi alterada durante a autenticação. Tente novamente.' });
+          }
+          usuarioEncontrado.pin = senhaHash;
+        } finally {
+          lock.releaseLock();
+        }
       }
 
       cacheLogin.remove(chaveTentativas);
 
       return respostaJson({
         status: 'sucesso',
+        versaoAcesso: VERSAO_ACESSO,
         primeiroAcesso: false,
         sessao: criarSessaoUsuario(usuarioEncontrado),
         trocaSenhaObrigatoria: usuarioEncontrado.trocaSenhaObrigatoria === true,
@@ -692,13 +852,16 @@ function doPost(e) {
       });
 
       try {
-        atualizarTabelas(data.dados);
+        // Só grava coleções alteradas. Uma alteração financeira não deve
+        // limpar ou reescrever a aba de usuários (e suas credenciais).
+        atualizarTabelas(data.dados, dadosAnteriores);
         SpreadsheetApp.flush();
         definirRevisaoDados(novaRevisao);
       } catch (erroGravacao) {
         var erroRollback = null;
         try {
-          atualizarTabelas(dadosAnteriores);
+          // Reverte somente as coleções afetadas, preservando as demais abas.
+          atualizarTabelas(dadosAnteriores, data.dados);
           SpreadsheetApp.flush();
           definirRevisaoDados(revisaoServidor);
         } catch (erroRestauracao) {
@@ -729,7 +892,7 @@ function doPost(e) {
     }
   } catch (err) {
     try {
-      lock.releaseLock();
+      if (lock.hasLock()) lock.releaseLock();
     } catch (_) {}
 
     return respostaJson({
@@ -909,11 +1072,43 @@ function normalizarValorLido(header, val) {
   return val;
 }
 
-function atualizarTabelas(dadosObj) {
+// Comparação determinística por campos persistidos: objetos JSON podem chegar
+// em ordem diferente sem que seu conteúdo realmente tenha mudado.
+function assinaturaEstavelSheets(valor) {
+  if (valor === null || valor === undefined) return '""';
+  if (valor instanceof Date) return JSON.stringify(valor.toISOString());
+  if (Array.isArray(valor)) return '[' + valor.map(assinaturaEstavelSheets).join(',') + ']';
+  if (typeof valor === 'object') {
+    return '{' + Object.keys(valor).sort().map(function(chave) {
+      return JSON.stringify(chave) + ':' + assinaturaEstavelSheets(valor[chave]);
+    }).join(',') + '}';
+  }
+  return JSON.stringify(valor);
+}
+
+function colecaoAlteradaSheets(antes, depois, headers) {
+  if (!Array.isArray(antes) || !Array.isArray(depois) || antes.length !== depois.length) return true;
+  return depois.some(function(registro, i) {
+    return headers.some(function(campo) {
+      return assinaturaEstavelSheets(registro[campo]) !== assinaturaEstavelSheets(antes[i][campo]);
+    });
+  });
+}
+
+function cabecalhosAlinhadosSheets(nomeAba, headers) {
+  var aba = ss.getSheetByName(nomeAba);
+  if (!aba || aba.getLastColumn() !== headers.length || aba.getLastRow() < 1) return false;
+  var atuais = aba.getRange(1, 1, 1, headers.length).getValues()[0];
+  return headers.every(function(campo, i) { return String(atuais[i] || '').trim() === campo; });
+}
+
+function atualizarTabelas(dadosObj, dadosAnteriores) {
   Object.keys(SCHEMA).forEach(function(nomeAba) {
-    if (dadosObj[nomeAba] !== undefined) {
-      escreverAba(nomeAba, dadosObj[nomeAba], SCHEMA[nomeAba]);
-    }
+    if (dadosObj[nomeAba] === undefined) return;
+    if (dadosAnteriores &&
+        !colecaoAlteradaSheets(dadosAnteriores[nomeAba], dadosObj[nomeAba], SCHEMA[nomeAba]) &&
+        cabecalhosAlinhadosSheets(nomeAba, SCHEMA[nomeAba])) return;
+    escreverAba(nomeAba, dadosObj[nomeAba], SCHEMA[nomeAba]);
   });
 }
 
@@ -923,8 +1118,6 @@ function escreverAba(nomeAba, dadosArray, headers) {
   if (!sheet) {
     sheet = ss.insertSheet(nomeAba);
   }
-
-  sheet.clearContents();
 
   var lista = Array.isArray(dadosArray) ? dadosArray : [];
   var matrizParaGravar = [headers];
@@ -957,9 +1150,115 @@ function escreverAba(nomeAba, dadosArray, headers) {
     }
   }
 
-  sheet
-    .getRange(1, 1, matrizParaGravar.length, headers.length)
-    .setValues(matrizParaGravar);
+  var linhasAnteriores = sheet.getLastRow();
+  var colunasAnteriores = sheet.getLastColumn();
+  // Primeiro escreve a matriz completa; só depois limpa linhas/colunas que
+  // sobraram. A aba nunca fica inteiramente vazia entre as duas operações.
+  sheet.getRange(1, 1, matrizParaGravar.length, headers.length).setValues(matrizParaGravar);
+  if (linhasAnteriores > matrizParaGravar.length) {
+    sheet.getRange(matrizParaGravar.length + 1, 1,
+      linhasAnteriores - matrizParaGravar.length, Math.max(colunasAnteriores, headers.length)).clearContent();
+  }
+  if (colunasAnteriores > headers.length) {
+    sheet.getRange(1, headers.length + 1, matrizParaGravar.length,
+      colunasAnteriores - headers.length).clearContent();
+  }
 
   sheet.setFrozenRows(1);
+}
+
+
+// ============================================================================
+// MANUTENÇÃO MANUAL (executar no editor do Apps Script, nunca pelo app)
+// ============================================================================
+// 1) Rode diagnosticarUsuarios() e leia o resultado em Execuções > Log.
+//    Ela NÃO altera nada.
+// 2) Se o plano estiver correto, rode repararUsuarios().
+
+function planoReparoUsuarios() {
+  var usuarios = lerAba('usuarios');
+  var completa = function(u) { return !!(u.permissoes && u.permissoes.paginas && u.permissoes.acoes); };
+  var existeCompleta = usuarios.some(completa);
+  var primeiroAtivo = -1;
+  usuarios.forEach(function(u, i) { if (primeiroAtivo < 0 && u.ativo !== false) primeiroAtivo = i; });
+  var porId = {};
+  usuarios.forEach(function(u) { porId[String(u.id)] = u; });
+  var plano = { permissoes: [], vinculos: [], avisos: [], usuarios: usuarios };
+
+  usuarios.forEach(function(u, i) {
+    if (!completa(u)) {
+      // Mesma regra que o navegador já aplica na tela (migrarDados), para nada mudar de comportamento.
+      var perfil = (u.permissoes && u.permissoes.perfil === 'admin') ||
+                   (!existeCompleta && i === primeiroAtivo) ? 'admin' : 'supervisor';
+      plano.permissoes.push({
+        id: u.id, usuario: u.usuario, atual: JSON.stringify(u.permissoes || {}), novoPerfil: perfil
+      });
+    }
+    var pid = u.parceiroId == null ? '' : String(u.parceiroId);
+    if (!pid) return;
+    var outro = porId[pid];
+    if (!outro) {
+      plano.vinculos.push({ id: u.id, usuario: u.usuario, acao: 'limpar', motivo: 'parceiroId ' + pid + ' não existe' });
+    } else if (String(outro.parceiroId || '') === '') {
+      plano.vinculos.push({ id: outro.id, usuario: outro.usuario, acao: 'definir', parceiroId: u.id,
+        motivo: 'vínculo de ' + u.usuario + ' não era recíproco' });
+    } else if (String(outro.parceiroId) !== String(u.id)) {
+      plano.avisos.push(u.usuario + ' aponta para ' + outro.usuario + ', mas ' + outro.usuario +
+        ' aponta para o id ' + outro.parceiroId + '. Corrija manualmente (não alterado automaticamente).');
+    }
+  });
+  return plano;
+}
+
+function montarPermissoesPadrao(perfil) {
+  var p = perfil;
+  return {
+    perfil: p,
+    paginas: { dashboard: true, relatorios: true, lancamentos: true, cartoes: true, categorias: true, configuracoes: p === 'admin' },
+    acoes: { criarMovimento: p !== 'usuario', excluirMovimento: p !== 'usuario', financiamentos: p !== 'usuario',
+             lotes: p !== 'usuario', usuarios: p === 'admin', logs: p === 'admin' }
+  };
+}
+
+function diagnosticarUsuarios() {
+  var plano = planoReparoUsuarios();
+  Logger.log('Usuários na planilha: ' + plano.usuarios.length);
+  plano.usuarios.forEach(function(u) {
+    Logger.log('id=' + u.id + ' | ' + u.usuario + ' | ativo=' + u.ativo + ' | parceiroId=' + (u.parceiroId || '-') +
+      ' | permissões completas=' + !!(u.permissoes && u.permissoes.paginas && u.permissoes.acoes));
+  });
+  Logger.log('Permissões a completar: ' + (plano.permissoes.length ? JSON.stringify(plano.permissoes) : 'nenhuma'));
+  Logger.log('Ajustes de vínculo: ' + (plano.vinculos.length ? JSON.stringify(plano.vinculos) : 'nenhum'));
+  plano.avisos.forEach(function(a) { Logger.log('ATENÇÃO: ' + a); });
+  return plano;
+}
+
+function repararUsuarios() {
+  var lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try {
+    var plano = planoReparoUsuarios();
+    if (!plano.permissoes.length && !plano.vinculos.length) {
+      Logger.log('Nada a reparar.');
+      return plano;
+    }
+    var usuarios = plano.usuarios;
+    var porId = {};
+    usuarios.forEach(function(u) { porId[String(u.id)] = u; });
+    plano.permissoes.forEach(function(item) {
+      porId[String(item.id)].permissoes = montarPermissoesPadrao(item.novoPerfil);
+    });
+    plano.vinculos.forEach(function(item) {
+      if (item.acao === 'limpar') porId[String(item.id)].parceiroId = '';
+      else porId[String(item.id)].parceiroId = item.parceiroId;
+    });
+    escreverAba('usuarios', usuarios, SCHEMA.usuarios);
+    SpreadsheetApp.flush();
+    definirRevisaoDados(obterRevisaoDados() + 1);
+    Logger.log('Reparo aplicado: ' + plano.permissoes.length + ' permissão(ões), ' + plano.vinculos.length + ' vínculo(s).');
+    plano.avisos.forEach(function(a) { Logger.log('ATENÇÃO: ' + a); });
+    return plano;
+  } finally {
+    lock.releaseLock();
+  }
 }

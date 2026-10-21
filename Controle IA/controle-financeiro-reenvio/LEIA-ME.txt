@@ -1,0 +1,62 @@
+CONTROLE FINANCEIRO — Correção do reenvio forçado (20/10/2026)
+
+ERRO IDENTIFICADO
+  Erro do servidor: Error: Alterar outro usuário exige autorização administrativa.
+
+O botão de reenvio usava os dados completos do navegador como se fossem uma
+cópia atual do Sheets. Isso incluía informações antigas de outros perfis e
+provocava a rejeição da API. Também criava risco de sobrescrever alterações
+feitas no servidor depois da última sincronização.
+
+O QUE FOI CORRIGIDO NO script.js
+  1. Gera um backup local ANTES de iniciar qualquer tentativa de envio.
+  2. Obtém os dados atuais do Sheets e compara três versões: última cópia
+     sincronizada, mudanças locais e versão atual do servidor.
+  3. Preserva os perfis de terceiros e os campos de segurança dos usuários
+     conforme estão no Sheets. O reenvio comum não altera PIN nem permissões.
+  4. Junta alterações independentes. Havendo conflito no mesmo registro,
+     impede o envio e mantém os dados locais para análise.
+  5. Confere a revisão do servidor antes de salvar, evitando gravação baseada
+     em versão desatualizada.
+  6. Evita concorrência entre a recuperação manual e a sincronização automática.
+  7. Preserva lançamentos realizados durante o próprio envio.
+  8. Aplica a proteção de perfis também à mesclagem automática após conflito
+     de revisão do Sheets.
+
+COMO INSTALAR
+  1. Guarde uma cópia do script.js utilizado atualmente no seu site.
+  2. Substitua SOMENTE o script.js do site pelo arquivo desta pasta.
+  3. Publique/atualize os arquivos do site na hospedagem que utiliza.
+  4. No navegador, atualize ignorando o cache (Ctrl+F5).
+  5. Entre na conta normalmente, clique no status de sincronização e escolha
+     a opção para conciliar e reenviar, se houver alterações pendentes.
+  6. Verifique o backup baixado e se o status final indica sincronizado.
+
+API CONFIGURADA NO script.js
+  https://script.google.com/macros/s/AKfycbyIvhvGrU_So-XNN6nfov6XFLMjXiN73JQiprxpOLXz2Y13ZOVcuDny2xNONgbb3y4-Zw/exec
+
+Code.gs
+  Incluído SOMENTE como referência. Está IDÊNTICO ao arquivo enviado e não
+  precisa de nova implantação por causa desta correção no script.js.
+
+ATENÇÃO
+  - NÃO apague os dados/localStorage do navegador enquanto há pendências.
+  - Se não existir um histórico de sincronização confiável ou ocorrer conflito,
+    o sistema fará o backup, mas bloqueará o reenvio para evitar perda de dados.
+    Nesse caso, preserve o backup e peça ajuda para reconciliar as alterações.
+  - O arquivo de backup contém informações financeiras privadas: guarde-o
+    em local seguro e não o publique.
+  - Esta correção não desabilita as regras administrativas do backend.
+  - A API foi verificada quanto à disponibilidade e à versão, mas não foram
+    feitos envios de dados financeiros reais para o Sheets durante os testes.
+
+TESTES OFFLINE
+  node --check script.js
+  node validar-rede.cjs
+  node validar-reenvio.cjs
+  node validar-acesso.cjs
+  node validar-sincronizacao.cjs
+
+Os testes incluem prevenção de alteração em perfis de terceiros, backup
+anterior ao envio, ausência de base, conflitos de dados, alterações simultâneas,
+autenticação e preservação do PIN no backend.

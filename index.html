@@ -110,6 +110,7 @@
         let loginOcupado = false;
         let usuarioSelecionadoParaLogin = null;
         let conexaoInicialEmAndamento = null;
+        const VERSAO_ACESSO_ESPERADA = '2026-10-20-r2';
         const AVATAR_PADRAO = 'data:image/svg+xml;charset=UTF-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22%23a89586%22%3E%3Cpath%20d%3D%22M12%2012c2.21%200%204-1.79%204-4s-1.79-4-4-4-4%201.79-4%204%201.79%204%204%204zm0%202c-2.67%200-8%201.34-8%204v2h16v-2c0-2.66-5.33-4-8-4z%22%2F%3E%3C%2Fsvg%3E';
 
         function atualizarStatusLogin(mensagem, estado = 'loading', visivel = true) {
@@ -130,24 +131,38 @@
             conexaoInicialEmAndamento = (async () => {
                 if (retry) retry.disabled = true;
                 const controle = new AbortController();
-                const limite = setTimeout(() => controle.abort(), 9000);
+                // Uma única consulta verifica API e cadastro. A versão anterior
+                // fazia dois fetches com o mesmo timeout, causando AbortError.
+                const limite = setTimeout(() => controle.abort(), 18000);
                 try {
-                    const resposta = await fetch(`${API_URL}?action=ping&token=${encodeURIComponent(TOKEN_API)}`, {
+                    const resposta = await fetch(`${API_URL}?action=statusCadastro&token=${encodeURIComponent(TOKEN_API)}`, {
                         cache: 'no-store', signal: controle.signal
                     });
                     const json = await resposta.json();
-                    if (!resposta.ok || json.status !== 'sucesso') throw new Error('Falha de conexão com o serviço.');
+                    if (!resposta.ok) throw new Error(`Serviço indisponível (HTTP ${resposta.status}).`);
+                    if (json.status !== 'sucesso') {
+                        throw new Error(json.mensagem === 'Acesso não autorizado'
+                            ? 'Chave de integração diferente da configurada no Apps Script.'
+                            : 'O serviço respondeu com erro. Confira a implantação do Apps Script.');
+                    }
                     bancoInicializado = true;
-                    // A interface permanece disponível enquanto as verificações ocorrem.
-                    const statusResposta = await fetch(`${API_URL}?action=statusCadastro&token=${encodeURIComponent(TOKEN_API)}`, { cache: 'no-store', signal: controle.signal });
-                    const statusCadastro = await statusResposta.json();
-                    primeiroCadastroDisponivel = statusCadastro.status === 'sucesso' && statusCadastro.primeiroCadastroDisponivel === true;
+                    primeiroCadastroDisponivel = json.primeiroCadastroDisponivel === true;
                     const acessoInicial = document.getElementById('cardPrimeiroAcesso');
                     if (acessoInicial && !usuarioSelecionadoParaLogin) acessoInicial.hidden = !primeiroCadastroDisponivel;
-                    if (!loginOcupado) atualizarStatusLogin('', 'success', false);
+                    if (!loginOcupado) {
+                        if (json.versaoAcesso !== VERSAO_ACESSO_ESPERADA) {
+                            atualizarStatusLogin('Conexão ativa, mas a versão publicada do Apps Script é anterior à versão deste login. Atualize a implantação.', 'error');
+                        } else {
+                            atualizarStatusLogin('', 'success', false);
+                        }
+                    }
                 } catch (erro) {
                     console.warn('Pré-verificação de conexão em segundo plano:', erro);
-                    if (!loginOcupado) atualizarStatusLogin('', 'error', false);
+                    if (!loginOcupado) atualizarStatusLogin(
+                        erro?.name === 'AbortError'
+                            ? 'O servidor demorou a responder. Você ainda pode tentar entrar ou verificar novamente.'
+                            : (navigator.onLine ? (erro.message || 'Não foi possível consultar o Apps Script.')
+                                : 'Sem internet. Verifique a conexão.'), 'error');
                 } finally {
                     clearTimeout(limite);
                     if (retry) retry.disabled = false;
@@ -166,6 +181,32 @@
         document.addEventListener('DOMContentLoaded', () => {
             testarConexaoInicial();
         });
+
+        function mensagemFalhaLogin(resposta, etapa = 'senha') {
+            const codigo = String(resposta?.codigo || '');
+            const mensagem = String(resposta?.mensagem || '');
+            if (codigo === 'BLOQUEIO_TEMPORARIO' || /Muitas tentativas/i.test(mensagem))
+                return 'Muitas tentativas de acesso. Aguarde 15 minutos antes de tentar novamente.';
+            if (codigo === 'SENHA_NAO_CONFIGURADA' || /não possui palavra-passe cadastrada/i.test(mensagem))
+                return 'Sua conta não tem uma senha válida cadastrada no Sheets. É necessário recuperar o acesso pelo administrador.';
+            if (codigo === 'SENHA_INCORRETA' || /Palavra-passe incorreta/i.test(mensagem))
+                return 'A senha digitada não corresponde à cadastrada. Verifique-a antes de tentar novamente.';
+            if (codigo === 'USUARIO_DESATIVADO' || /usuário está desativado/i.test(mensagem))
+                return 'Esta conta está desativada. Solicite a reativação ao administrador.';
+            if (codigo === 'USUARIO_NAO_ENCONTRADO' || /Usuário não encontrado/i.test(mensagem))
+                return 'Usuário não encontrado. Volte e confira o nome de acesso.';
+            if (codigo === 'CREDENCIAL_MODIFICADA')
+                return 'A senha foi modificada durante a tentativa. Tente entrar novamente.';
+            if (/Acesso não autorizado/i.test(mensagem))
+                return 'A chave de integração não corresponde à configurada no Apps Script.';
+            if (/Ação inválida/i.test(mensagem))
+                return 'A versão publicada do Apps Script não reconhece este login. Publique uma nova implantação.';
+            if (resposta?.status === 'sucesso' && etapa === 'senha')
+                return 'A resposta de autenticação está incompleta. Atualize a implantação do Apps Script.';
+            return etapa === 'usuario'
+                ? 'Não foi possível identificar o usuário. Confira a implantação e tente novamente.'
+                : 'O servidor recusou a autenticação. Consulte o detalhe retornado no console e tente novamente.';
+        }
 
         async function consultarLoginServidor(payload) {
             const controle = new AbortController();
@@ -225,7 +266,8 @@
                         senhaHash: 'CHECK_APENAS_USUARIO'
                     });
                     if (resultadoCheck.status !== 'sucesso' || !resultadoCheck.usuario) {
-                        atualizarStatusLogin('Não encontramos esse usuário. Confira e tente novamente.', 'error');
+                        console.warn('Consulta de usuário recusada:', resultadoCheck.codigo || resultadoCheck.mensagem);
+                        atualizarStatusLogin(mensagemFalhaLogin(resultadoCheck, 'usuario'), 'error');
                         inputUsuario.focus();
                         if (botao) botao.classList.remove("loading");
                         if (spanTextoBotao) spanTextoBotao.textContent = "Continuar";
@@ -299,7 +341,8 @@
                 });
 
                 if (resultadoAuth.status !== 'sucesso' || !resultadoAuth.usuario?.id) {
-                    atualizarStatusLogin(resultadoAuth.mensagem === 'Muitas tentativas. Aguarde 15 minutos.' ? resultadoAuth.mensagem : 'Não foi possível entrar. Confira sua senha.', 'error');
+                    console.warn('Autenticação recusada pelo servidor:', resultadoAuth.codigo || resultadoAuth.mensagem);
+                    atualizarStatusLogin(mensagemFalhaLogin(resultadoAuth), 'error');
                     inputSenha.value = '';
                     inputSenha.focus();
                     if (botao) botao.classList.remove("loading");
@@ -345,7 +388,16 @@
                 localStorage.removeItem('usuarioLogado');
                 sessionStorage.removeItem(CHAVE_SESSAO_API);
                 sessionStorage.removeItem(CHAVE_USUARIO_SESSAO);
-                atualizarStatusLogin(!navigator.onLine ? 'Sem internet. Reconecte e tente novamente.' : 'Não foi possível concluir o acesso. Tente novamente.', 'error');
+                const mensagemAcesso = !navigator.onLine
+                    ? 'Sem internet. Reconecte e tente novamente.'
+                    : erro?.name === 'AbortError'
+                        ? 'O servidor demorou a responder. Tente novamente em alguns instantes.'
+                        : /verificação segura de senha exige HTTPS ou localhost/i.test(erro?.message || '')
+                            ? erro.message
+                        : /Sessão ausente|conta autenticada|Resposta inesperada/i.test(erro?.message || '')
+                            ? (erro.message + ' Confira se a nova versão do Apps Script foi publicada.')
+                            : 'Não foi possível concluir o acesso após a tentativa de autenticação. Confira a conexão e os detalhes no console.';
+                atualizarStatusLogin(mensagemAcesso, 'error');
             } finally {
                 loginOcupado = false;
                 if (botao) botao.disabled = false;

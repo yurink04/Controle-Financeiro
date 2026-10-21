@@ -423,16 +423,18 @@
             } else {
                 const novoId = dados.usuarios.reduce((m, u) => Math.max(m, Number(u.id) || 0), 0) + 1;
                 dados.usuarios.push({
-                    id: novoId,
-                    usuario: login,
-                    nome,
-                    rendaFixa,
-                    parceiroId,
-                    pin: hashSenhaTemporaria,
-                    trocaSenhaObrigatoria: true,
-                    ativo,
-                    permissoes
-                });
+    id: novoId,
+    usuario: login,
+    nome,
+    rendaFixa,
+    parceiroId,
+    pin: hashSenhaTemporaria,
+    trocaSenhaObrigatoria: true,
+    ativo,
+    permissoes,
+    preferenciasNotificacao: { ativo: true, diasAntecedencia: 3 },
+    configuracaoSalarial: {}
+});
                 if (parceiroSelecionado) parceiroSelecionado.parceiroId = novoId;
                 registrarLog(dados, "NOVO USUÁRIO", `Usuário '${nome}' foi criado.`);
             }
