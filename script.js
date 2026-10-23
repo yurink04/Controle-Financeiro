@@ -288,6 +288,28 @@ function atualizarOpcoesNaturezaRenda(select, usuario = obterUsuarioAtual(), nat
     }
     if (select.selectedOptions[0]?.disabled) select.value = '';
 }
+
+function atualizarFiltroCategoriasPorTipo(tipo) {
+    const sel = document.getElementById('categoriaLancamento');
+    if (!sel) return;
+    const dados = obterDados();
+    const usuario = obterUsuarioAtual(dados);
+    const valorAtual = sel.value;
+    const categorias = (dados.categorias || [])
+        .filter(c => c.tipo === tipo && categoriaRendaDisponivel(c, usuario))
+        .sort((a, b) => normalizarTexto(a.nome).localeCompare(normalizarTexto(b.nome), 'pt-BR'));
+
+    sel.replaceChildren();
+    if (!categorias.length) {
+        sel.appendChild(new Option('Nenhuma categoria deste tipo cadastrada', ''));
+        sel.disabled = true;
+        return;
+    }
+    sel.disabled = false;
+    categorias.forEach(c => sel.appendChild(new Option(c.nome, String(c.id))));
+    if ([...sel.options].some(o => o.value === valorAtual)) sel.value = valorAtual;
+}
+
 function classificarEntradaRendimento(lancamento, dados) {
     if (!lancamento || lancamento.tipo !== 'entrada') return 'fora';
     const contrato = (dados.financiamentos || []).find(f => String(f.id) === String(lancamento.financiamentoId));
@@ -1186,20 +1208,43 @@ function iniciarSincronizacaoSegundoPlano() {
     });
 }
 
+function protegerUsuariosNaoProprios(payload) {
+    const userId = localStorage.getItem('usuarioLogado');
+    const base = lerJSONLocal(SYNC_BASELINE_KEY, null);
+    if (!userId || !base || !Array.isArray(base.usuarios) || !Array.isArray(payload.usuarios)) return payload;
+    const baseMap = new Map(base.usuarios.map(u => [String(u.id), u]));
+    const campos = ['id', 'usuario', 'nome', 'pin', 'rendaFixa', 'parceiroId', 'ativo',
+        'permissoes', 'preferenciasNotificacao', 'fotoPerfil', 'trocaSenhaObrigatoria', 'configuracaoSalarial'];
+    payload.usuarios = payload.usuarios.map(u => {
+        if (String(u.id) === String(userId)) return u;
+        const b = baseMap.get(String(u.id));
+        if (!b) return u;
+        const soParceiro = campos.filter(c => c !== 'parceiroId')
+            .every(c => JSON.stringify(u[c]) === JSON.stringify(b[c]));
+        const aprovada = soParceiro && u.parceiroId
+            && (payload.notificacoes || []).some(n =>
+                n.tipo === 'solicitacao_parceiro'
+                && String(n.remetenteId) === String(u.id)
+                && String(n.usuarioDestinoId) === String(userId)
+                && n.statusAprovacao === 'aprovado');
+        return aprovada ? u : clonarDados(b);
+    });
+    return payload;
+}
+
 async function sincronizarComServidor() {
     if (reenvioEmAndamento || syncInFlight || !syncPendingData || localStorage.getItem(SYNC_CONFLICT_KEY) || !navigator.onLine) return;
     syncInFlight = true; let payloadAtual = null, tentativas = 0;
     try {
         while (syncPendingData && tentativas < 5 && !localStorage.getItem(SYNC_CONFLICT_KEY)) {
-            tentativas++; payloadAtual = syncPendingData; syncPendingData = null;
+            tentativas++;
+            payloadAtual = protegerUsuariosNaoProprios(syncPendingData);
+            syncPendingData = null;
             const json = await executarPostAPI('salvarDados',
                 { sessao: obterSessaoAPI(), dados: payloadAtual }, 45000);
             if (json.status === 'conflito') {
                 const lAtual = lerJSONLocal(DB_KEY, payloadAtual) || payloadAtual;
                 const base = lerJSONLocal(SYNC_BASELINE_KEY, null);
-                // O snapshot remoto é a autoridade para campos protegidos.
-                // Migrá-lo antes da conciliação pode introduzir alterações
-                // artificiais em perfis de outros usuários.
                 const serv = clonarDados(await buscarDadosServidor());
                 if (!base) { marcarConflitoSincronizacao(lAtual, [], 'Sem snapshot-base.'); break; }
                 const mescla = prepararReenvioSeguro(
@@ -1230,14 +1275,17 @@ async function sincronizarComServidor() {
                 localStorage.removeItem(CHAVE_DONO_PENDENCIAS);
                 atualizarIndicadorSyncUI('success');
                 atualizarFeedbackIntegrado('Alterações sincronizadas.', 'success', 3000);
+            } else {
+                localStorage.setItem('syncPendente', 'true');
+                atualizarIndicadorSyncUI('pending');
             }
-            else { localStorage.setItem('syncPendente', 'true'); atualizarIndicadorSyncUI('pending'); }
         }
     } catch (e) {
         syncFalhasConsecutivas++;
         console.warn('Sync adiada:', e);
         if (!syncPendingData && payloadAtual) syncPendingData = clonarDados(lerJSONLocal(DB_KEY, payloadAtual) || payloadAtual);
-        localStorage.setItem('syncPendente', 'true'); atualizarIndicadorSyncUI('error');
+        localStorage.setItem('syncPendente', 'true');
+        atualizarIndicadorSyncUI('error');
         if (syncFalhasConsecutivas === 1) atualizarFeedbackIntegrado(
             'Não foi possível sincronizar. Alterações preservadas no navegador; nova tentativa automática.', 'error', 8000);
     } finally {

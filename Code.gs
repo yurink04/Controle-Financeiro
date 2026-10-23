@@ -245,117 +245,136 @@ function conferirAlteracoesUsuarios(original, proposta, usuario, sessao, notific
   var origPorId = {};
   original.forEach(function(u) { origPorId[String(u.id)] = u; });
   var novosIds = {};
-  var camposPermitidos = ['nome', 'usuario', 'rendaFixa', 'configuracaoSalarial', 'preferenciasNotificacao', 'fotoPerfil', 'parceiroId', 'pin', 'trocaSenhaObrigatoria'];
+  var camposPermitidos = ['nome', 'usuario', 'rendaFixa', 'configuracaoSalarial',
+    'preferenciasNotificacao', 'fotoPerfil', 'parceiroId', 'pin', 'trocaSenhaObrigatoria'];
   var pendentes = notificacoesAntigas.filter(function(n) {
-    return n.tipo === 'solicitacao_parceiro' && n.statusAprovacao === 'pendente' && String(n.usuarioDestinoId) === identidade;
+    return n.tipo === 'solicitacao_parceiro' && n.statusAprovacao === 'pendente'
+        && String(n.usuarioDestinoId) === identidade;
   });
- // Code.gs — dentro de conferirAlteracoesUsuarios, no início do forEach de proposta
-proposta.forEach(function(u) {
-  var id = String(u.id);
-  if (!id || novosIds[id]) throw new Error('Identificador de usuário inválido ou duplicado.');
-  novosIds[id] = true;
-  var velho = origPorId[id];
-  if (!velho) {
-    if (!elevado) throw new Error('Somente um administrador autorizado pode cadastrar usuários.');
-    if (!hashValido(u.pin)) throw new Error('Uma senha inicial válida é obrigatória.');
-    return;
-  }
-  var pinNovo = String(u.pin || '').trim();
-  var pinAnterior = String(velho.pin || velho.senha || '').trim();
-  if (pinNovo && pinNovo !== pinAnterior && !hashValido(pinNovo)) throw new Error('Formato de senha inválido.');
-  if (!pinNovo) u.pin = pinAnterior; // O hash nunca é enviado na leitura da API.
 
-  // ── MIGRAÇÃO: normaliza JSONs vazios antes de comparar ──
-  if (!u.configuracaoSalarial || typeof u.configuracaoSalarial !== 'object' || Array.isArray(u.configuracaoSalarial)) {
-    u.configuracaoSalarial = {};
-  }
-  if (!u.preferenciasNotificacao || typeof u.preferenciasNotificacao !== 'object' || Array.isArray(u.preferenciasNotificacao)) {
-    u.preferenciasNotificacao = {};
-  }
-  // ── FIM ──
+  proposta.forEach(function(u) {
+    var id = String(u.id);
+    if (!id || novosIds[id]) throw new Error('Identificador de usuário inválido ou duplicado.');
+    novosIds[id] = true;
+    var velho = origPorId[id];
+    if (!velho) {
+      if (!elevado) throw new Error('Somente um administrador autorizado pode cadastrar usuários.');
+      if (!hashValido(u.pin)) throw new Error('Uma senha inicial válida é obrigatória.');
+      return;
+    }
 
-  if (elevado) return;
-  // ... resto do código sem alterações
-});
-    // O navegador completa automaticamente permissões antigas (sem 'paginas'/'acoes').
-    // Isso não é uma tentativa de alteração: mantém o valor gravado e segue em frente.
-    // Qualquer outra mudança em permissões continua sendo rejeitada abaixo.
-    if (!(velho.permissoes && velho.permissoes.paginas && velho.permissoes.acoes) &&
-        registroAlterado(velho, u, ['permissoes'])) {
+    var pinNovo = String(u.pin || '').trim();
+    var pinAnterior = String(velho.pin || velho.senha || '').trim();
+    if (pinNovo && pinNovo !== pinAnterior && !hashValido(pinNovo)) throw new Error('Formato de senha inválido.');
+    if (!pinNovo) u.pin = pinAnterior;
+
+    // Normaliza JSONs vazios (compatibilidade com planilhas antigas)
+    if (!u.configuracaoSalarial || typeof u.configuracaoSalarial !== 'object'
+        || Array.isArray(u.configuracaoSalarial)) u.configuracaoSalarial = {};
+    if (!u.preferenciasNotificacao || typeof u.preferenciasNotificacao !== 'object'
+        || Array.isArray(u.preferenciasNotificacao)) u.preferenciasNotificacao = {};
+
+    if (elevado) return;
+
+    // Permissões legadas incompletas não contam como alteração
+    if (!(velho.permissoes && velho.permissoes.paginas && velho.permissoes.acoes)
+        && registroAlterado(velho, u, ['permissoes'])) {
       u.permissoes = velho.permissoes;
     }
+
     if (id === identidade) {
+      // Validação do próprio perfil
       if (u.configuracaoSalarial != null) {
         var conf = u.configuracaoSalarial;
-        if (!conf || typeof conf !== 'object' || Array.isArray(conf) || JSON.stringify(conf).length > 12000) {
-          throw new Error('Configuração salarial inválida.');
-        }
-        if (conf.regimeRenda != null && ['clt', 'pj', 'aposentado'].indexOf(conf.regimeRenda) < 0) {
+        if (!conf || typeof conf !== 'object' || Array.isArray(conf)
+            || JSON.stringify(conf).length > 12000) throw new Error('Configuração salarial inválida.');
+        if (conf.regimeRenda != null
+            && ['clt','pj','aposentado'].indexOf(conf.regimeRenda) < 0)
           throw new Error('Regime de renda inválido.');
-        }
-        if ((conf.utilizaAdiantamento != null && typeof conf.utilizaAdiantamento !== 'boolean') ||
-            (conf.aposentado65Mais != null && typeof conf.aposentado65Mais !== 'boolean')) {
+        if ((conf.utilizaAdiantamento != null && typeof conf.utilizaAdiantamento !== 'boolean')
+            || (conf.aposentado65Mais != null && typeof conf.aposentado65Mais !== 'boolean'))
           throw new Error('Parâmetro de renda inválido.');
-        }
         var horasPrevistas = Number(conf.horasExtrasPrevistas || 0);
-        if (!Number.isFinite(horasPrevistas) || horasPrevistas < 0 || horasPrevistas > 10000000) {
+        if (!Number.isFinite(horasPrevistas) || horasPrevistas < 0 || horasPrevistas > 10000000)
           throw new Error('Horas extras previstas inválidas.');
-        }
         var deps = Number(conf.dependentes || 0);
         var custoVT = Number(conf.vtCustoMensal || 0);
-        if (!Number.isInteger(deps) || deps < 0 || deps > 20 || !Number.isFinite(custoVT) || custoVT < 0 || custoVT > 1000000) {
+        if (!Number.isInteger(deps) || deps < 0 || deps > 20
+            || !Number.isFinite(custoVT) || custoVT < 0 || custoVT > 1000000)
           throw new Error('Dependentes ou vale-transporte inválidos.');
-        }
-        if (conf.descontos != null && (!Array.isArray(conf.descontos) || conf.descontos.length > 20)) {
+        if (conf.descontos != null && (!Array.isArray(conf.descontos) || conf.descontos.length > 20))
           throw new Error('Quantidade de descontos adicionais inválida.');
-        }
         (conf.descontos || []).forEach(function(d) {
           var v = Number(d && d.valor);
-          if (!d || typeof d.nome !== 'string' || !d.nome.trim() || d.nome.length > 70 ||
-              ['fixo','percentual'].indexOf(d.tipo) < 0 || !Number.isFinite(v) || v < 0 ||
-              v > (d.tipo === 'percentual' ? 100 : 10000000)) {
+          if (!d || typeof d.nome !== 'string' || !d.nome.trim() || d.nome.length > 70
+              || ['fixo','percentual'].indexOf(d.tipo) < 0 || !Number.isFinite(v) || v < 0
+              || v > (d.tipo === 'percentual' ? 100 : 10000000))
             throw new Error('Desconto salarial inválido.');
-          }
         });
       }
       var salarioBruto = u.rendaFixa == null || u.rendaFixa === '' ? 0 : Number(u.rendaFixa);
-      if (!Number.isFinite(salarioBruto) || salarioBruto < 0 || salarioBruto > 10000000) {
+      if (!Number.isFinite(salarioBruto) || salarioBruto < 0 || salarioBruto > 10000000)
         throw new Error('Salário bruto inválido.');
-      }
-      var proibidos = SCHEMA.usuarios.filter(function(campo) { return camposPermitidos.indexOf(campo) < 0; });
-      if (registroAlterado(velho, u, proibidos)) throw new Error('Você não pode alterar suas próprias permissões ou estado da conta.');
+
+      var proibidos = SCHEMA.usuarios.filter(function(campo) {
+        return camposPermitidos.indexOf(campo) < 0;
+      });
+      if (registroAlterado(velho, u, proibidos))
+        throw new Error('Você não pode alterar suas próprias permissões ou estado da conta.');
+
       var parceiroAntes = String(velho.parceiroId || '');
       var parceiroDepois = String(u.parceiroId || '');
       if (parceiroDepois && parceiroAntes !== parceiroDepois) {
         var aprovou = pendentes.some(function(n) {
-          return String(n.remetenteId) === parceiroDepois && notificacoesNovas.some(function(atualizada) {
-            return String(atualizada.id) === String(n.id) && atualizada.statusAprovacao === 'aprovado';
-          });
+          return String(n.remetenteId) === parceiroDepois
+              && notificacoesNovas.some(function(atualizada) {
+                return String(atualizada.id) === String(n.id)
+                    && atualizada.statusAprovacao === 'aprovado';
+              });
         });
         if (!aprovou) throw new Error('O vínculo com parceiro precisa ser aprovado pela outra conta.');
       }
-      if (velho.trocaSenhaObrigatoria === true && u.trocaSenhaObrigatoria === false && u.pin === pinAnterior) {
+      if (velho.trocaSenhaObrigatoria === true && u.trocaSenhaObrigatoria === false
+          && u.pin === pinAnterior) {
         throw new Error('Troque a senha provisória antes de liberar a conta.');
       }
       return;
     }
-    var somenteParceiro = !registroAlterado(velho, u, SCHEMA.usuarios.filter(function(campo) { return campo !== 'parceiroId'; }));
+
+    // Alteração de outro usuário sem privilégio elevado
+    var somenteParceiro = !registroAlterado(velho, u,
+      SCHEMA.usuarios.filter(function(campo) { return campo !== 'parceiroId'; }));
     var aceitouSolicitacao = pendentes.some(function(n) {
       return String(n.remetenteId) === id && notificacoesNovas.some(function(atualizada) {
-        return String(atualizada.id) === String(n.id) && atualizada.statusAprovacao === 'aprovado';
+        return String(atualizada.id) === String(n.id)
+            && atualizada.statusAprovacao === 'aprovado';
       });
     });
     if (somenteParceiro && aceitouSolicitacao && String(u.parceiroId) === identidade) return;
-    if (registroAlterado(velho, u, SCHEMA.usuarios)) throw new Error('Alterar outro usuário exige autorização administrativa.');
+
+    if (registroAlterado(velho, u, SCHEMA.usuarios)) {
+      // Cliente enviou dados de outro usuário (tipicamente cache local desatualizado).
+      // Em vez de travar toda a sync, mantém a versão autoritativa do servidor.
+      SCHEMA.usuarios.forEach(function(campo) {
+        if (campo === 'pin' || campo === 'senha') return;
+        u[campo] = velho[campo];
+      });
+    }
   });
-  original.forEach(function(u) { if (!novosIds[String(u.id)] && !elevado) throw new Error('Remover usuários exige autorização administrativa.'); });
+
+  original.forEach(function(u) {
+    if (!novosIds[String(u.id)] && !elevado)
+      throw new Error('Remover usuários exige autorização administrativa.');
+  });
   var logins = {};
   proposta.forEach(function(u) {
     var login = String(u.usuario || u.nome || '').trim().toLowerCase();
     if (!login || logins[login]) throw new Error('Login vazio ou duplicado.');
     logins[login] = true;
   });
-  if (!proposta.some(function(u) { return u.ativo !== false && u.permissoes && u.permissoes.perfil === 'admin'; })) {
+  if (!proposta.some(function(u) {
+    return u.ativo !== false && u.permissoes && u.permissoes.perfil === 'admin';
+  })) {
     throw new Error('É obrigatório manter ao menos um administrador ativo.');
   }
 }
