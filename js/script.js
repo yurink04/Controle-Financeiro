@@ -997,6 +997,74 @@ function criarIndicadorSincronizacaoUi() {
     };
 }
 
+// Revisão assistida: nenhum valor conflitante é escolhido automaticamente.
+// Os dados da sessão/credenciais nunca são exibidos no resumo do conflito.
+function lerCaminhoConflito(dados, caminho) {
+    const inicio = caminho.indexOf('[');
+    const fim = caminho.lastIndexOf(']');
+    if (inicio !== -1 && fim > inicio) {
+        const colecao = caminho.slice(0, inicio);
+        const chave = caminho.slice(inicio + 1, fim);
+        const lista = Array.isArray(dados?.[colecao]) ? dados[colecao] : [];
+        const item = chave.startsWith('id:') ? lista.find(x => String(x?.id) === chave.slice(3)) : undefined;
+        const sub = caminho.slice(fim + 1).replace(/^\./, '');
+        return sub ? sub.split('.').reduce((obj, k) => obj?.[k], item) : item;
+    }
+    return caminho.split('.').reduce((obj, k) => obj?.[k], dados);
+}
+
+function resumirValorConflito(valor, caminho) {
+    if (/pin|senha|token|sessao/i.test(caminho)) return '[valor protegido]';
+    if (valor === undefined) return '[registro/campo ausente]';
+    const texto = JSON.stringify(valor);
+    return texto?.length > 350 ? texto.slice(0, 350) + '…' : texto || String(valor);
+}
+
+function revisarConflitosSincronizacao(caminhos, local, remoto) {
+    return new Promise(resolver => {
+        const linhas = caminhos.map((caminho, indice) => {
+            const a = resumirValorConflito(lerCaminhoConflito(local, caminho), caminho);
+            const b = resumirValorConflito(lerCaminhoConflito(remoto, caminho), caminho);
+            return `<fieldset class="sync-conflito-item"><legend>Conflito ${indice + 1}: ${escaparHTML(caminho)}</legend>
+                <div class="sync-conflito-valores"><div><strong>Navegador</strong><code>${escaparHTML(a)}</code></div>
+                <div><strong>Google Sheets</strong><code>${escaparHTML(b)}</code></div></div>
+                <label for="syncConflito${indice}">Qual versão manter neste campo?</label>
+                <select id="syncConflito${indice}" class="modal-input" data-escolha="${indice}">
+                    <option value="">Escolha explicitamente…</option>
+                    <option value="local">Manter do navegador</option>
+                    <option value="remoto">Manter do Google Sheets</option>
+                </select></fieldset>`;
+        }).join('');
+        const modal = criarModalBase({
+            titulo: 'Resolver divergências antes de sincronizar',
+            mensagem: 'Um backup local foi baixado. Compare os dois valores e escolha a origem de cada campo. Cancelar mantém tudo pendente. Para exclusões, escolha somente após conferir os registros.',
+            htmlExtra: `<div class="sync-conflitos-lista">${linhas}</div>
+                <div class="modal-buttons"><button type="button" class="btn-secundario" data-cancelar>Cancelar</button>
+                <button type="button" data-confirmar>Revisar escolhas</button></div>`
+        });
+        let finalizado = false;
+        const concluir = valor => {
+            if (finalizado) return;
+            finalizado = true;
+            fecharModal(modal.overlay);
+            resolver(valor);
+        };
+        modal.overlay.querySelector('[data-cancelar]').addEventListener('click', () => concluir(null));
+        modal.overlay.addEventListener('keydown', ev => { if (ev.key === 'Escape') concluir(null); });
+        modal.overlay.querySelector('[data-confirmar]').addEventListener('click', async () => {
+            const seletores = [...modal.overlay.querySelectorAll('[data-escolha]')];
+            if (seletores.some(seletor => !seletor.value)) {
+                await mostrarAlertaModal('Escolha navegador ou Google Sheets para cada divergência.');
+                return;
+            }
+            const escolhas = Object.fromEntries(seletores.map((el, i) => [caminhos[i], el.value]));
+            const confirmado = await mostrarConfirmacaoModal(
+                'Confirma as ' + caminhos.length + ' escolhas? O sistema só enviará após conferir novamente a revisão remota. Um backup local já foi salvo.');
+            if (confirmado) concluir(escolhas);
+        });
+    });
+}
+
 async function forcarEnvioComBackup() {
     if (syncInFlight || reenvioEmAndamento) {
         await mostrarAlertaModal('Já existe uma sincronização em andamento. Aguarde sua conclusão antes de recuperar os dados.');
@@ -1035,19 +1103,33 @@ async function forcarEnvioComBackup() {
         if (localStorage.getItem(DB_KEY) !== dbLocalStr) {
             throw new Error('Os dados locais mudaram durante a recuperação. Tente novamente para incluir os lançamentos recentes.');
         }
-        const conciliacao = prepararReenvioSeguro(
+        let conciliacao = prepararReenvioSeguro(
             migrarDados(clonarDados(base)).dados,
             migrarDados(clonarDados(dbLocal)).dados,
-            clonarDados(resGet),
-            usuarioId
+            clonarDados(resGet), usuarioId
         );
         if (conciliacao.conflitos.length) {
             marcarConflitoSincronizacao(dbLocal, conciliacao.conflitos,
-                'Alterações simultâneas precisam ser analisadas antes do reenvio.');
-            throw new Error('Foram encontrados ' + conciliacao.conflitos.length +
-                ' conflitos entre o navegador e o Sheets. Nada foi sobrescrito. O backup local permanece disponível.');
+                'Alterações simultâneas precisam ser revisadas antes do reenvio.');
+            // O registro do conflito não pode invalidar nossa referência de escrita.
+            const estadoMarcado = localStorage.getItem(DB_KEY);
+            const escolhas = await revisarConflitosSincronizacao(conciliacao.conflitos, dbLocal, resGet);
+            if (!escolhas) throw new Error('Revisão cancelada. Nenhum dado foi enviado e o backup local foi preservado.');
+            if (localStorage.getItem(DB_KEY) !== estadoMarcado) {
+                throw new Error('Os dados locais mudaram durante a revisão. Reabra a conciliação antes de enviar.');
+            }
+            // O servidor pode ter avançado enquanto as escolhas eram feitas.
+            const resVerificacao = await buscarDadosServidor();
+            if (Number(resVerificacao._revision) !== Number(resGet._revision)) {
+                throw new Error('O Sheets mudou durante a revisão. Nenhum dado foi enviado; revise novamente os conflitos.');
+            }
+            conciliacao = prepararReenvioSeguro(
+                migrarDados(clonarDados(base)).dados,
+                migrarDados(clonarDados(dbLocal)).dados,
+                clonarDados(resVerificacao), usuarioId, escolhas
+            );
+            if (conciliacao.conflitos.length) throw new Error('Ainda existem conflitos não resolvidos. Nada foi enviado.');
         }
-
         const dadosConciliados = conciliacao.dados;
         dadosConciliados._revision = Number(resGet._revision) || 0;
         const snapshotAntesPost = localStorage.getItem(DB_KEY);

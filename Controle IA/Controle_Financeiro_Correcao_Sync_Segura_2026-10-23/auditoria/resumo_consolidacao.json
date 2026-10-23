@@ -1,0 +1,25 @@
+{
+  "data": "2026-10-23",
+  "paginas_html": 17,
+  "js_principais": 3,
+  "js_pagina": 17,
+  "arquivos_cjs_diagnostico_e_validacao": 14,
+  "testes_offline_executados": 12,
+  "testes_offline_aprovados": 12,
+  "total_atributos_estaticos_migrados_lotes": 99,
+  "testes_chromium_isolado_aprovados": 17,
+  "erros_css_top_level": 0,
+  "js_sintaxe_aprovada": 20,
+  "ids_por_pagina": {
+    "relatorios": {
+      "html_ids": 56,
+      "referenciados_js": 46,
+      "ausentes": []
+    },
+    "rendimentos": {
+      "html_ids": 21,
+      "referenciados_js": 21,
+      "ausentes": []
+    }
+  }
+}

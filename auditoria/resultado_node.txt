@@ -1,0 +1,52 @@
+OK Arquivos compartilhados compilam em conjunto
+OK admin-logs.html: referências do núcleo na ordem correta
+OK admin-logs.html: sem script inline e sem atributos on* estáticos
+OK admin-logs.html: JS da página e núcleo sem declarações globais conflitantes
+OK bens.html: referências do núcleo na ordem correta
+OK bens.html: sem script inline e sem atributos on* estáticos
+OK bens.html: JS da página e núcleo sem declarações globais conflitantes
+OK cartoes.html: referências do núcleo na ordem correta
+OK cartoes.html: sem script inline e sem atributos on* estáticos
+OK cartoes.html: JS da página e núcleo sem declarações globais conflitantes
+OK categorias.html: referências do núcleo na ordem correta
+OK categorias.html: sem script inline e sem atributos on* estáticos
+OK categorias.html: JS da página e núcleo sem declarações globais conflitantes
+OK central-pagamentos.html: referências do núcleo na ordem correta
+OK central-pagamentos.html: sem script inline e sem atributos on* estáticos
+OK central-pagamentos.html: JS da página e núcleo sem declarações globais conflitantes
+OK configuracoes.html: referências do núcleo na ordem correta
+OK configuracoes.html: sem script inline e sem atributos on* estáticos
+OK configuracoes.html: JS da página e núcleo sem declarações globais conflitantes
+OK dashboard.html: referências do núcleo na ordem correta
+OK dashboard.html: sem script inline e sem atributos on* estáticos
+OK dashboard.html: JS da página e núcleo sem declarações globais conflitantes
+OK detalhes-central-parcelada.html: referências do núcleo na ordem correta
+OK detalhes-central-parcelada.html: sem script inline e sem atributos on* estáticos
+OK detalhes-central-parcelada.html: JS da página e núcleo sem declarações globais conflitantes
+OK detalhes-financiamento.html: referências do núcleo na ordem correta
+OK detalhes-financiamento.html: sem script inline e sem atributos on* estáticos
+OK detalhes-financiamento.html: JS da página e núcleo sem declarações globais conflitantes
+OK editar-lancamento.html: referências do núcleo na ordem correta
+OK editar-lancamento.html: sem script inline e sem atributos on* estáticos
+OK editar-lancamento.html: JS da página e núcleo sem declarações globais conflitantes
+OK financiamentos.html: referências do núcleo na ordem correta
+OK financiamentos.html: sem script inline e sem atributos on* estáticos
+OK financiamentos.html: JS da página e núcleo sem declarações globais conflitantes
+OK grafico.html: referências do núcleo na ordem correta
+OK grafico.html: sem script inline e sem atributos on* estáticos
+OK grafico.html: JS da página e núcleo sem declarações globais conflitantes
+OK index.html: referências do núcleo na ordem correta
+OK index.html: sem script inline e sem atributos on* estáticos
+OK index.html: JS da página e núcleo sem declarações globais conflitantes
+OK lancamentos.html: referências do núcleo na ordem correta
+OK lancamentos.html: sem script inline e sem atributos on* estáticos
+OK lancamentos.html: JS da página e núcleo sem declarações globais conflitantes
+OK perfil.html: referências do núcleo na ordem correta
+OK perfil.html: sem script inline e sem atributos on* estáticos
+OK perfil.html: JS da página e núcleo sem declarações globais conflitantes
+OK relatorios.html: referências do núcleo na ordem correta
+OK relatorios.html: sem script inline e sem atributos on* estáticos
+PENDENTE: relatorios.js já existia no projeto, mas NÃO foi enviado; preserve sua versão atual.
+OK Code.gs tem todas as ações consumidas pelo navegador
+
+49/49 checagens aprovadas; 1 pendência(s) informativa(s).

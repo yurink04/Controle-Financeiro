@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Meu Perfil | Controle Financeiro</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body class="account-page profile-page">
+    <main class="container account-container">
+        <header class="account-hero">
+            <div>
+                <span class="account-eyebrow">ÁREA PESSOAL <span class="account-eyebrow-dot"></span> SUA CONTA</span>
+                <h1>Seu espaço, do seu jeito.</h1>
+                <p>Informações pessoais, rendimentos e patrimônio reunidos em um só lugar.</p>
+            </div>
+            <a class="account-hero-home" href="dashboard.html" aria-label="Voltar ao painel">↗ <span>Meu painel</span></a>
+        </header>
+
+        <nav class="account-nav" aria-label="Navegação da conta">
+            <a class="active" href="perfil.html" aria-current="page">◉ <span>Meu perfil</span></a>
+            <a href="configuracoes.html" data-account-settings hidden>⚙ <span>Configurações</span></a>
+            <a href="admin-logs.html" data-account-logs hidden>▤ <span>Auditoria</span></a>
+        </nav>
+
+        <section class="account-section" id="resumo-perfil" aria-labelledby="tituloRendaPerfil">
+            <div class="account-section-heading">
+                <div><span class="account-overline">VISÃO GERAL</span><h2 id="tituloRendaPerfil">Seus rendimentos</h2><p>Uma visão rápida de como sua renda está composta.</p></div>
+            </div>
+            <div class="account-kpis income-profile-kpis">
+                <article class="account-kpi"><div class="account-kpi-label"><span id="labelRendaBrutaPerfil">Renda bruta estimada</span><span class="account-kpi-icon">↗</span></div><div class="account-kpi-value" id="cardRendaFixaValor">R$ 0,00</div><button type="button" class="account-text-button" data-page-handler="perfil-1">✎ Regime de renda e descontos</button></article>
+                <article class="account-kpi"><div class="account-kpi-label"><span id="labelRendaLiquidaPerfil">Renda líquida estimada</span><span class="account-kpi-icon">−</span></div><div class="account-kpi-value" id="cardRendaLiquida">R$ 0,00</div><p id="textoRegimePerfil">Conforme seu vínculo e descontos cadastrados.</p></article>
+                <article class="account-kpi"><div class="account-kpi-label"><span>Média de ganhos variáveis</span><span class="account-kpi-icon">≋</span></div><div class="account-kpi-value" id="cardMediaVariavel">R$ 0,00</div><p>Últimos 6 meses, inclusive meses sem entradas.</p></article>
+                <article class="account-kpi account-kpi-featured"><div class="account-kpi-label"><span>Renda disponível estimada</span><span class="account-kpi-icon">✧</span></div><div class="account-kpi-value" id="cardRendaTotal">R$ 0,00</div><a href="rendimentos.html" id="btnDetalhesRenda" class="account-text-button">Entenda cada valor →</a></article>
+            </div>
+            <p class="income-profile-note">Configure seu regime (CLT, PJ ou aposentadoria) e se utiliza adiantamento de salário. A projeção mensal é separada dos pagamentos reais no <a href="rendimentos.html">histórico de rendimentos</a>.</p>
+        </section>
+
+        <div class="account-two-column" id="layoutPerfil">
+            <aside class="account-sidebar">
+                <section class="account-panel account-identity" aria-label="Resumo do perfil">
+                    <div class="account-identity-top">
+                        <div class="account-avatar-wrapper">
+                            <img id="fotoPerfilLateral" class="account-identity-avatar" alt="Foto de perfil" src="">
+                            <button type="button" class="account-avatar-edit-trigger" id="btnEditarFotoPerfil" aria-label="Alterar foto de perfil" title="Alterar foto de perfil" data-page-handler="perfil-2">
+                                <img src="imagens/editar.png" alt="" aria-hidden="true" data-page-handler="perfil-3">
+                                <span aria-hidden="true">✎</span>
+                            </button>
+                        </div>
+                        <div class="account-identity-main">
+                            <h2 id="nomePerfilLateral">Minha conta</h2>
+                            <p id="loginPerfilLateral">Seu perfil financeiro</p>
+                            <div class="account-identity-badges">
+                                <span class="account-status" id="estadoContaPerfil"><span></span> Conta ativa</span>
+                                <span class="account-status account-status-reminders" id="lembretesAtivosPerfil" hidden>◷ Lembretes ativos</span>
+                            </div>
+                        </div>
+                    </div>
+                    <input type="file" id="inputFotoPerfil" accept="image/png,image/jpeg,image/webp" class="account-file-input" aria-label="Escolher nova foto de perfil" data-page-handler="perfil-4">
+                    <p id="fotoPerfilFeedback" class="account-photo-feedback" role="status" aria-live="polite"></p>
+                    <div class="account-identity-details"><span>Parceiro financeiro</span><strong id="parceiroPerfilResumo">Não vinculado</strong></div>
+                    <div class="account-side-divider"></div>
+                    <button type="button" class="account-edit-trigger" id="btnEditarDadosPerfil" aria-controls="dados-pessoais" aria-expanded="false" data-page-handler="perfil-5"><span aria-hidden="true">✎</span> <span id="rotuloEditarDadosPerfil">Editar meus dados</span><span aria-hidden="true">→</span></button>
+                    <p id="perfilCardFeedback" class="account-card-feedback" role="status" aria-live="polite"></p>
+                </section>
+                <section class="account-panel account-quick-links" aria-label="Atalhos financeiros">
+                    <h3>Seu financeiro</h3>
+                    <a href="financiamentos.html"><span><span class="account-link-icon">⌂</span> Financiamentos</span><strong id="qtdFinanciamentos">0</strong></a>
+                    <a href="bens.html"><span><span class="account-link-icon">◇</span> Bens patrimoniais</span><strong id="qtdeBens">0</strong></a>
+                    <a href="cartoes.html"><span><span class="account-link-icon">▤</span> Cartões de crédito</span><strong id="qtdeCartoes">0</strong></a>
+                </section>
+            </aside>
+
+            <section class="account-panel account-profile-form" id="dados-pessoais" hidden>
+                <div class="account-panel-heading"><div><span class="account-overline">PREFERÊNCIAS DA CONTA</span><h2>Informações pessoais</h2><p>Atualize somente o que precisar. As alterações serão salvas na sua conta.</p></div></div>
+                <form id="formMeuPerfil" data-page-handler="perfil-6">
+                    <div class="account-photo-inline-note">
+                        <div><strong>Sua foto de perfil</strong><p>Use o lápis sobre a foto. Alterar ou remover a foto salva automaticamente, sem afetar os outros campos.</p></div>
+                        <button type="button" class="account-text-button account-danger-text" data-page-handler="perfil-7">Remover foto agora</button>
+                    </div>
+                    <div class="account-form-section-title"><span class="account-step-index">01</span><div><h3>Identificação</h3><p>Como você entra e aparece no sistema.</p></div></div>
+                    <div class="form-grid-2 account-form-grid">
+                        <div class="form-group"><label for="meuUsuarioLogin">Usuário de acesso</label><input type="text" id="meuUsuarioLogin" autocomplete="username" maxlength="80" required><small>Precisa ser único.</small></div>
+                        <div class="form-group"><label for="meuNome">Nome de exibição</label><input type="text" id="meuNome" autocomplete="name" maxlength="100" required><small>Será mostrado no cabeçalho.</small></div>
+                    </div>
+                    <div class="account-form-section-title"><span class="account-step-index">02</span><div><h3>Segurança e vínculo</h3><p>Sua senha de acesso e o compartilhamento com um parceiro.</p></div></div>
+                    <p class="account-note account-password-required" id="avisoTrocaSenhaObrigatoria" hidden>Por segurança, defina uma nova senha antes de acessar as outras páginas. A senha provisória não deve continuar em uso.</p>
+                    <div class="form-grid-2 account-form-grid">
+                        <div class="form-group"><label for="meuPinAtual">Nova senha <span class="account-optional" id="rotuloSenhaOpcional">opcional</span></label><div class="account-password-field"><input type="password" id="meuPinAtual" minlength="8" autocomplete="new-password" placeholder="Deixe vazio para manter"><button type="button" aria-label="Mostrar senha" aria-pressed="false" id="togglePinPerfil">Mostrar</button></div><small>8+ caracteres com letras maiúsculas e minúsculas, número e símbolo.</small></div>
+                        <div class="form-group"><label for="confirmarSenhaPerfil">Confirmar nova senha</label><input type="password" id="confirmarSenhaPerfil" autocomplete="new-password" placeholder="Repita a senha, se estiver alterando"><small>Evita erros de digitação.</small></div>
+                        <div class="form-group"><label for="meuParceiro">Parceiro financeiro</label><select id="meuParceiro"><option value="">Somente eu</option></select><small>Um novo vínculo depende da aprovação do parceiro.</small></div>
+                    </div>
+                    <div class="account-form-section-title"><span class="account-step-index">03</span><div><h3>Lembretes</h3><p>Receba avisos sobre contas próximas do vencimento.</p></div></div>
+                    <div class="account-reminder-row"><label class="account-switch-line"><input type="checkbox" id="notifAtivaVencimento"><span><strong>Avisar sobre vencimentos</strong><small>Um lembrete antes da data da conta.</small></span></label><div class="form-group account-reminder-days"><label for="notifDiasAntecedencia">Avisar com antecedência de</label><div class="account-days-field"><input type="number" min="1" max="15" id="notifDiasAntecedencia" value="3"><span>dias</span></div></div></div>
+                    <div class="account-save-bar"><span id="perfilFeedback" class="account-feedback" role="status" aria-live="polite">Tudo atualizado.</span><div><button type="button" class="btn-secundario" id="descartarPerfil" hidden data-page-handler="perfil-8">Descartar</button><button type="submit" id="btnSalvarPerfil">Salvar alterações <span aria-hidden="true">→</span></button></div></div>
+                </form>
+            </section>
+        </div>
+
+        <section class="account-panel account-assets" id="patrimonio-perfil">
+            <div class="account-panel-heading"><div><span class="account-overline">PATRIMÔNIO</span><h2>Bens e investimentos vinculados</h2><p>Seus bens e os compartilhados com seu parceiro em uma visão consolidada.</p></div><a class="account-outline-link" href="bens.html">Gerenciar bens ↗</a></div>
+            <div class="tabela-container account-responsive-table"><table class="tabela"><thead><tr><th>Bem</th><th>Tipo</th><th>Valor inicial</th><th>Investido / movimentado</th></tr></thead><tbody id="tabelaBensPerfil"></tbody></table></div>
+        </section>
+    </main>
+
+    
+    
+    
+    
+
+    <script defer src="js/script.js"></script>
+    <script defer src="js/calculos_trabalhistas.js"></script>
+    <script defer src="js/conexao_sheets.js"></script>
+    <script defer src="js/page/perfil.js"></script>
+</body>
+</html>

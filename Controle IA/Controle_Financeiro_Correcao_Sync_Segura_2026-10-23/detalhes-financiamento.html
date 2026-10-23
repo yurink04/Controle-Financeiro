@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Financiamento | Controle Financeiro</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+    <main class="container">
+        <div class="page-heading" data-overline="PLANEJAMENTO · CONTRATO">
+            <div><h2 id="tituloFinanciamentoDetalhe">Detalhes do contrato</h2><p>Acompanhe o progresso, o valor recebido e as parcelas do contrato.</p></div>
+            <a href="financiamentos.html" class="text-link">← Voltar para os seus financiamentos</a>
+        </div>
+
+        <section class="stat-grid">
+            <div class="stat-box"><div class="stat-label">Progresso</div><div id="infoProgressoMeses" class="stat-value">0 / 0</div></div>
+            <div class="stat-box"><div class="stat-label">Meses faltantes</div><div id="infoMesesFaltantes" class="stat-value warning">0</div></div>
+            <div class="stat-box"><div class="stat-label">Previsão de término</div><div id="infoTerminoFinanciamento" class="stat-value">--/----</div></div>
+            <div class="stat-box"><div class="stat-label">Ações</div><div class="stat-detail">Edite uma parcela sem alterar as demais.</div></div>
+        </section>
+
+        <section id="analiseCustoContrato" class="form-card" style="margin-top:16px;">
+            <div class="section-title"><div><h2>Análise financeira do contrato</h2><p>Compare o preço de compra ou valor recebido com o custo previsto do crédito.</p></div></div>
+            <div class="stat-grid">
+                <div class="stat-box" id="cardValorCompra"><div class="stat-label">Valor de compra do bem</div><div id="metricaValorCompra" class="stat-value">Não informado</div></div>
+                <div class="stat-box" id="cardValorEntrada"><div class="stat-label">Entrada paga</div><div id="metricaValorEntrada" class="stat-value">—</div></div>
+                <div class="stat-box" id="cardValorFinanciado"><div class="stat-label">Valor financiado estimado</div><div id="metricaValorFinanciado" class="stat-value">—</div></div>
+                <div class="stat-box" id="cardValorLiberado"><div class="stat-label">Valor líquido recebido</div><div id="metricaValorLiberado" class="stat-value">—</div></div>
+                <div class="stat-box" id="cardDataLiberacao"><div class="stat-label">Data do recebimento</div><div id="metricaDataLiberacao" class="stat-value">—</div></div>
+                <div class="stat-box"><div class="stat-label">Total previsto das parcelas</div><div id="metricaTotalParcelas" class="stat-value">R$ 0,00</div></div>
+                <div class="stat-box"><div class="stat-label">Total já pago em parcelas</div><div id="metricaTotalPagoParcelas" class="stat-value">R$ 0,00</div></div>
+                <div class="stat-box"><div class="stat-label">Saldo a pagar (parcelas futuras)</div><div id="metricaSaldoDevedor" class="stat-value warning">R$ 0,00</div></div>
+                <div class="stat-box"><div class="stat-label">Custo total previsto</div><div id="metricaCustoTotal" class="stat-value">R$ 0,00</div></div>
+                <div class="stat-box"><div class="stat-label">Custo adicional estimado</div><div id="metricaCustoAdicional" class="stat-value negativo">—</div></div>
+                <div class="stat-box"><div class="stat-label">Acréscimo sobre o valor-base</div><div id="metricaPercentualAdicional" class="stat-value">—</div></div>
+                <div class="stat-box"><div class="stat-label">Taxa implícita estimada / mês</div><div id="metricaTaxaMensal" class="stat-value">—</div></div>
+                <div class="stat-box"><div class="stat-label">Taxa efetiva anual estimada</div><div id="metricaTaxaAnual" class="stat-value">—</div></div>
+            </div>
+            <p id="notaAnaliseCusto" class="muted small" style="margin:12px 0 0; line-height:1.5;"></p>
+        </section>
+
+        <section class="form-card" style="margin-top:16px;">
+            <div class="section-title"><div><h2>Dados do contrato</h2><p>A alteração do total de meses não apaga automaticamente parcelas já existentes.</p></div></div>
+            <form id="formEditarFinanciamentoCompleto" data-page-handler="detalhes-financiamento-1">
+                <div class="form-grid-3">
+                    <div class="form-group"><label for="editNomeFin">Nome do contrato</label><input type="text" id="editNomeFin" maxlength="120" required></div>
+                    <div class="form-group"><label for="editTotalMesesFin">Total de meses</label><input type="number" id="editTotalMesesFin" min="1" max="360" required></div>
+                    <div class="form-group"><label>&nbsp;</label><button type="submit" class="btn-warning btn-full">Salvar alterações</button></div>
+                </div>
+                <div id="blocoEdicaoCompraFin" class="form-grid-2" style="margin-top:12px;">
+                    <div class="form-group"><label for="editValorCompraFin">Valor de compra do bem (R$)</label><input type="number" id="editValorCompraFin" min="0.01" step="0.01" placeholder="Ex.: 200000,00"></div>
+                    <div class="form-group"><label for="editValorEntradaFin">Entrada paga (R$)</label><input type="number" id="editValorEntradaFin" min="0" step="0.01" placeholder="0,00"></div>
+                </div>
+                <p id="notaEdicaoCompraFin" class="muted small" style="margin:8px 0 0;">Em contratos antigos, informe o valor de compra para habilitar a análise de custo e a estimativa de taxa. A entrada é informativa e não cria lançamento automático.</p>
+            </form>
+        </section>
+
+        <section class="form-card">
+            <div class="section-title"><div><h2 id="tituloTabelaParcelas">Parcelas do financiamento</h2><p>Status, vencimento e valor de cada parcela (30 por página).</p></div></div>
+            
+            <div id="paginacaoTopoFinanciamento" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; flex-wrap: wrap; gap: 8px;"></div>
+
+            <div class="tabela-container">
+                <table class="tabela">
+                    <thead>
+                        <tr>
+                            <th>Parcela</th>
+                            <th>Vencimento</th>
+                            <th>Categoria</th>
+                            <th>Valor</th>
+                            <th>Status</th>
+                            <th>Ações</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tabelaParcelasFinanciamento"></tbody>
+                </table>
+            </div>
+
+            <div id="paginacaoRodapeFinanciamento" style="display: flex; justify-content: space-between; align-items: center; margin-top: 12px; flex-wrap: wrap; gap: 8px;"></div>
+        </section>
+    </main>
+
+    
+    
+    
+    
+
+    <script defer src="js/script.js"></script>
+    <script defer src="js/calculos_trabalhistas.js"></script>
+    <script defer src="js/conexao_sheets.js"></script>
+    <script defer src="js/page/detalhes-financiamento.js"></script>
+</body>
+</html>

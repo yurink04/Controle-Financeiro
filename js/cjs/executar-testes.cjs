@@ -8,7 +8,7 @@ const testes=[
  'validar-ids-lancamento.cjs', 'validar-lancamentos-parceiro.cjs',
  'validar-rede.cjs','validar-reenvio.cjs','validar-relatorios.cjs',
  'validar-diagnostico-sync.cjs',
- 'validar-sincronizacao.cjs'
+ 'validar-sincronizacao.cjs','validar-resolucao-conflitos.cjs'
 ];
 let falhas=0;
 for(const arquivo of testes) {

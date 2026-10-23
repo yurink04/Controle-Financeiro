@@ -68,9 +68,9 @@ button { border: 0; cursor: pointer; }
 a { color: inherit; }
 ::selection { background: var(--primary-soft); }
 
-@view-transition { navigation: auto; }
-::view-transition-old(root) { animation: pageExit .18s ease both; }
-::view-transition-new(root) { animation: pageEnter .26s cubic-bezier(.22, 1, .36, 1) both; }
+/* Transições automáticas entre documentos removidas: em alguns navegadores
+   geram InvalidStateError ao abortar navegação. As animações de entrada
+   do conteúdo continuam definidas por .container/pageIn. */
 
 body {
     min-height: 100vh;
@@ -2887,3 +2887,14 @@ body.profile-page .account-photo-inline-note p { font-size: .75rem; color: var(-
         transition-duration: .01ms !important;
     }
 }
+
+/* Revisão assistida de conflitos — componentes padronizados nos dois temas */
+.sync-conflitos-lista { display: grid; gap: 14px; margin: 18px 0; max-height: min(48vh, 400px); overflow-y: auto; }
+.sync-conflito-item { min-width: 0; border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 14px; background: var(--surface-2); }
+.sync-conflito-item legend { font-size: .85rem; font-weight: 800; color: var(--text-main); overflow-wrap: anywhere; }
+.sync-conflito-item > label { display: block; margin-top: 12px; font-size: .85rem; font-weight: 700; }
+.sync-conflito-valores { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.sync-conflito-valores > div { min-width: 0; }
+.sync-conflito-valores strong { display: block; font-size: .8rem; color: var(--text-muted); }
+.sync-conflito-valores code { display: block; padding: 8px; border-radius: 8px; background: var(--surface); white-space: pre-wrap; overflow-wrap: anywhere; max-height: 100px; overflow: auto; font-size: .8rem; }
+@media (max-width: 600px) { .sync-conflito-valores { grid-template-columns: minmax(0, 1fr); } }

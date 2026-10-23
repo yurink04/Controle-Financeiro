@@ -1,0 +1,279 @@
+[
+  {
+    "html": "admin-logs.html",
+    "blocks": 1,
+    "script_bytes": 12137,
+    "handlers": 8,
+    "events": {
+      "submit": 1,
+      "click": 7
+    },
+    "page_js": "js/page/admin-logs.js",
+    "orig_srcs": [
+      "js/script.js",
+      "js/calculos_trabalhistas.js",
+      "js/conexao_sheets.js"
+    ]
+  },
+  {
+    "html": "bens.html",
+    "blocks": 1,
+    "script_bytes": 11415,
+    "handlers": 4,
+    "events": {
+      "click": 2,
+      "submit": 1,
+      "change": 1
+    },
+    "page_js": "js/page/bens.js",
+    "orig_srcs": [
+      "js/script.js",
+      "js/calculos_trabalhistas.js",
+      "js/conexao_sheets.js"
+    ]
+  },
+  {
+    "html": "cartoes.html",
+    "blocks": 1,
+    "script_bytes": 10914,
+    "handlers": 3,
+    "events": {
+      "submit": 1,
+      "change": 1,
+      "click": 1
+    },
+    "page_js": "js/page/cartoes.js",
+    "orig_srcs": [
+      "js/script.js",
+      "js/calculos_trabalhistas.js",
+      "js/conexao_sheets.js"
+    ]
+  },
+  {
+    "html": "categorias.html",
+    "blocks": 1,
+    "script_bytes": 2116,
+    "handlers": 3,
+    "events": {
+      "submit": 1,
+      "click": 1,
+      "change": 1
+    },
+    "page_js": "js/page/categorias.js",
+    "orig_srcs": [
+      "js/script.js",
+      "js/calculos_trabalhistas.js",
+      "js/conexao_sheets.js"
+    ]
+  },
+  {
+    "html": "central-pagamentos.html",
+    "blocks": 1,
+    "script_bytes": 22166,
+    "handlers": 11,
+    "events": {
+      "click": 4,
+      "change": 6,
+      "input": 1
+    },
+    "page_js": "js/page/central-pagamentos.js",
+    "orig_srcs": [
+      "script.js"
+    ]
+  },
+  {
+    "html": "configuracoes.html",
+    "blocks": 1,
+    "script_bytes": 31242,
+    "handlers": 10,
+    "events": {
+      "click": 7,
+      "change": 2,
+      "submit": 1
+    },
+    "page_js": "js/page/configuracoes.js",
+    "orig_srcs": [
+      "js/script.js",
+      "js/calculos_trabalhistas.js",
+      "js/conexao_sheets.js"
+    ]
+  },
+  {
+    "html": "dashboard.html",
+    "blocks": 2,
+    "script_bytes": 11732,
+    "handlers": 10,
+    "events": {
+      "click": 3,
+      "input": 1,
+      "change": 6
+    },
+    "page_js": "js/page/dashboard.js",
+    "orig_srcs": [
+      "https://cdn.jsdelivr.net/npm/chart.js",
+      "js/script.js",
+      "js/calculos_trabalhistas.js",
+      "js/conexao_sheets.js"
+    ]
+  },
+  {
+    "html": "detalhes-central-parcelada.html",
+    "blocks": 1,
+    "script_bytes": 11329,
+    "handlers": 0,
+    "events": {},
+    "page_js": "js/page/detalhes-central-parcelada.js",
+    "orig_srcs": [
+      "js/script.js",
+      "js/calculos_trabalhistas.js",
+      "js/conexao_sheets.js"
+    ]
+  },
+  {
+    "html": "detalhes-financiamento.html",
+    "blocks": 1,
+    "script_bytes": 25103,
+    "handlers": 1,
+    "events": {
+      "submit": 1
+    },
+    "page_js": "js/page/detalhes-financiamento.js",
+    "orig_srcs": [
+      "js/script.js",
+      "js/calculos_trabalhistas.js",
+      "js/conexao_sheets.js"
+    ]
+  },
+  {
+    "html": "editar-lancamento.html",
+    "blocks": 1,
+    "script_bytes": 15189,
+    "handlers": 6,
+    "events": {
+      "click": 2,
+      "submit": 1,
+      "change": 3
+    },
+    "page_js": "js/page/editar-lancamento.js",
+    "orig_srcs": [
+      "js/script.js",
+      "js/calculos_trabalhistas.js",
+      "js/conexao_sheets.js"
+    ]
+  },
+  {
+    "html": "financiamentos.html",
+    "blocks": 1,
+    "script_bytes": 13026,
+    "handlers": 5,
+    "events": {
+      "click": 3,
+      "submit": 1,
+      "change": 1
+    },
+    "page_js": "js/page/financiamentos.js",
+    "orig_srcs": [
+      "js/script.js",
+      "js/calculos_trabalhistas.js",
+      "js/conexao_sheets.js"
+    ]
+  },
+  {
+    "html": "grafico.html",
+    "blocks": 1,
+    "script_bytes": 19399,
+    "handlers": 4,
+    "events": {
+      "change": 3,
+      "input": 1
+    },
+    "page_js": "js/page/grafico.js",
+    "orig_srcs": [
+      "js/script.js",
+      "js/calculos_trabalhistas.js",
+      "js/conexao_sheets.js"
+    ]
+  },
+  {
+    "html": "index.html",
+    "blocks": 1,
+    "script_bytes": 22016,
+    "handlers": 4,
+    "events": {
+      "click": 3,
+      "submit": 1
+    },
+    "page_js": "js/page/index.js",
+    "orig_srcs": [
+      "js/script.js",
+      "js/calculos_trabalhistas.js",
+      "js/conexao_sheets.js"
+    ]
+  },
+  {
+    "html": "lancamentos.html",
+    "blocks": 1,
+    "script_bytes": 34641,
+    "handlers": 17,
+    "events": {
+      "click": 8,
+      "change": 5,
+      "input": 4
+    },
+    "page_js": "js/page/lancamentos.js",
+    "orig_srcs": [
+      "js/script.js",
+      "js/calculos_trabalhistas.js",
+      "js/conexao_sheets.js"
+    ]
+  },
+  {
+    "html": "perfil.html",
+    "blocks": 1,
+    "script_bytes": 22674,
+    "handlers": 9,
+    "events": {
+      "click": 5,
+      "load": 1,
+      "error": 1,
+      "change": 1,
+      "submit": 1
+    },
+    "page_js": "js/page/perfil.js",
+    "orig_srcs": [
+      "js/script.js",
+      "js/calculos_trabalhistas.js",
+      "js/conexao_sheets.js"
+    ]
+  },
+  {
+    "html": "relatorios.html",
+    "blocks": 0,
+    "script_bytes": 0,
+    "handlers": 0,
+    "events": {},
+    "page_js": "js/page/relatorios.js",
+    "orig_srcs": [
+      "js/script.js",
+      "js/calculos_trabalhistas.js",
+      "js/conexao_sheets.js",
+      "js/page/relatorios.js"
+    ]
+  },
+  {
+    "html": "rendimentos.html",
+    "blocks": 1,
+    "script_bytes": 14585,
+    "handlers": 4,
+    "events": {
+      "change": 2,
+      "click": 2
+    },
+    "page_js": "js/page/rendimentos.js",
+    "orig_srcs": [
+      "js/script.js",
+      "js/calculos_trabalhistas.js",
+      "js/conexao_sheets.js"
+    ]
+  }
+]

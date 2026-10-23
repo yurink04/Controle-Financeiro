@@ -3,7 +3,7 @@
 // ============================================================================
 const DB_KEY = 'sistemaFinanceiroCompartilhado';
 const BACKUP_TESTE_KEY = 'sistemaFinanceiroBackupTeste';
-const API_URL = "https://script.google.com/macros/s/AKfycbxuiw6tkdN-OW-WOpo8owHWVFHV1rWiYJJm2HO6Lgba6mcrHMooFEaEQdmdBzMEFHEY/exec";
+const API_URL = "https://script.google.com/macros/s/AKfycbx3iS1tCCvglu_MGGxcOrBLbYStibo6axuC9LBeWLqg1BKFB3FuMsEu5A78gvPDFrMLqg/exec";
 const TOKEN_API = "PLANOF1NALPRAS4AIRD@MERDA";
 const CHAVE_SESSAO_API = 'financeiroSessaoSegura';
 const CHAVE_USUARIO_SESSAO = 'financeiroSessaoUsuario';
@@ -160,7 +160,7 @@ function serializarEstavel(v) {
     return '{' + Object.keys(v).sort().map(k => JSON.stringify(k) + ':' + serializarEstavel(v[k])).join(',') + '}';
 }
 
-function mesclarValorTresVias(base, local, remoto, caminho, conflitos) {
+function mesclarValorTresVias(base, local, remoto, caminho, conflitos, escolhas = null) {
     if (serializarEstavel(local) === serializarEstavel(base)) return clonarDados(remoto);
     if (serializarEstavel(remoto) === serializarEstavel(base)) return clonarDados(local);
     if (serializarEstavel(local) === serializarEstavel(remoto)) return clonarDados(local);
@@ -168,10 +168,16 @@ function mesclarValorTresVias(base, local, remoto, caminho, conflitos) {
     if (isObj(local) && isObj(remoto) && (base === undefined || isObj(base))) {
         const res = {};
         new Set([...Object.keys(base || {}), ...Object.keys(local || {}), ...Object.keys(remoto || {})]).forEach(k => {
-            const m = mesclarValorTresVias(base?.[k], local?.[k], remoto?.[k], `${caminho}.${k}`, conflitos);
+            const m = mesclarValorTresVias(base?.[k], local?.[k], remoto?.[k], `${caminho}.${k}`, conflitos, escolhas);
             if (m !== undefined) res[k] = m;
         });
         return res;
+    }
+    // Uma escolha explícita só vale para este campo, nesta conciliação.
+    // Sem escolha, nunca favoreça silenciosamente um dos lados.
+    if (escolhas && Object.prototype.hasOwnProperty.call(escolhas, caminho)) {
+        if (escolhas[caminho] === 'local') return clonarDados(local);
+        if (escolhas[caminho] === 'remoto') return clonarDados(remoto);
     }
     conflitos.push(caminho);
     return clonarDados(local);
@@ -192,30 +198,30 @@ function indexarColecao(lista) {
     return map;
 }
 
-function mesclarColecaoTresVias(nome, baseLista, localLista, remotoLista, conflitos) {
+function mesclarColecaoTresVias(nome, baseLista, localLista, remotoLista, conflitos, escolhas = null) {
     const base = indexarColecao(baseLista), local = indexarColecao(localLista), remoto = indexarColecao(remotoLista);
     const vistos = new Set(), res = [];
     [...remoto.keys(), ...local.keys(), ...base.keys()].forEach(k => {
         if (vistos.has(k)) return; vistos.add(k);
-        const v = mesclarValorTresVias(base.get(k), local.get(k), remoto.get(k), `${nome}[${k}]`, conflitos);
+        const v = mesclarValorTresVias(base.get(k), local.get(k), remoto.get(k), `${nome}[${k}]`, conflitos, escolhas);
         if (v !== undefined) res.push(v);
     });
     return res;
 }
 
-function mesclarSnapshotsTresVias(base, local, remoto) {
+function mesclarSnapshotsTresVias(base, local, remoto, escolhas = null) {
     const conflitos = [], res = clonarDados(remoto || {});
-    COLECOES_DADOS.forEach(n => res[n] = mesclarColecaoTresVias(n, base?.[n], local?.[n], remoto?.[n], conflitos));
+    COLECOES_DADOS.forEach(n => res[n] = mesclarColecaoTresVias(n, base?.[n], local?.[n], remoto?.[n], conflitos, escolhas));
     new Set([...Object.keys(base || {}), ...Object.keys(local || {}), ...Object.keys(remoto || {})]).forEach(k => {
         if (COLECOES_DADOS.includes(k) || k === '_revision') return;
-        const v = mesclarValorTresVias(base?.[k], local?.[k], remoto?.[k], k, conflitos);
+        const v = mesclarValorTresVias(base?.[k], local?.[k], remoto?.[k], k, conflitos, escolhas);
         if (v !== undefined) res[k] = v;
     });
     res._revision = Number(remoto?._revision) || 0;
     return { dados: res, conflitos: [...new Set(conflitos)] };
 }
 
-function prepararReenvioSeguro(baseOriginal, localOriginal, remotoOriginal, usuarioId) {
+function prepararReenvioSeguro(baseOriginal, localOriginal, remotoOriginal, usuarioId, escolhas = null) {
     const idAtual = String(usuarioId || '').trim();
     if (!idAtual) throw new Error('Usuário não identificado. Entre novamente antes de sincronizar.');
     if (!baseOriginal || !localOriginal || !remotoOriginal) {
@@ -248,7 +254,7 @@ function prepararReenvioSeguro(baseOriginal, localOriginal, remotoOriginal, usua
     const local = clonarDados(localOriginal);
     protegerColecaoUsuarios(base);
     protegerColecaoUsuarios(local);
-    const resultado = mesclarSnapshotsTresVias(base, local, remotoOriginal);
+    const resultado = mesclarSnapshotsTresVias(base, local, remotoOriginal, escolhas);
     const proprioFinal = (resultado.dados.usuarios || []).find(porId);
     resultado.dados.usuarios = usuariosRemotos.map(usuarioRemotoLista =>
         porId(usuarioRemotoLista) ? protegerProprioPerfil(proprioFinal) : clonarDados(usuarioRemotoLista));
@@ -424,7 +430,7 @@ async function sincronizarComServidor() {
                     serv,
                     localStorage.getItem('usuarioLogado')
                 );
-                if (mescla.conflitos.length) { marcarConflitoSincronizacao(lAtual, mescla.conflitos, 'Conflito de mesclagem.'); break; }
+                if (mescla.conflitos.length) { marcarConflitoSincronizacao(localMaisRecente, mescla.conflitos, 'Conflito de mesclagem.'); break; }
                 localStorage.setItem(SYNC_BASELINE_KEY, JSON.stringify(serv));
                 mescla.dados._revision = Number(serv._revision) || 0;
                 gravarSnapshotLocal(mescla.dados, false);
@@ -439,17 +445,31 @@ async function sincronizarComServidor() {
             payloadAtual._revision = rev;
             localStorage.setItem(SYNC_BASELINE_KEY, JSON.stringify(payloadAtual));
             window.revisaoServidorAtual = rev;
-            // Uma outra aba pode ter gravado o cache enquanto a chamada estava
-            // em andamento. Não substitua essas edições pelo snapshot já enviado.
-            if (!syncPendingData && localStorage.getItem(DB_KEY) !== snapshotNoInicioEnvio) {
-                const dadosDeOutraAba = lerJSONLocal(DB_KEY, null);
-                if (dadosDeOutraAba) {
-                    syncPendingData = clonarDados(dadosDeOutraAba);
-                    memoriaSistema = clonarDados(dadosDeOutraAba);
+            // A confirmação do Sheets não pode regravar um cache obsoleto.
+            // Releia o armazenamento: outra aba ou uma ação local pode ter salvo
+            // dados durante o POST. Mantenha-os pendentes com a nova revisão.
+            const textoAtual = localStorage.getItem(DB_KEY);
+            if (textoAtual !== snapshotNoInicioEnvio) {
+                const editadoDurantePost = lerJSONLocal(DB_KEY, null);
+                if (editadoDurantePost) {
+                    syncPendingData = clonarDados(editadoDurantePost);
+                    memoriaSistema = clonarDados(editadoDurantePost);
+                } else {
+                    marcarConflitoSincronizacao(payloadAtual, [],
+                        'O armazenamento mudou durante o envio e não pôde ser lido. Preserve o backup local.');
+                    break;
                 }
             }
-            if (syncPendingData) syncPendingData._revision = rev;
-            if (memoriaSistema) { memoriaSistema._revision = rev; localStorage.setItem(DB_KEY, JSON.stringify(memoriaSistema)); }
+            if (syncPendingData) {
+                // Não confunda revisão confirmada com garantia de mesclagem:
+                // a próxima escrita ainda passará pelo controle de revisão do servidor.
+                syncPendingData._revision = rev;
+                memoriaSistema = clonarDados(syncPendingData);
+                localStorage.setItem(DB_KEY, JSON.stringify(syncPendingData));
+            } else if (memoriaSistema) {
+                memoriaSistema._revision = rev;
+                localStorage.setItem(DB_KEY, JSON.stringify(memoriaSistema));
+            }
             if (!syncPendingData) {
                 localStorage.removeItem('syncPendente');
                 localStorage.removeItem(CHAVE_DONO_PENDENCIAS);

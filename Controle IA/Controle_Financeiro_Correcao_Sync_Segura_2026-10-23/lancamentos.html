@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lançamentos | Controle Financeiro</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <main class="container">
+        <div class="page-heading" data-overline="SUAS FINANÇAS · NOVO LANÇAMENTO">
+            <div>
+                <h2>Lançamentos</h2>
+                <p>Registre em poucos passos — o formulário aparece conforme você escolhe.</p>
+            </div>
+            <div class="toolbar-actions">
+                <a href="central-pagamentos.html" class="btn-acao-principal" style="text-decoration:none;">Central de Pagamentos</a>
+            </div>
+        </div>
+
+        <section class="form-card" id="cardNovoLancamento">
+            <div class="section-title">
+                <div><h2>Novo lançamento</h2><p>Guiado em etapas — só o que importa aparece.</p></div>
+            </div>
+
+            <div class="wizard-progress">
+                <div class="wizard-progress-fill" id="wizardProgressFill"></div>
+                <div class="wizard-step active" data-step="1">
+                    <div class="wizard-step-num"><span>1</span></div>
+                    <div class="wizard-step-label">Tipo</div>
+                </div>
+                <div class="wizard-step" data-step="2">
+                    <div class="wizard-step-num"><span>2</span></div>
+                    <div class="wizard-step-label">Essenciais</div>
+                </div>
+                <div class="wizard-step" data-step="3">
+                    <div class="wizard-step-num"><span>3</span></div>
+                    <div class="wizard-step-label">Detalhes</div>
+                </div>
+                <div class="wizard-step" data-step="4">
+                    <div class="wizard-step-num"><span>4</span></div>
+                    <div class="wizard-step-label">Revisão</div>
+                </div>
+            </div>
+
+            <div class="wizard-step-content active" data-step="1">
+                <p class="muted small" style="margin-bottom:14px;">O que você quer lançar?</p>
+                <div class="tipo-cards">
+                    <button type="button" class="tipo-card" data-intent="entrada" data-page-handler="lancamentos-1">
+                        <span class="tipo-icone">💰</span>
+                        <span class="tipo-titulo">Entrada</span>
+                        <span class="tipo-descricao">Recebi dinheiro (salário, Pix, uber...)</span>
+                    </button>
+                    <button type="button" class="tipo-card" data-intent="saida" data-page-handler="lancamentos-2">
+                        <span class="tipo-icone">💸</span>
+                        <span class="tipo-titulo">Saída à vista</span>
+                        <span class="tipo-descricao">Pix, débito, boleto ou dinheiro</span>
+                    </button>
+                    <button type="button" class="tipo-card" data-intent="cartao" data-page-handler="lancamentos-3">
+                        <span class="tipo-icone">💳</span>
+                        <span class="tipo-titulo">Compra no Cartão</span>
+                        <span class="tipo-descricao">Crédito, à vista ou parcelado</span>
+                    </button>
+                    <button type="button" class="tipo-card" data-intent="fixo" data-page-handler="lancamentos-4">
+                        <span class="tipo-icone">🔁</span>
+                        <span class="tipo-titulo">Conta Fixa</span>
+                        <span class="tipo-descricao">Aluguel, assinatura, mensalidade</span>
+                    </button>
+                    <button type="button" class="tipo-card" data-intent="lote" data-page-handler="lancamentos-5">
+                        <span class="tipo-icone">🗓️</span>
+                        <span class="tipo-titulo">Contas em lote</span>
+                        <span class="tipo-descricao">Uma conta por mês em um período</span>
+                    </button>
+                </div>
+            </div>
+
+            <div class="wizard-step-content" data-step="2">
+                <div class="form-grid-2">
+                    <div class="form-group">
+                        <label for="categoriaLancamento">Categoria <span style="color:var(--danger);">*</span></label>
+                        <select id="categoriaLancamento" required data-page-handler="lancamentos-6"></select>
+                    </div>
+                    <div class="form-group">
+                        <label for="descricaoLancamento">Descrição <span style="color:var(--danger);">*</span></label>
+                        <input type="text" id="descricaoLancamento" maxlength="120" placeholder="Ex.: Mercado, Salário" required data-page-handler="lancamentos-7">
+                    </div>
+                </div>
+
+                <div class="form-grid-2" style="margin-top:12px;">
+                    <div class="form-group">
+                        <label id="labelValorLancamento" for="valorTotalLancamento">Valor total (R$) <span style="color:var(--danger);">*</span></label>
+                        <input type="number" step="0.01" min="0.01" id="valorTotalLancamento" placeholder="0,00" required data-page-handler="lancamentos-8">
+                    </div>
+                    <div class="form-group" id="blocoVencimento">
+                        <label id="labelDataReferencia" for="vencimentoLancamento">Data <span style="color:var(--danger);">*</span></label>
+                        <input type="date" id="vencimentoLancamento" required>
+                    </div>
+                </div>
+
+                <div id="blocoFormaPagamentoSaida" class="form-group" style="display:none; margin-top:12px;">
+                    <label for="formaPagamentoSaida">Forma de pagamento</label>
+                    <select id="formaPagamentoSaida">
+                        <option value="DINHEIRO">Dinheiro / Pix / Débito</option>
+                        <option value="BOLETO">Boleto</option>
+                        <option value="PIX">Pix</option>
+                        <option value="DEBITO">Débito</option>
+                    </select>
+                </div>
+
+                <div id="blocoPeriodoLote" class="lote-wizard-section" hidden>
+                    <div class="lote-section-heading">
+                        <strong>Como essas contas serão lançadas?</strong>
+                        <span>Uma cobrança em cada mês do período selecionado.</span>
+                    </div>
+                    <div class="form-grid-2">
+                        <div class="form-group">
+                            <label for="formaPagamentoLote">Forma de pagamento</label>
+                            <select id="formaPagamentoLote" data-page-handler="lancamentos-9">
+                                <option value="BOLETO">Boleto / Conta</option>
+                                <option value="DINHEIRO">Dinheiro / Pix / Débito</option>
+                                <option value="FIXO">Conta fixa / mensal</option>
+                                <option value="CARTAO">Cartão de crédito</option>
+                            </select>
+                        </div>
+                        <div class="form-group" id="blocoCartaoLote" hidden>
+                            <label for="cartaoLote">Cartão de crédito</label>
+                            <select id="cartaoLote"></select>
+                        </div>
+                    </div>
+                    <div class="form-grid-2 lote-date-grid">
+                        <div class="form-group">
+                            <label id="labelInicioLote" for="primeiroVencimentoLote">Primeiro vencimento</label>
+                            <input type="date" id="primeiroVencimentoLote" data-page-handler="lancamentos-10">
+                        </div>
+                        <div class="form-group">
+                            <label id="labelFimLote" for="ultimoVencimentoLote">Último mês de vencimento</label>
+                            <input type="date" id="ultimoVencimentoLote" data-page-handler="lancamentos-11">
+                        </div>
+                    </div>
+                    <p class="lote-help">O dia do primeiro vencimento será repetido mensalmente, respeitando o último dia de cada mês. Na segunda data, apenas o mês e o ano são considerados. Limite de 120 meses.</p>
+                </div>
+
+                <div class="valor-preview" id="valorPreview" style="display:none;"></div>
+
+                <div id="blocoCartao" style="display:none; margin-top:16px; padding-top:16px; border-top:1px solid var(--border);">
+                    <div class="form-grid-3">
+                        <div class="form-group"><label for="cartaoLancamento">Cartão <span style="color:var(--danger);">*</span></label><select id="cartaoLancamento"></select></div>
+                        <div class="form-group"><label for="dataCompraCartao">Data da compra</label><input type="date" id="dataCompraCartao"></div>
+                        <div class="form-group"><label for="qtdParcelas">Parcelas</label><input type="number" min="1" max="48" id="qtdParcelas" value="1" data-page-handler="lancamentos-12"></div>
+                    </div>
+                </div>
+
+                <div id="blocoQtdParcelasFixo" style="display:none; margin-top:16px; padding-top:16px; border-top:1px solid var(--border);">
+                    <div class="form-group">
+                        <label for="qtdParcelasFixo">Repetir por quantos meses?</label>
+                        <input type="number" min="1" max="48" id="qtdParcelasFixo" value="12" data-page-handler="lancamentos-13">
+                        <small class="muted" style="font-size:0.75rem;display:block;margin-top:4px;">Meses passados ficarão como atrasados, não como pagos.</small>
+                    </div>
+                </div>
+
+                <div id="blocoNaturezaRenda" class="form-group" style="display:none; margin-top:16px;">
+                    <label for="naturezaRendaLancamento">Como classificar esta entrada?</label>
+                    <select id="naturezaRendaLancamento" data-page-handler="lancamentos-14">
+                        <option value="">Identificar automaticamente pela categoria</option>
+                        <option value="folha">Folha de pagamento / salário</option>
+                        <option value="adiantamento">Adiantamento de salário</option>
+                        <option value="salarial_extra">Férias, 13º ou PLR</option>
+                        <option value="variavel">Ganho variável (Uber, trabalho, venda...)</option>
+                        <option value="nao_renda">Transferência / reembolso / empréstimo</option>
+                    </select>
+                    <small class="muted">Ajuda o sistema a montar o histórico sem misturar salário, ganhos e transferências.</small>
+                </div>
+                <div id="blocoCompetenciaRenda" class="form-group" style="display:none; margin-top:16px;">
+                    <label for="competenciaRendaLancamento">Competência da renda (mês a que pertence)</label>
+                    <input type="month" id="competenciaRendaLancamento">
+                    <small class="muted">Use o mesmo mês para salário e adiantamento, mesmo que recebidos em datas diferentes.</small>
+                </div>
+                <div id="blocoBrutoFolha" style="display:none; margin-top:16px;">
+                    <div class="form-grid-2">
+                        <div class="form-group"><label for="remuneracaoBrutaLancamento" id="labelBrutoLancamento">Bruto total do recebimento (R$, opcional)</label>
+                            <input type="number" step="0.01" min="0" id="remuneracaoBrutaLancamento" placeholder="Incluindo horas extras"></div>
+                        <div class="form-group" id="campoHoraExtraBrutaLancamento"><label for="horaExtraBrutaLancamento">Horas extras brutas (R$, opcionais)</label>
+                            <input type="number" step="0.01" min="0" id="horaExtraBrutaLancamento" placeholder="Composição do bruto"></div>
+                    </div>
+                    <small class="muted" id="avisoBrutoLancamento">O valor principal do lançamento é o líquido recebido. O bruto já inclui as horas extras.</small>
+                </div>
+                <div id="blocoHoraExtra" class="form-group" style="display:none; margin-top:16px;">
+                    <label for="valorHoraExtra">Hora extra líquida inclusa no recebimento (R$, opcional)</label>
+                    <input type="number" step="0.01" min="0" id="valorHoraExtra" placeholder="0,00" value="0">
+                    <small class="muted">Apenas para detalhamento: este valor já faz parte do líquido recebido e nunca será somado novamente.</small>
+                </div>
+            </div>
+
+            <div class="wizard-step-content" data-step="3">
+                <p class="muted small" style="margin-bottom:14px;">Estes campos são opcionais — pule se não precisar.</p>
+                <div class="form-grid-2">
+                    <div id="blocoServicoEssencial" class="form-group">
+                        <label for="servicoEssencial">É despesa essencial?</label>
+                        <select id="servicoEssencial"><option value="nao">Não</option><option value="sim">Sim</option></select>
+                    </div>
+                    <div id="blocoEscopo" class="form-group">
+                        <label for="escopoLancamento">Escopo</label>
+                        <select id="escopoLancamento">
+                            <option value="casal">Casal / Casa</option>
+                            <option value="individual">Individual</option>
+                        </select>
+                    </div>
+                </div>
+                <div id="blocoBemLancamento" class="form-group" style="margin-top:12px;">
+                    <label for="bemLancamento">Vincular a Bem Patrimonial</label>
+                    <select id="bemLancamento"><option value="">Nenhum bem vinculado</option></select>
+                </div>
+                <div id="blocoStatusPagamento" class="form-group" style="margin-top:12px;">
+                    <label for="statusPagamento">Status do pagamento</label>
+                    <select id="statusPagamento">
+                        <option value="pendente">Pendente / A pagar</option>
+                        <option value="pago">Já está pago</option>
+                    </select>
+                </div>
+                <div class="form-group" style="margin-top:12px;">
+                    <label for="observacaoLancamento">Observação</label>
+                    <input type="text" id="observacaoLancamento" maxlength="250" placeholder="Detalhes adicionais">
+                </div>
+            </div>
+
+            <div class="wizard-step-content" data-step="4">
+                <div class="resumo-final" id="resumoFinal"></div>
+            </div>
+
+            <div class="wizard-inline-feedback" id="wizardFeedback" role="status" aria-live="polite" hidden></div>
+
+            <div class="wizard-nav">
+                <button type="button" class="btn-voltar" id="btnVoltarWizard" style="visibility:hidden;" data-page-handler="lancamentos-15">← Voltar</button>
+                <button type="button" id="btnProximoWizard" data-page-handler="lancamentos-16">Continuar →</button>
+                <button type="button" class="btn-salvar" id="btnSalvarWizard" style="display:none;" data-page-handler="lancamentos-17">✓ Salvar lançamento</button>
+            </div>
+        </section>
+    </main>
+
+    
+    
+    
+    
+
+    <script defer src="js/script.js"></script>
+    <script defer src="js/calculos_trabalhistas.js"></script>
+    <script defer src="js/conexao_sheets.js"></script>
+    <script defer src="js/page/lancamentos.js"></script>
+</body>
+</html>

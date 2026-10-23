@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Central de Pagamentos | Controle Financeiro</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+    <main class="container">
+        <div class="page-heading" data-overline="CENTRAL DE CONTROLE · CONTAS">
+            <div>
+                <h2>Central de Pagamentos</h2>
+                <p>Gerencie suas contas por mês/competência, acompanhe o agrupamento de compras parceladas ou liste todos os lançamentos.</p>
+            </div>
+
+            <div class="menu-opcoes-container" style="position: relative; display: inline-block;">
+                <button type="button" id="btnToggleOpcoesCentral" class="btn-acao-principal" data-page-handler="central-pagamentos-1">
+                    Opções da central <span id="iconeSetaOpcoes" style="transition: transform 0.2s;">▼</span>
+                </button>
+                <div id="menuOpcoesCentral" class="dropdown-menu-personalizar" style="display: none; min-width: 220px; padding: 6px; right: 0; top: calc(100% + 6px);">
+                    <button type="button" id="btnVisaoParcelada" class="dropdown-item-opcao active" style="width: 100%; text-align: left; background: var(--primary-soft); border: none; padding: 10px 14px; border-radius: 8px; cursor: pointer; color: var(--text-main); font-weight: 600;" data-page-handler="central-pagamentos-2">Compras parceladas</button>
+                    <button type="button" id="btnVisaoCompetencia" class="dropdown-item-opcao" style="width: 100%; text-align: left; background: transparent; border: none; padding: 10px 14px; border-radius: 8px; cursor: pointer; color: var(--text-main); font-weight: 600;" data-page-handler="central-pagamentos-3">Compras no mês</button>
+                    <button type="button" id="btnVisaoListagem" class="dropdown-item-opcao" style="width: 100%; text-align: left; background: transparent; border: none; padding: 10px 14px; border-radius: 8px; cursor: pointer; color: var(--text-main); font-weight: 600;" data-page-handler="central-pagamentos-4">Listagem de lançamentos</button>
+                </div>
+            </div>
+        </div>
+
+        <section class="stat-grid">
+            <div class="stat-box"><div class="stat-label" id="labelStatTotal">Total do Período</div><div class="stat-value" id="total-mes">R$ 0,00</div></div>
+            <div class="stat-box"><div class="stat-label">Pago</div><div class="stat-value positivo" id="total-pago">R$ 0,00</div></div>
+            <div class="stat-box"><div class="stat-label">Pendente</div><div class="stat-value negativo" id="total-pendente">R$ 0,00</div></div>
+        </section>
+
+        <section class="form-card" style="margin-top: 16px;">
+            <div class="section-title" style="flex-wrap: wrap; gap: 12px; justify-content: space-between; align-items: center;">
+                <div>
+                    <h2 id="tituloSecaoPagamentos">Compras Parceladas</h2>
+                    <p id="subtituloSecaoPagamentos">Acompanhe o andamento e os valores consolidados de cada compra parcelada.</p>
+                </div>
+
+                <div style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap;">
+                    <label class="app-checkbox-label" style="background: var(--surface-2); padding: 8px 12px; border-radius: 10px; border: 1px solid var(--border);">
+                        <input type="checkbox" id="checkIncluirFinanciamento" data-page-handler="central-pagamentos-5">
+                        <span>Incluir financiamento</span>
+                    </label>
+
+                    <div class="filter-group" id="blocoFiltroMesCompetencia" style="display: none; margin: 0;">
+                        <label for="filtroMesCompetencia">Mês Ref.</label>
+                        <input type="month" id="filtroMesCompetencia" style="width: auto;" data-page-handler="central-pagamentos-6">
+                    </div>
+                </div>
+
+                <div id="blocoFiltrosListagem" style="display: none; width: 100%; gap: 12px; align-items: flex-end; flex-wrap: wrap; margin-top: 10px;">
+                    <div class="filter-group" style="flex: 1 1 200px;">
+    <label for="filtroBuscaListagem">Buscar</label>
+    <input type="search" id="filtroBuscaListagem" placeholder="Descrição do lançamento..." style="width: 100%; min-height: 42px;" data-page-handler="central-pagamentos-7">
+</div>
+                    <div class="filter-group">
+                        <label for="filtroDataInicio">Data Início</label>
+                        <input type="date" id="filtroDataInicio" style="width: auto;" data-page-handler="central-pagamentos-8">
+                    </div>
+                    <div class="filter-group">
+                        <label for="filtroDataFim">Data Fim</label>
+                        <input type="date" id="filtroDataFim" style="width: auto;" data-page-handler="central-pagamentos-9">
+                    </div>
+                    <div class="filter-group">
+                        <label for="filtroTipoLancamentoListagem">Tipo</label>
+                        <select id="filtroTipoLancamentoListagem" style="width: auto; min-height: 42px;" data-page-handler="central-pagamentos-10">
+                            <option value="ambos">Ambos (Entrada e Saída)</option>
+                            <option value="entrada">Entrada</option>
+                            <option value="saida">Saída</option>
+                        </select>
+                    </div>
+                    <div class="filter-group">
+                        <label for="filtroStatusListagem">Status</label>
+                        <select id="filtroStatusListagem" style="width: auto; min-height: 42px;" data-page-handler="central-pagamentos-11">
+                            <option value="todos">Todos os status</option>
+                            <option value="pago">Pago</option>
+                            <option value="pendente">Pendente / Atrasado</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+
+            <div class="tabela-container">
+                <table class="tabela">
+                    <thead>
+                        <tr id="cabecalhoTabelaPagamentos">
+                            <th>Descrição / Compra</th>
+                            <th>Parcelas</th>
+                            <th>Valor Total / Parcela</th>
+                            <th>Status</th>
+                            <th>Ações</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tabela-pagamentos-body">
+                    </tbody>
+                </table>
+            </div>
+        </section>
+    </main>
+
+    
+    
+
+    <script defer src="js/script.js"></script>
+    <script defer src="js/calculos_trabalhistas.js"></script>
+    <script defer src="js/conexao_sheets.js"></script>
+    <script defer src="js/page/central-pagamentos.js"></script>
+</body>
+</html>
