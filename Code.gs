@@ -1413,3 +1413,9 @@ function repararUsuarios() {
     lock.releaseLock();
   }
 }
+
+function forcarEstrutura() {
+  Object.keys(SCHEMA).forEach(function(nomeAba) {
+    escreverAba(nomeAba, [], SCHEMA[nomeAba]);
+  });
+}
