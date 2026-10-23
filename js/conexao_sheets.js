@@ -3,7 +3,7 @@
 // ============================================================================
 const DB_KEY = 'sistemaFinanceiroCompartilhado';
 const BACKUP_TESTE_KEY = 'sistemaFinanceiroBackupTeste';
-const API_URL = "https://script.google.com/macros/s/AKfycbxuiw6tkdN-OW-WOpo8owHWVFHV1rWiYJJm2HO6Lgba6mcrHMooFEaEQdmdBzMEFHEY/exec";
+const API_URL = "https://script.google.com/macros/s/AKfycbxxNnybk3gv97UpaOXwGsNlt31tmit53HbsxIiyp1LTZP0WG7S1-MeYeUCAIXPys-dgPg/exec";
 const TOKEN_API = "PLANOF1NALPRAS4AIRD@MERDA";
 const CHAVE_SESSAO_API = 'financeiroSessaoSegura';
 const CHAVE_USUARIO_SESSAO = 'financeiroSessaoUsuario';

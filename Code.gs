@@ -80,6 +80,23 @@ var CAMPOS_DATA = {
   dataVencimento: true
 };
 
+// Campos que o navegador grava como texto "dd/MM/yyyy". O Sheets (pt-BR) converte
+// esse texto em data real; por isso são forçados a texto na escrita e
+// devolvidos em dd/MM/yyyy na leitura (nunca como ISO/UTC).
+var CAMPOS_TEXTO_DATA_BR = {
+  logs: { dataHoraFormatada: true },
+  exclusao_movimento: { dataHora: true },
+  edicao_movimento: { dataHora: true }
+};
+
+function campoTextoDataBR(nomeAba, header) {
+  return !!(CAMPOS_TEXTO_DATA_BR[nomeAba] && CAMPOS_TEXTO_DATA_BR[nomeAba][header]);
+}
+
+function formatarDataBRServidor(val) {
+  return Utilities.formatDate(val, Session.getScriptTimeZone(), 'dd/MM/yyyy');
+}
+
 var CAMPOS_JSON = {
   permissoes: true,
   preferenciasNotificacao: true,
@@ -388,6 +405,35 @@ function conferirAlteracoesUsuarios(original, proposta, usuario, sessao, notific
   }
 }
 
+// Converte texto dd/MM/yyyy, ISO (com ou sem hora) ou Date para dd/MM/yyyy,
+// no fuso do script, só para COMPARAR o mesmo dia escrito de formas diferentes.
+function dataBRParaComparar(val) {
+  if (val === null || val === undefined || val === '') return '';
+  if (val instanceof Date) return isNaN(val.getTime()) ? '' : formatarDataBRServidor(val);
+  var texto = String(val).trim();
+  if (/^\d{1,2}\/\d{1,2}\/\d{4}$/.test(texto)) {
+    var p = texto.split('/');
+    return ('0' + p[0]).slice(-2) + '/' + ('0' + p[1]).slice(-2) + '/' + p[2];
+  }
+  var d = new Date(texto);
+  return isNaN(d.getTime()) ? texto : formatarDataBRServidor(d);
+}
+
+// Retorna o primeiro campo realmente alterado (ou '' se nenhum). Campos de data
+// em texto BR são iguais quando representam o mesmo dia.
+function campoAuditoriaAlterado(original, proposto, colecao) {
+  var campos = SCHEMA[colecao];
+  for (var i = 0; i < campos.length; i++) {
+    var campo = campos[i];
+    if (campoTextoDataBR(colecao, campo)) {
+      if (dataBRParaComparar(original && original[campo]) !== dataBRParaComparar(proposto && proposto[campo])) return campo;
+      continue;
+    }
+    if (registroAlterado(original, proposto, [campo])) return campo;
+  }
+  return '';
+}
+
 function conferirAuditoria(original, proposta, usuario, elevado, colecao) {
   if (elevado) return;
   var antes = {};
@@ -397,7 +443,12 @@ function conferirAuditoria(original, proposta, usuario, elevado, colecao) {
     var id = String(r.id);
     if (!id || depois[id]) throw new Error('Registro de auditoria duplicado.');
     depois[id] = true;
-    if (antes[id] && registroAlterado(antes[id], r, SCHEMA[colecao])) throw new Error('Registros de auditoria não podem ser alterados.');
+    if (antes[id]) {
+      var campoAlterado = campoAuditoriaAlterado(antes[id], r, colecao);
+      if (campoAlterado) throw new Error('Registros de auditoria não podem ser alterados (' + colecao + ', id ' + id + ', campo ' + campoAlterado + ').');
+      // Mesmo dia em outro formato: preserva o valor já gravado na planilha.
+      Object.keys(CAMPOS_TEXTO_DATA_BR[colecao] || {}).forEach(function(campo) { r[campo] = antes[id][campo]; });
+    }
     if (!antes[id] && String(r.usuarioId) !== String(usuario.id)) throw new Error('Auditoria de outro usuário não pode ser criada.');
   });
   original.forEach(function(r) {
@@ -1107,7 +1158,7 @@ function lerAba(nomeAba) {
       if (!header) continue;
 
       var val = row[j];
-      obj[header] = normalizarValorLido(header, val);
+      obj[header] = normalizarValorLido(header, val, nomeAba);
     }
 
     // Histórico legado sem ID: preserve um identificador estável até a próxima gravação.
@@ -1121,10 +1172,14 @@ function lerAba(nomeAba) {
   return result;
 }
 
-function normalizarValorLido(header, val) {
+function normalizarValorLido(header, val, nomeAba) {
   if (val === null || val === '') return CAMPOS_JSON[header] ? {} : '';
 
   if (val instanceof Date) {
+    if (campoTextoDataBR(nomeAba, header)) {
+      return isNaN(val.getTime()) ? '' : formatarDataBRServidor(val);
+    }
+
     if (CAMPOS_DATA[header]) {
       return Utilities.formatDate(
         val,
@@ -1245,6 +1300,11 @@ function escreverAba(nomeAba, dadosArray, headers) {
   var colunasAnteriores = sheet.getLastColumn();
   // Primeiro escreve a matriz completa; só depois limpa linhas/colunas que
   // sobraram. A aba nunca fica inteiramente vazia entre as duas operações.
+  headers.forEach(function(campo, j) {
+    if (campoTextoDataBR(nomeAba, campo)) {
+      sheet.getRange(1, j + 1, Math.max(matrizParaGravar.length, linhasAnteriores), 1).setNumberFormat('@');
+    }
+  });
   sheet.getRange(1, 1, matrizParaGravar.length, headers.length).setValues(matrizParaGravar);
   if (linhasAnteriores > matrizParaGravar.length) {
     sheet.getRange(matrizParaGravar.length + 1, 1,
