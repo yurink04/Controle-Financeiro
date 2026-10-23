@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Controle Financeiro | Acesso</title>
+
+    <link rel="stylesheet" href="style.css">
+</head>
+
+<body class="login-page">
+
+    <button type="button" class="login-theme-toggle" title="Alternar tema" aria-label="Alternar tema" data-page-handler="index-1">
+        <span id="loginThemeGlyph" aria-hidden="true">☾</span>
+    </button>
+
+    <main class="login-screen">
+        <aside class="login-story" aria-label="Controle Financeiro">
+            <div class="login-story-brand"><span class="login-story-symbol" aria-hidden="true">R<span>$</span></span><span>CONTROLE<br>FINANCEIRO</span></div>
+            <div class="login-story-message">
+                <span class="login-story-kicker"><span aria-hidden="true"></span> SEU ESPAÇO, SEU RITMO</span>
+                <h1>Cuide do que<br>importa. <em>Com calma.</em></h1>
+                <p>Um lugar simples para acompanhar suas finanças e seguir em frente com tranquilidade.</p>
+            </div>
+            <div class="login-story-footer"><span class="login-story-line" aria-hidden="true"></span> Uma visão mais clara do seu dia.</div>
+        </aside>
+
+        <section class="login-form-panel" aria-label="Entrar no sistema">
+            <div class="login-form-wrapper">
+                <div class="login-brand-head">
+                    <div class="login-mobile-logo">R<span>$</span></div>
+                    <div class="login-brand-label">CONTROLE<br>FINANCEIRO</div>
+                </div>
+
+                <div class="login-heading" id="loginHeadingContainer">
+                    <span class="login-eyebrow" id="loginEyebrowText">BOM TER VOCÊ POR AQUI</span>
+                    <h2 id="loginTitleText">Vamos começar?</h2>
+                    <p id="loginSubtitleText">Seu acesso, de forma simples e segura.</p>
+                </div>
+
+                <form id="formLogin" data-page-handler="index-2">
+
+                    <!-- Campo usuário -->
+                    <div class="login-field" id="blocoUsuarioContainer">
+                        <label for="inputUsuario">Usuário</label>
+                        <div class="login-select-wrapper" id="wrapperInputUsuario">
+                            <span class="login-field-icon" id="iconeUsuarioPadrao">👤</span>
+                            <input
+                                type="text"
+                                id="inputUsuario"
+                                placeholder="Digite seu nome de usuário"
+                                autocomplete="username"
+                                required
+                                class="login-input"
+                            >
+                        </div>
+                    </div>
+
+                    <!-- Campo de senha oculto inicialmente -->
+                    <div class="login-field" id="blocoSenha" hidden>
+                        <label for="inputSenha">Senha</label>
+                        <div class="login-select-wrapper">
+                            <span class="login-field-icon">🔒</span>
+                            <input
+                                type="password"
+                                id="inputSenha"
+                                placeholder="Digite sua senha"
+                                autocomplete="current-password"
+                                class="login-input"
+                            >
+                        </div>
+                    </div>
+
+                    <button type="submit" class="login-submit" id="loginSubmit">
+                        <span class="login-submit-content">
+                            <span class="login-submit-text">Continuar</span>
+                            <span class="login-submit-arrow" id="loginSubmitArrow">→</span>
+                            <img id="loginSubmitLoadingGif" src="imagens/loading1.gif" alt="" aria-hidden="true">
+                        </span>
+                    </button>
+
+                </form>
+
+                <div class="login-new-user" id="cardPrimeiroAcesso" hidden>
+                    <span>É novo por aqui?</span>
+                    <button type="button" id="btnPrimeiroAcesso" data-page-handler="index-3">Criar acesso <span aria-hidden="true">↗</span></button>
+                </div>
+
+                <div class="login-connection" id="loginConnection" data-state="loading" data-visible="false" role="status" aria-live="polite">
+                    <div class="login-connection-main">
+                        <span class="login-connection-dot" aria-hidden="true"></span>
+                        <span id="loginStatusText"></span>
+                        <img class="login-status-gif" src="imagens/loading1.gif" alt="" aria-hidden="true">
+                        <button type="button" class="login-retry" id="loginRetry" hidden data-page-handler="index-4">Tentar novamente</button>
+                    </div>
+                    <div class="login-status-track" aria-hidden="true"><div class="login-status-fill"></div></div>
+                </div>
+                <p class="login-footnote"><span aria-hidden="true">✦</span> Seu espaço financeiro, sempre à mão.</p>
+            </div>
+        </section>
+
+    </main>
+
+    
+    
+    
+
+    
+
+
+    <script defer src="js/script.js"></script>
+    <script defer src="js/calculos_trabalhistas.js"></script>
+    <script defer src="js/conexao_sheets.js"></script>
+    <script defer src="js/page/index.js"></script>
+</body>
+
+</html>

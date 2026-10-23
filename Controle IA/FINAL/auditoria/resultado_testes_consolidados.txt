@@ -1,0 +1,15 @@
+PASSOU: validar-paginas.cjs
+PASSOU: validar-integracao.cjs
+PASSOU: testes-modulos.cjs
+PASSOU: validar-code-gs.cjs
+PASSOU: testar-fluxo-sheets.cjs
+PASSOU: validar-acesso.cjs
+PASSOU: validar-ids-lancamento.cjs
+PASSOU: validar-lancamentos-parceiro.cjs
+PASSOU: validar-rede.cjs
+PASSOU: validar-reenvio.cjs
+PASSOU: validar-relatorios.cjs
+PASSOU: validar-sincronizacao.cjs
+
+12/12 scripts de testes offline aprovados.
+

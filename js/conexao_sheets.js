@@ -1,18 +1,34 @@
-// Controle Financeiro — persistência local, reconciliação e Google Apps Script.
-// Depende de script.js para utilidades, migração de datas e feedback visual.
-// Não faça um segundo carregamento de script(7).js: os símbolos seriam duplicados.
-
 // ============================================================================
 // 1. CONSTANTES E ESTADO GLOBAL DA API
 // ============================================================================
 const DB_KEY = 'sistemaFinanceiroCompartilhado';
 const BACKUP_TESTE_KEY = 'sistemaFinanceiroBackupTeste';
-const API_URL = "https://script.google.com/macros/s/AKfycbyJzBHooNgbYzPpzQ5UZCrQ91QX53_Gjr7I-cxb87NGERplCVAQQ2jNJ_HG6ejSJs0OYg/exec";
+const API_URL = "https://script.google.com/macros/s/AKfycbxuiw6tkdN-OW-WOpo8owHWVFHV1rWiYJJm2HO6Lgba6mcrHMooFEaEQdmdBzMEFHEY/exec";
 const TOKEN_API = "PLANOF1NALPRAS4AIRD@MERDA";
 const CHAVE_SESSAO_API = 'financeiroSessaoSegura';
 const CHAVE_USUARIO_SESSAO = 'financeiroSessaoUsuario';
 const CHAVE_DONO_PENDENCIAS = 'financeiroSyncUsuario';
 const obterSessaoAPI = () => sessionStorage.getItem(CHAVE_SESSAO_API) || '';
+
+// Diagnóstico sem armazenar sessão, token, payload, valores financeiros ou dados pessoais.
+const CHAVE_DIAGNOSTICO_SINCRONIZACAO = 'financeiroDiagnosticoSincronizacao';
+function registrarFalhaSincronizacao(origem, erro) {
+    // Mensagens de exceção do Apps Script podem ser longas; evite propagá-las por inteiro.
+    const mensagem = String(erro?.message || erro || 'Erro de sincronização não identificado')
+        .replaceAll(TOKEN_API, '[chave omitida]').slice(0, 320);
+    const diagnostico = { dataHora: new Date().toISOString(), origem: String(origem).slice(0, 50), mensagem };
+    try { sessionStorage.setItem(CHAVE_DIAGNOSTICO_SINCRONIZACAO, JSON.stringify(diagnostico)); }
+    catch (_) { /* Armazenamento pode ser bloqueado; o console continua disponível. */ }
+    return diagnostico;
+}
+function obterDiagnosticoSincronizacao() {
+    try { return JSON.parse(sessionStorage.getItem(CHAVE_DIAGNOSTICO_SINCRONIZACAO) || 'null'); }
+    catch (_) { return null; }
+}
+function limparDiagnosticoSincronizacao() {
+    try { sessionStorage.removeItem(CHAVE_DIAGNOSTICO_SINCRONIZACAO); } catch (_) {}
+}
+
 
 function ehModoTesteAtivo(usuario) {
   return Boolean(usuario)
@@ -240,6 +256,7 @@ function prepararReenvioSeguro(baseOriginal, localOriginal, remotoOriginal, usua
 }
 
 function marcarConflitoSincronizacao(dadosLocais, campos, mensagem) {
+    registrarFalhaSincronizacao('conflito-de-dados', mensagem || 'Conflito de sincronização');
     _migracaoCacheRef = null;
     _migracaoCacheDados = null;
     const conflito = { dataHora: new Date().toISOString(), campos: (campos || []).slice(0, 30), mensagem: mensagem || 'Conflito de alterações.' };
@@ -286,7 +303,11 @@ let _syncBgEmAndamento = false;
 
 async function consultarRevisaoServidor() {
     const json = await executarPostAPI('revisao', { sessao: obterSessaoAPI() });
-    if (json.status !== 'sucesso' || !Number.isFinite(Number(json._revision))) return null; 
+    // Um erro de autenticação/servidor não é ausência de suporte à API de revisão.
+    // Antes ele virava null e a causa podia ficar oculta por até cinco minutos.
+    if (json?.status === 'erro') throw new Error(json.mensagem || 'Servidor recusou a consulta de revisão.');
+    if (json?.status !== 'sucesso' || !Number.isSafeInteger(Number(json?._revision)) || Number(json._revision) < 0)
+        throw new Error('Resposta de revisão inválida do Google Sheets.');
     return Number(json._revision);
 }
 
@@ -324,6 +345,7 @@ async function verificarAtualizacaoServidor(forcar = false) {
         if (!digitando && !modalAberto) rerenderizarTelaAtual();
         atualizarIndicadorSyncUI('success');
     } catch (e) {
+        registrarFalhaSincronizacao('verificacao-segundo-plano', e);
         console.warn('Checagem em segundo plano falhou:', e);
         atualizarIndicadorSyncUI('error');
     } finally {
@@ -440,6 +462,7 @@ async function sincronizarComServidor() {
         }
     } catch (e) {
         syncFalhasConsecutivas++;
+        registrarFalhaSincronizacao('envio-de-alteracoes', e);
         console.warn('Sync adiada:', e);
         if (!syncPendingData && payloadAtual) syncPendingData = clonarDados(lerJSONLocal(DB_KEY, payloadAtual) || payloadAtual);
         localStorage.setItem('syncPendente', 'true');
@@ -486,9 +509,11 @@ async function inicializarBanco() {
         localStorage.removeItem('syncPendente'); localStorage.removeItem(CHAVE_DONO_PENDENCIAS); localStorage.removeItem(SYNC_CONFLICT_KEY);
         atualizarIndicadorSyncUI('success'); return norm;
     } catch (e) {
+        registrarFalhaSincronizacao('leitura-inicial', e);
         if (local) {
             window.ultimaOrigemBanco = 'local-offline';
             console.warn('Dados locais usados porque a atualização remota falhou:', e);
+            atualizarIndicadorSyncUI('error');
             return memoriaSistema = migrarDados(local).dados;
         }
         throw e;
@@ -506,7 +531,10 @@ function atualizarIndicadorSyncUI(status) {
     c.setAttribute('aria-label', estado === 'pending' ? 'Sincronização em andamento' : estado === 'success'
         ? 'Sincronizado. Clique para consultar as informações do servidor'
         : 'Erro de sincronização. Clique para tentar novamente');
-    c.title = estado === 'pending' ? 'Sincronizando...' : estado === 'success' ? 'Sincronizado' : 'Erro na sincronização';
+    if (estado === 'success') limparDiagnosticoSincronizacao();
+    const falha = estado === 'error' ? obterDiagnosticoSincronizacao() : null;
+    c.title = estado === 'pending' ? 'Sincronização pendente...' : estado === 'success' ? 'Sincronizado'
+        : falha ? `Erro de sincronização (${falha.origem}): ${falha.mensagem}` : 'Erro na sincronização';
 }
 
 // Migrações de esquema: fonte única (não repetir no núcleo).

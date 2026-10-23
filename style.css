@@ -2854,3 +2854,36 @@ body.profile-page .account-photo-inline-note p { font-size: .75rem; color: var(-
         transition-duration: .01ms !important;
     }
 }
+
+
+/* ============================================================================
+   AJUSTES DE CONSISTÊNCIA E ACESSIBILIDADE — lote final (23/10/2026)
+   Regras aditivas: preservam a identidade e os componentes já em uso.
+   ============================================================================ */
+:where(button, a, input, select, textarea, summary):focus-visible {
+    outline: 3px solid var(--primary);
+    outline-offset: 3px;
+}
+:where(input, select, textarea):disabled {
+    cursor: not-allowed;
+    opacity: .68;
+}
+:where(.form-card, .account-panel, .chart-card) {
+    min-width: 0;
+}
+:where(.tabela-container, .table-wrap) {
+    max-width: 100%;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+}
+:where(.form-grid-2, .grid-2, .grid-3, .grid-4) > * { min-width: 0; }
+[hidden] { display: none !important; }
+@media (prefers-reduced-motion: reduce) {
+    html { scroll-behavior: auto; }
+    *, *::before, *::after {
+        scroll-behavior: auto !important;
+        animation-duration: .01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: .01ms !important;
+    }
+}

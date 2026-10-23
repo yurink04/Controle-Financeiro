@@ -1,0 +1,465 @@
+// Controle Financeiro | Página: central-pagamentos.html
+// Arquivo extraído dos scripts embutidos no HTML original.
+// Carregar APÓS js/script.js, js/calculos_trabalhistas.js e js/conexao_sheets.js.
+// Mantém funções globais clássicas usadas por elementos gerados dinamicamente.
+
+// ===== Bloco inline original 1 =====
+        let visaoAtualPagamentos = 'parcelada';
+
+        document.addEventListener('DOMContentLoaded', async () => {
+            injetarHeader();
+            const autenticado = await verificarAutenticacao();
+            if (autenticado) {
+                const hoje = new Date();
+                const primeiroDia = new Date(hoje.getFullYear(), hoje.getMonth(), 1);
+                const ultimoDia = new Date(hoje.getFullYear(), hoje.getMonth() + 1, 0);
+
+                const inputInicio = document.getElementById('filtroDataInicio');
+                const inputFim = document.getElementById('filtroDataFim');
+                if (inputInicio && !inputInicio.value) inputInicio.value = dataLocalYYYYMMDD(primeiroDia);
+                if (inputFim && !inputFim.value) inputFim.value = dataLocalYYYYMMDD(ultimoDia);
+
+                // Encaminhamentos de Relatórios preservam a competência analisada.
+                const parametrosRelatorio = new URLSearchParams(window.location.search);
+                const mesRelatorio = parametrosRelatorio.get('mes') || '';
+                if (/^\d{4}-(0[1-9]|1[0-2])$/.test(mesRelatorio)) {
+                    const [anoRef, mesRef] = mesRelatorio.split('-').map(Number);
+                    if (inputInicio) inputInicio.value = mesRelatorio + '-01';
+                    if (inputFim) inputFim.value = dataLocalYYYYMMDD(new Date(anoRef, mesRef, 0));
+                    const filtroCompetencia = document.getElementById('filtroMesCompetencia');
+                    if (filtroCompetencia) filtroCompetencia.value = mesRelatorio;
+                }
+                if (parametrosRelatorio.get('visao') === 'competencia') {
+                    mudarVisaoPagamentos('competencia');
+                } else {
+                    carregarCentralPagamentos();
+                }
+            }
+
+            document.addEventListener('click', (e) => {
+                const container = document.querySelector('.menu-opcoes-container');
+                const menu = document.getElementById('menuOpcoesCentral');
+                if (container && menu && !container.contains(e.target)) {
+                    menu.style.display = 'none';
+                    const seta = document.getElementById('iconeSetaOpcoes');
+                    if (seta) seta.style.transform = 'rotate(0deg)';
+                }
+            });
+        });
+
+        function toggleMenuOpcoesCentral() {
+            const menu = document.getElementById('menuOpcoesCentral');
+            const seta = document.getElementById('iconeSetaOpcoes');
+            if (!menu) return;
+            const aberto = menu.style.display === 'block';
+            menu.style.display = aberto ? 'none' : 'block';
+            if (seta) seta.style.transform = aberto ? 'rotate(0deg)' : 'rotate(180deg)';
+        }
+
+        function mudarVisaoPagamentos(visao) {
+            visaoAtualPagamentos = visao;
+            toggleMenuOpcoesCentral();
+
+            document.querySelectorAll('.dropdown-item-opcao').forEach(el => el.style.background = 'transparent');
+            const btnAtivo = visao === 'parcelada' ? document.getElementById('btnVisaoParcelada') : (visao === 'competencia' ? document.getElementById('btnVisaoCompetencia') : document.getElementById('btnVisaoListagem'));
+            if (btnAtivo) btnAtivo.style.background = 'var(--primary-soft)';
+
+            const blocoMes = document.getElementById('blocoFiltroMesCompetencia');
+            const filtroMesComp = document.getElementById('filtroMesCompetencia');
+            const blocoListagem = document.getElementById('blocoFiltrosListagem');
+            const titSecao = document.getElementById('tituloSecaoPagamentos');
+            const subSecao = document.getElementById('subtituloSecaoPagamentos');
+
+            if (blocoMes) blocoMes.style.display = 'none';
+            if (blocoListagem) blocoListagem.style.display = 'none';
+
+            if (visao === 'competencia') {
+                if (blocoMes) blocoMes.style.display = 'block';
+                if (filtroMesComp && !filtroMesComp.value) {
+                    filtroMesComp.value = dataLocalYYYYMMDD().slice(0, 7);
+                }
+                if (titSecao) titSecao.textContent = 'Compras no Mês';
+                if (subSecao) subSecao.textContent = 'Listagem de lançamentos e faturas do mês selecionado.';
+            } else if (visao === 'listagem') {
+                if (blocoListagem) blocoListagem.style.display = 'flex';
+                if (titSecao) titSecao.textContent = 'Listagem de Lançamentos';
+                if (subSecao) subSecao.textContent = 'Exibição completa de todos os lançamentos feitos respeitando os filtros de período, tipo e status.';
+            } else {
+                if (titSecao) titSecao.textContent = 'Compras Parceladas';
+                if (subSecao) subSecao.textContent = 'Acompanhe o andamento e os valores consolidados de cada compra parcelada.';
+            }
+            carregarCentralPagamentos();
+        }
+
+       function carregarCentralPagamentos() {
+    const dados = obterDados();
+    const tbody = document.getElementById('tabela-pagamentos-body');
+    const cabecalho = document.getElementById('cabecalhoTabelaPagamentos');
+    const incluirFinanciamento = document.getElementById('checkIncluirFinanciamento')?.checked || false;
+    if (!tbody) return;
+    tbody.innerHTML = '';
+
+    const labelStatTotal = document.getElementById('labelStatTotal');
+    if (labelStatTotal) labelStatTotal.textContent = visaoAtualPagamentos === 'listagem' ? 'Total Filtrado' : 'Total do Período';
+
+    if (document.body.classList.contains('privacidade-ativa')) {
+        if (cabecalho) cabecalho.style.display = 'none';
+        const colspan = visaoAtualPagamentos === 'parcelada' ? 6 : 7;
+        const elTotalMes = document.getElementById('total-mes');
+        if (elTotalMes) elTotalMes.textContent = formatarMoeda(0);
+        const elTotalPago = document.getElementById('total-pago');
+        if (elTotalPago) elTotalPago.textContent = formatarMoeda(0);
+        const elTotalPendente = document.getElementById('total-pendente');
+        if (elTotalPendente) elTotalPendente.textContent = formatarMoeda(0);
+        tbody.innerHTML = `<tr><td colspan="${colspan}" style="text-align:center;padding:32px 12px;">
+            <div style="display:flex;flex-direction:column;align-items:center;gap:8px;color:var(--text-muted);">
+                <span style="font-size:2rem;opacity:.6;">🔒</span>
+                <strong style="color:var(--text-main);">Pagamentos ocultos</strong>
+                <span style="font-size:.82rem;">Use o botão de privacidade na barra superior para revelar.</span>
+            </div>
+        </td></tr>`;
+        return;
+    }
+    if (cabecalho) cabecalho.style.display = '';
+
+    let totalGeral = 0, totalPago = 0, totalPendente = 0;
+
+    if (visaoAtualPagamentos === 'parcelada') {
+        const lancamentosSaida = filtrarDadosPorPermissao(dados.lancamentos || [], dados, 'casal').filter(l => {
+            if (l.tipo !== 'saida') return false;
+            if (l.usuarioId != null && !usuarioPodeAlterarLancamento(l, dados)) return false;
+            if (!incluirFinanciamento && l.financiamentoId) return false;
+            return true;
+        });
+
+        if (cabecalho) {
+            cabecalho.innerHTML = `
+                <th>Descrição da Compra</th>
+                <th>Forma / Detalhe</th>
+                <th>Progresso</th>
+                <th>Valor Parcela</th>
+                <th>Valor Total</th>
+                <th>Ações</th>
+            `;
+        }
+
+        const grupos = new Map();
+        lancamentosSaida.forEach(l => {
+            if (Number(l.totalParcelas || 1) > 1 || l.parcelamentoId || l.financiamentoId) {
+                const chave = l.parcelamentoId ? String(l.parcelamentoId) : (l.financiamentoId ? `fin:${l.financiamentoId}` : `legado:${String(l.id)}`);
+                if (!grupos.has(chave)) {
+                    grupos.set(chave, { descricao: descricaoBaseParcelamento(l.descricao || ''), parcelas: [] });
+                }
+                grupos.get(chave).parcelas.push(l);
+            }
+        });
+        grupos.forEach(grupo => grupo.parcelas.sort((a, b) => {
+            const parcelaA = Number(a.parcelaAtual || 0), parcelaB = Number(b.parcelaAtual || 0);
+            if (parcelaA !== parcelaB) return parcelaA - parcelaB;
+            return String(a.vencimento || '').localeCompare(String(b.vencimento || ''));
+        }));
+
+        const chaves = [...grupos.keys()];
+        if (chaves.length === 0) {
+            tbody.innerHTML = `<tr><td colspan="6" style="text-align: center;">Nenhuma compra parcelada encontrada.</td></tr>`;
+        } else {
+            chaves.forEach(chave => {
+                const grupo = grupos.get(chave);
+                const totalP = grupo.parcelas.length;
+                const pagas = grupo.parcelas.filter(p => p.pago === true || p.status === 'pago').length;
+                const primeiroLanc = grupo.parcelas[0];
+                const valorParcela = Number(primeiroLanc?.valor || 0);
+                const valorTotalCompra = grupo.parcelas.reduce((acc, p) => acc + Number(p.valor || 0), 0);
+                const valorPendenteGrupo = grupo.parcelas.filter(p => !(p.pago === true || p.status === 'pago')).reduce((acc, p) => acc + Number(p.valor || 0), 0);
+
+                totalGeral += valorTotalCompra;
+                totalPago += grupo.parcelas.filter(p => p.pago === true || p.status === 'pago').reduce((acc, p) => acc + Number(p.valor || 0), 0);
+                totalPendente += valorPendenteGrupo;
+
+                let formaTexto = primeiroLanc?.financiamentoId ? 'Financiamento' : 'Boleto / Conta';
+                const fPag = primeiroLanc?.formaPagamento;
+                if (fPag === 'CARTAO') {
+                    const cartaoObj = (dados.cartoes || []).find(c => String(c.id) === String(primeiroLanc.cartaoId));
+                    formaTexto = `Cartão: ${cartaoObj ? cartaoObj.nome : 'Crédito'}`;
+                } else if (fPag === 'DINHEIRO') {
+                    formaTexto = 'Dinheiro / Pix';
+                } else if (fPag === 'FIXO') {
+                    formaTexto = 'Conta fixa';
+                }
+
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td><strong>${escaparHTML(grupo.descricao)}</strong></td>
+                    <td><span class="badge-forma">${escaparHTML(formaTexto)}</span></td>
+                    <td>${pagas} / ${totalP} (${totalP > 0 ? Math.round((pagas/totalP)*100) : 0}%)</td>
+                    <td>R$ ${valorParcela.toLocaleString('pt-BR', {minimumFractionDigits: 2})}</td>
+                    <td>R$ ${valorTotalCompra.toLocaleString('pt-BR', {minimumFractionDigits: 2})}</td>
+                    <td>
+                        <button type="button" onclick="window.location.href='detalhes-central-parcelada.html?id=${Number(primeiroLanc.id)}'" class="btn-acao-icone visualizar" title="Detalhes"><img src="imagens/visualizar.png" alt="Detalhes"></button>
+                        ${usuarioPodeAlterarLancamento(primeiroLanc, dados) ? `<button type="button" onclick="window.location.href='editar-lancamento.html?id=${Number(primeiroLanc.id)}&returnUrl=central-pagamentos.html'" class="btn-acao-icone editar" title="Editar"><img src="imagens/editar.png" alt="Editar"></button>` : ''}
+                    </td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+    } else if (visaoAtualPagamentos === 'competencia') {
+        const lancamentosSaida = filtrarDadosPorPermissao(dados.lancamentos || [], dados, 'casal').filter(l => {
+            if (l.tipo !== 'saida') return false;
+            if (l.usuarioId != null && !usuarioPodeAlterarLancamento(l, dados)) return false;
+            if (!incluirFinanciamento && l.financiamentoId) return false;
+            return true;
+        });
+
+        if (cabecalho) {
+            cabecalho.innerHTML = `
+                <th>Descrição</th>
+                <th>Vencimento</th>
+                <th>Categoria</th>
+                <th>Forma / Pagamento</th>
+                <th>Valor</th>
+                <th>Status</th>
+                <th>Ações</th>
+            `;
+        }
+
+        const filtroMesCompEl = document.getElementById('filtroMesCompetencia');
+        const mesAno = filtroMesCompEl ? filtroMesCompEl.value : '';
+        const filtradosMes = lancamentosSaida.filter(l => l.vencimento && l.vencimento.startsWith(mesAno));
+
+        if (filtradosMes.length === 0) {
+            tbody.innerHTML = `<tr><td colspan="7" style="text-align: center;">Nenhum lançamento encontrado para este mês.</td></tr>`;
+        } else {
+            filtradosMes.forEach(l => {
+                const valor = Number(l.valor || 0);
+                totalGeral += valor;
+                if (l.pago === true || l.status === 'pago') totalPago += valor; else totalPendente += valor;
+
+                const cat = (dados.categorias || []).find(c => String(c.id) === String(l.categoriaId));
+                const statusTexto = (l.pago === true || l.status === 'pago') ? 'Pago' : (l.status === 'atrasado' ? 'Atrasado' : 'Pendente');
+                const statusClasse = (l.pago === true || l.status === 'pago') ? 'status-pago' : (l.status === 'atrasado' ? 'status-atrasado' : 'status-pendente');
+
+                let formaTexto = l.financiamentoId ? 'Financiamento' : 'Boleto / Conta';
+                if (l.formaPagamento === 'CARTAO') {
+                    const cartaoObj = (dados.cartoes || []).find(c => String(c.id) === String(l.cartaoId));
+                    formaTexto = `Cartão: ${cartaoObj ? cartaoObj.nome : 'Crédito'}`;
+                } else if (l.formaPagamento === 'DINHEIRO') {
+                    formaTexto = 'Dinheiro / Pix';
+                } else if (l.formaPagamento === 'FIXO') {
+                    formaTexto = 'Conta fixa';
+                }
+
+                const origem = (typeof descreverOrigemLancamento === 'function') ? descreverOrigemLancamento(l, dados) : null;
+                const badgeOrigem = origem
+                    ? ` <span title="${escaparHTML(origem.detalhe)}" style="font-size:.85rem;opacity:.85;cursor:help;">${origem.icone}</span>`
+                    : '';
+                const btnHist = `<button type="button" onclick="abrirHistoricoLancamento(${Number(l.id)})" class="btn-acao-icone" title="Histórico / auditoria" style="background:color-mix(in srgb,var(--primary) 20%,transparent);border-color:var(--primary);">🕘</button>`;
+
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td><strong>${escaparHTML(l.descricao || '')}</strong>${badgeOrigem}</td>
+                    <td>${escaparHTML(formatarDataBR(l.vencimento || ''))}</td>
+                    <td>${escaparHTML(cat?.nome || 'Geral')}</td>
+                    <td>${escaparHTML(formaTexto)}</td>
+                    <td>R$ ${valor.toLocaleString('pt-BR', {minimumFractionDigits: 2})}</td>
+                    <td><span class="status-badge ${statusClasse}">${statusTexto}</span></td>
+                    <td>
+                        ${l.formaPagamento === 'CARTAO'
+                            ? `<a href="grafico.html?tipo=cartao&cartaoId=${l.cartaoId}&mes=${String(l.vencimento).slice(0, 7)}" class="btn-acao-icone" title="Gerenciar Fatura" style="display:inline-flex; align-items:center; justify-content:center; text-decoration:none;"><span style="font-size:16px;">💳</span></a>`
+                            : `<button type="button" onclick="alternarStatusPagamentoCentral(${Number(l.id)})" class="btn-acao-icone ${(l.pago === true || l.status === 'pago') ? 'desfazer' : 'pagar'}" title="Alterar status">${(l.pago === true || l.status === 'pago') ? '↩' : '✓'}</button>`}
+                        ${btnHist}
+                    </td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+    } else if (visaoAtualPagamentos === 'listagem') {
+        if (cabecalho) {
+            cabecalho.innerHTML = `
+                <th>Data</th>
+                <th>Tipo</th>
+                <th>Descrição</th>
+                <th>Categoria</th>
+                <th>Valor</th>
+                <th>Status</th>
+                <th>Ações</th>
+            `;
+        }
+
+        const dataIni = document.getElementById('filtroDataInicio')?.value || '';
+        const dataFim = document.getElementById('filtroDataFim')?.value || '';
+        const tipoFiltro = document.getElementById('filtroTipoLancamentoListagem')?.value || 'ambos';
+        const statusFiltro = document.getElementById('filtroStatusListagem')?.value || 'todos';
+        const buscaListagem = normalizarTexto(document.getElementById('filtroBuscaListagem')?.value || ''); // NOVO
+
+        const todosLancamentos = filtrarDadosPorPermissao(dados.lancamentos || [], dados, 'casal');
+
+        const filtradosListagem = todosLancamentos.filter(l => {
+            if (!incluirFinanciamento && l.financiamentoId) return false;
+            const dataRef = l.vencimento || l.dataCompra || l.createdAt || '';
+            const dataLimpa = dataRef.split('T')[0];
+
+            if (dataIni && dataLimpa < dataIni) return false;
+            if (dataFim && dataLimpa > dataFim) return false;
+            if (tipoFiltro !== 'ambos' && l.tipo !== tipoFiltro) return false;
+            
+            // NOVO FILTRO DE BUSCA
+            if (buscaListagem && !normalizarTexto(l.descricao || '').includes(buscaListagem)) return false;
+
+            const estaPago = (l.pago === true || l.status === 'pago');
+            if (statusFiltro === 'pago' && !estaPago) return false;
+            if (statusFiltro === 'pendente' && estaPago) return false;
+
+            return true;
+        });
+
+        filtradosListagem.sort((a, b) => String(b.vencimento || '').localeCompare(String(a.vencimento || '')));
+
+        if (filtradosListagem.length === 0) {
+            tbody.innerHTML = `<tr><td colspan="7" style="text-align: center;">Nenhum lançamento encontrado para os filtros selecionados.</td></tr>`;
+        } else {
+            filtradosListagem.forEach(l => {
+                const valor = Number(l.valor || 0);
+                const jaPago = (l.pago === true || l.status === 'pago');
+                totalGeral += valor;
+                if (jaPago) totalPago += valor; else totalPendente += valor;
+
+                const cat = (dados.categorias || []).find(c => String(c.id) === String(l.categoriaId));
+                const ehEntrada = l.tipo === 'entrada';
+                const statusTexto = (l.pago === true || l.status === 'pago') ? 'Pago' : (l.status === 'atrasado' ? 'Atrasado' : 'Pendente');
+                const statusClasse = (l.pago === true || l.status === 'pago') ? 'status-pago' : (l.status === 'atrasado' ? 'status-atrasado' : 'status-pendente');
+
+                const origem = (typeof descreverOrigemLancamento === 'function') ? descreverOrigemLancamento(l, dados) : null;
+                const badgeOrigem = origem
+                    ? ` <span title="${escaparHTML(origem.detalhe)}" style="font-size:.85rem;opacity:.85;cursor:help;">${origem.icone}</span>`
+                    : '';
+                const btnHist = `<button type="button" onclick="abrirHistoricoLancamento(${Number(l.id)})" class="btn-acao-icone" title="Histórico / auditoria" style="background:color-mix(in srgb,var(--primary) 20%,transparent);border-color:var(--primary);">🕘</button>`;
+
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td>${escaparHTML(formatarDataBR(l.vencimento || l.dataCompra || ''))}</td>
+                    <td><span style="font-weight: 700; color: ${ehEntrada ? 'var(--success)' : 'var(--danger)'};">${ehEntrada ? 'Entrada' : 'Saída'}</span></td>
+                    <td><strong>${escaparHTML(l.descricao || '')}</strong>${badgeOrigem}</td>
+                    <td>${escaparHTML(cat?.nome || 'Geral')}</td>
+                    <td class="${ehEntrada ? 'positivo' : 'negativo'}">R$ ${valor.toLocaleString('pt-BR', {minimumFractionDigits: 2})}</td>
+                    <td><span class="status-badge ${statusClasse}">${statusTexto}</span></td>
+                    <td>
+                        ${!ehEntrada && l.formaPagamento === 'CARTAO'
+                            ? `<a href="grafico.html?tipo=cartao&cartaoId=${l.cartaoId}&mes=${String(l.vencimento).slice(0, 7)}" class="btn-acao-icone" title="Gerenciar Fatura" style="display:inline-flex; align-items:center; justify-content:center; text-decoration:none;"><span style="font-size:16px;">💳</span></a>`
+                            : `<button type="button" onclick="alternarStatusPagamentoListagem(${Number(l.id)})" class="btn-acao-icone ${(l.pago === true || l.status === 'pago') ? 'desfazer' : 'pagar'}" title="Alterar status">${(l.pago === true || l.status === 'pago') ? '↩' : '✓'}</button>`}
+                        ${btnHist}
+                    </td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+    }
+
+    const elTotalMes = document.getElementById('total-mes');
+    if (elTotalMes) elTotalMes.textContent = `R$ ${totalGeral.toLocaleString('pt-BR', {minimumFractionDigits: 2})}`;
+    const elTotalPago = document.getElementById('total-pago');
+    if (elTotalPago) elTotalPago.textContent = `R$ ${totalPago.toLocaleString('pt-BR', {minimumFractionDigits: 2})}`;
+    const elTotalPendente = document.getElementById('total-pendente');
+    if (elTotalPendente) elTotalPendente.textContent = `R$ ${totalPendente.toLocaleString('pt-BR', {minimumFractionDigits: 2})}`;
+}
+
+        async function alternarStatusPagamentoCentral(id) {
+            const ok = await alternarStatusPagamento(id);
+            if (ok) carregarCentralPagamentos();
+        }
+
+        async function alternarStatusPagamentoListagem(id) {
+            const ok = await alternarStatusPagamento(id);
+            if (ok) carregarCentralPagamentos();
+        }
+
+        async function removerLancamentoListagem(id) {
+            const ok = await removerLancamentoInteligente(id);
+            if (ok) carregarCentralPagamentos();
+        }
+    
+
+// ===== Eventos migrados dos atributos on* do HTML =====
+// Liga apenas os elementos estáticos marcados por data-page-handler,
+// sem executar JavaScript como string e sem registrar eventos em duplicidade.
+(function vincularEventosDaPagina() {
+    const eventos = {
+        "central-pagamentos-1": [
+            ["click", function(event) {
+                toggleMenuOpcoesCentral()
+            }],
+        ],
+        "central-pagamentos-2": [
+            ["click", function(event) {
+                mudarVisaoPagamentos('parcelada')
+            }],
+        ],
+        "central-pagamentos-3": [
+            ["click", function(event) {
+                mudarVisaoPagamentos('competencia')
+            }],
+        ],
+        "central-pagamentos-4": [
+            ["click", function(event) {
+                mudarVisaoPagamentos('listagem')
+            }],
+        ],
+        "central-pagamentos-5": [
+            ["change", function(event) {
+                carregarCentralPagamentos()
+            }],
+        ],
+        "central-pagamentos-6": [
+            ["change", function(event) {
+                carregarCentralPagamentos()
+            }],
+        ],
+        "central-pagamentos-7": [
+            ["input", function(event) {
+                carregarCentralPagamentos()
+            }],
+        ],
+        "central-pagamentos-8": [
+            ["change", function(event) {
+                carregarCentralPagamentos()
+            }],
+        ],
+        "central-pagamentos-9": [
+            ["change", function(event) {
+                carregarCentralPagamentos()
+            }],
+        ],
+        "central-pagamentos-10": [
+            ["change", function(event) {
+                carregarCentralPagamentos()
+            }],
+        ],
+        "central-pagamentos-11": [
+            ["change", function(event) {
+                carregarCentralPagamentos()
+            }],
+        ],
+    };
+    function ligar() {
+        document.querySelectorAll("[data-page-handler]").forEach((el) => {
+            const nome = el.getAttribute("data-page-handler");
+            const especificacoes = eventos[nome];
+            if (!especificacoes || el.dataset.pageHandlerBound === "1") return;
+            el.dataset.pageHandlerBound = "1";
+            for (const [evento, handler] of especificacoes) {
+                const executar = function(e) {
+                    const resultado = handler.call(el, e);
+                    if (resultado === false) e.preventDefault();
+                };
+                el.addEventListener(evento, executar);
+                // Imagens podem carregar antes de scripts com defer serem executados.
+                if (el.tagName === "IMG" && el.complete) {
+                    if (evento === "load" && el.naturalWidth > 0) executar(new Event("load"));
+                    if (evento === "error" && el.naturalWidth === 0) executar(new Event("error"));
+                }
+            }
+        });
+    }
+    if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", ligar, { once: true });
+    else ligar();
+})();
+

@@ -7,8 +7,8 @@ const front={console,window:{addEventListener:noop,location:{pathname:'/x.html',
  localStorage:{getItem:k=>ls.has(k)?ls.get(k):null,setItem:(k,v)=>ls.set(k,String(v)),removeItem:k=>ls.delete(k)},navigator:{onLine:true},
  setTimeout:noop,setInterval:noop,clearTimeout:noop,fetch:noop,structuredClone,URL,Intl,Date,JSON,Math,Number,String,Array,Object,Set,Map};
 front.window.document=front.document;front.globalThis=front;
-vm.createContext(front);vm.runInContext(fs.readFileSync(arquivo,'utf8'),front);return front;}
-const f=carregarFront(require('path').join(__dirname,'script.js'));
+vm.createContext(front);vm.runInContext(fs.readFileSync(arquivo,'utf8'),front);vm.runInContext(fs.readFileSync(require('path').join(require('path').dirname(arquivo),'conexao_sheets.js'),'utf8'),front);return front;}
+const f=carregarFront(require('path').resolve(__dirname,'..','script.js'));
 const cp=v=>JSON.parse(JSON.stringify(v));
 const cols=['usuarios','categorias','cartoes','lancamentos','financiamentos','bens','notificacoes','logs','exclusao_movimento','edicao_movimento','fatura_cartao'];
 const snap=l=>{const d=Object.fromEntries(cols.map(c=>[c,[]]));d.usuarios=[{id:1,usuario:'eu',nome:'Eu',ativo:true,permissoes:{perfil:'supervisor'}},{id:2,usuario:'p',nome:'P',ativo:true,permissoes:{perfil:'supervisor'}}];d.lancamentos=l;d._revision=5;return d;};

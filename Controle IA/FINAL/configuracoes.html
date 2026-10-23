@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Configurações | Controle Financeiro</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body class="account-page settings-page">
+    <main class="container account-container">
+        <header class="account-hero"><div><span class="account-eyebrow">CENTRAL DE CONTROLE <span class="account-eyebrow-dot"></span> GESTÃO</span><h1>Configurações sem complicação.</h1><p>Usuários, permissões, segurança e dados organizados para você encontrar tudo rapidamente.</p></div><a class="account-hero-home" href="dashboard.html" aria-label="Voltar ao painel">↗ <span>Meu painel</span></a></header>
+        <nav class="account-nav" aria-label="Navegação da conta"><a href="perfil.html">◉ <span>Meu perfil</span></a><a class="active" href="configuracoes.html" aria-current="page">⚙ <span>Configurações</span></a><a href="admin-logs.html" data-account-logs hidden>▤ <span>Auditoria</span></a></nav>
+
+        <div class="account-section-heading"><div><span class="account-overline">RESUMO DO SISTEMA</span><h2>Visão geral</h2><p>Indicadores atualizados com os dados deste dispositivo.</p></div></div>
+        <div class="account-kpis account-kpis-settings" aria-label="Indicadores de usuários"><div class="account-kpi"><div class="account-kpi-label"><span>Usuários cadastrados</span><span class="account-kpi-icon">♧</span></div><strong class="account-kpi-value" id="configTotalUsuarios">0</strong><p>Contas no sistema</p></div><div class="account-kpi"><div class="account-kpi-label"><span>Contas ativas</span><span class="account-kpi-icon">✓</span></div><strong class="account-kpi-value" id="configUsuariosAtivos">0</strong><p>Com acesso habilitado</p></div><div class="account-kpi"><div class="account-kpi-label"><span>Administradores</span><span class="account-kpi-icon">✧</span></div><strong class="account-kpi-value" id="configAdministradores">0</strong><p>Perfil administrativo</p></div></div>
+
+        <div class="account-section-tabs" aria-label="Ir para seção"><a href="#usuarios-config">Usuários</a><a href="#backups-config">Backups</a><a href="#auditoria-config">Segurança e auditoria</a></div>
+
+        <section class="account-panel account-management" id="usuarios-config">
+            <div class="account-panel-heading"><div><span class="account-overline">01 / ACESSOS</span><h2>Gerenciar usuários</h2><p>Edite contas, perfis de acesso e vínculos de parceiros.</p></div><button type="button" id="btnNovoUsuarioConfig" data-page-handler="configuracoes-1">+ Novo usuário</button></div>
+            <div class="account-filter-toolbar"><label class="account-search-field"><span aria-hidden="true">⌕</span><input type="search" id="buscarUsuarioConfig" placeholder="Buscar por nome, perfil ou parceiro..." aria-label="Buscar usuários"></label><div class="account-select-wrap"><label for="filtrarUsuarioConfig">Status</label><select id="filtrarUsuarioConfig"><option value="todos">Todos os usuários</option><option value="ativos">Ativos</option><option value="inativos">Inativos</option></select></div></div>
+            <div class="tabela-container account-responsive-table"><table class="tabela"><thead><tr><th>Usuário</th><th>Situação</th><th>Detalhes da conta</th><th>Ações</th></tr></thead><tbody id="tabelaUsuariosConfig"></tbody></table></div>
+            <p class="account-table-hint" id="contadorUsuariosConfig" role="status" aria-live="polite">Carregando usuários...</p>
+        </section>
+
+        <div class="account-settings-grid">
+            <section class="account-panel account-backup" id="backups-config"><div class="account-panel-heading"><div><span class="account-overline">02 / PROTEÇÃO</span><h2>Backup dos seus dados</h2><p>Mantenha uma cópia de segurança sempre que precisar.</p></div><span class="account-panel-symbol">↓</span></div>
+                <div class="account-feature-item"><div><h3>Exportar cópia local</h3><p>Baixe um arquivo JSON completo com suas informações.</p></div><button type="button" class="btn-secundario" data-page-handler="configuracoes-2">Baixar backup ↗</button></div>
+                <div class="account-feature-item"><div><h3>Restaurar de um arquivo</h3><p>Substitui os dados atuais. Exige confirmação e senha administrativa.</p></div><label class="account-outline-link account-file-label">Selecionar arquivo<input type="file" id="inputRestaurarBackup" accept=".json,application/json" data-page-handler="configuracoes-3"></label></div>
+                <div class="account-feature-item"><div><h3>Recuperar da nuvem</h3><p>Recarrega a versão salva no Google Sheets. Alterações locais pendentes podem ser perdidas.</p></div><button type="button" class="btn-secundario" data-page-handler="configuracoes-4">Restaurar nuvem</button></div>
+                <div class="account-note">ⓘ A sincronização é automática. Faça uma cópia local antes de qualquer restauração.</div>
+            </section>
+            <section class="account-panel account-security" id="auditoria-config"><div class="account-panel-heading"><div><span class="account-overline">03 / SEGURANÇA</span><h2>Auditoria e atividade</h2><p>Consulte as operações registradas e acompanhe alterações no sistema.</p></div><span class="account-panel-symbol">◎</span></div>
+                <div class="account-audit-preview"><span class="account-audit-symbol">▤</span><h3>Histórico protegido</h3><p>Os registros só ficam disponíveis após validação da senha administrativa.</p></div>
+                <div class="account-inline-actions"><a class="account-outline-link" href="admin-logs.html" data-account-logs hidden>Ir para auditoria ↗</a><button type="button" id="btnAcessarLogsConfig" class="btn-secundario" data-page-handler="configuracoes-5">Visualizar nesta página</button></div>
+                <div id="painelAdminConteudo" class="account-embedded-logs" hidden><div class="account-panel-heading"><div><h3>Últimas atividades</h3><p>Visualização resumida.</p></div><button type="button" id="btnLimparLogs" class="btn-danger" hidden data-page-handler="configuracoes-6">Limpar histórico</button></div><div class="tabela-container account-responsive-table"><table class="tabela"><thead><tr><th>Data / hora</th><th>Usuário</th><th>Ação</th><th>Detalhes</th></tr></thead><tbody id="tabelaLogsAdmin"></tbody></table></div></div>
+            </section>
+        </div>
+    </main>
+
+    <div id="modalUsuario" class="modal-overlay account-user-modal" hidden role="dialog" aria-modal="true" aria-labelledby="modalUsuarioTitulo">
+        <div class="modal-box account-modal-content">
+            <div class="account-modal-top"><div><span class="account-overline">GERENCIAMENTO DE ACESSOS</span><h3 id="modalUsuarioTitulo">Novo usuário</h3><p>Defina os dados da conta e personalize suas permissões.</p></div><button type="button" class="account-close-button" aria-label="Fechar janela" data-page-handler="configuracoes-7">×</button></div>
+            <form id="formUsuarioModal" data-page-handler="configuracoes-8">
+                <input type="hidden" id="editUsuarioId">
+                
+                <div class="form-grid-2 account-form-grid">
+                    <div class="form-group">
+                        <label for="nomeUsuarioModal">Nome</label>
+                        <input type="text" id="nomeUsuarioModal" maxlength="100" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="perfilUsuarioModal">Perfil de Acesso</label>
+                        <select id="perfilUsuarioModal" data-page-handler="configuracoes-9">
+                            <option value="supervisor">Supervisor</option>
+                            <option value="usuario">Usuário (Leitura)</option>
+                            <option value="admin">Administrador (Total)</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="form-grid-2 account-form-grid">
+                    <div class="form-group">
+                        <label for="loginUsuarioModal">Login de acesso</label>
+                        <input type="text" id="loginUsuarioModal" maxlength="80" autocomplete="off" required>
+                        <small>Único no sistema; pode ser diferente do nome.</small>
+                    </div>
+                    <div class="form-group">
+                        <label for="senhaTemporariaUsuarioModal">Senha provisória <span id="senhaTemporariaObrigatoria">(obrigatória para novos usuários)</span></label>
+                        <input type="password" id="senhaTemporariaUsuarioModal" minlength="8" autocomplete="new-password" placeholder="Deixe vazio para manter a atual">
+                        <small>8+ caracteres com maiúscula, minúscula, número e símbolo.</small>
+                    </div>
+                </div>
+
+                <div class="form-grid-2 account-form-grid">
+                    <div class="form-group">
+                        <label for="rendaFixaUsuarioModal">Renda Fixa Base (R$)</label>
+                        <input type="number" step="0.01" min="0" id="rendaFixaUsuarioModal" placeholder="0,00">
+                    </div>
+                    <div class="form-group">
+                        <label for="parceiroUsuarioModal">Atrelar Parceiro</label>
+                        <select id="parceiroUsuarioModal">
+                            <option value="">Nenhum (Apenas Individual)</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="account-modal-checks">
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="resetPinModal"> 
+                        Exigir troca de senha no próximo acesso
+                    </label>
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="ativoUsuarioModal" checked> 
+                        Usuário Ativo
+                    </label>
+                </div>
+
+                <div class="account-permissions"><div class="account-permissions-heading"><h4>Permissões de acesso</h4><span id="resumoPermissoesConfig">0 selecionadas</span></div>
+                    <p id="avisoPerfilAdmin" class="account-note" hidden>Administradores têm acesso total por definição. As opções abaixo só restringem os demais perfis.</p>
+                    <p class="account-permissions-caption">Páginas que este usuário pode acessar</p>
+                    <div class="grid-permissoes account-permissions-grid">
+                        <label class="checkbox-label"><input type="checkbox" id="pDashboard" checked> Dashboard / Início</label>
+                        <label class="checkbox-label"><input type="checkbox" id="pRelatorios" checked> Relatórios e Gráficos</label>
+                        <label class="checkbox-label"><input type="checkbox" id="pLancamentos" checked> Gestão de Lançamentos</label>
+                        <label class="checkbox-label"><input type="checkbox" id="pCartoes" checked> Cartões e Benefícios</label>
+                        <label class="checkbox-label"><input type="checkbox" id="pCategorias" checked> Categorias</label>
+                        <label class="checkbox-label"><input type="checkbox" id="pConfiguracoes"> Configurações</label>
+                    </div>
+
+                    <p class="account-permissions-caption">Ações e módulos especiais</p>
+                    <div class="grid-permissoes account-permissions-grid">
+                        <label class="checkbox-label"><input type="checkbox" id="aCriarMovimento" checked> Criar / Editar Lançamentos</label>
+                        <label class="checkbox-label"><input type="checkbox" id="aExcluirMovimento" checked> Excluir Movimentos</label>
+                        <label class="checkbox-label"><input type="checkbox" id="aFinanciamentos" checked> Contratos de Financiamento</label>
+                        <label class="checkbox-label"><input type="checkbox" id="aLotes"> Geração de Contas em Lote</label>
+                        <label class="checkbox-label"><input type="checkbox" id="aUsuarios"> Gerenciar Usuários</label>
+                        <label class="checkbox-label"><input type="checkbox" id="aLogs"> Acessar Logs de Auditoria</label>
+                    </div>
+                </div>
+
+                <div class="modal-buttons account-modal-actions">
+                    <button type="button" class="btn-secundario" data-page-handler="configuracoes-10">Cancelar</button>
+                    <button type="submit" id="btnSalvarUsuarioConfig">Salvar usuário →</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    
+    
+    
+    
+
+    <script defer src="js/script.js"></script>
+    <script defer src="js/calculos_trabalhistas.js"></script>
+    <script defer src="js/conexao_sheets.js"></script>
+    <script defer src="js/page/configuracoes.js"></script>
+</body>
+</html>

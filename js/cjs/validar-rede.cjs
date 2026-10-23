@@ -4,7 +4,8 @@ const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
 
-const script = fs.readFileSync(path.join(__dirname, 'script.js'), 'utf8');
+const script = fs.readFileSync(path.resolve(__dirname, '..', 'conexao_sheets.js'), 'utf8');
+const core = fs.readFileSync(path.resolve(__dirname, '..', 'script.js'), 'utf8');
 const inicioAPI = script.indexOf('async function executarPostAPI(');
 const fimAPI = script.indexOf('const SCHEMA_VERSION', inicioAPI);
 assert.ok(inicioAPI > 0 && fimAPI > inicioAPI, 'Cliente da API encontrado');
@@ -25,7 +26,7 @@ vm.runInContext(script.slice(inicioAPI, fimAPI), ctxAPI);
 
 const inicioMescla = script.indexOf('function serializarEstavel(');
 const fimMescla = script.indexOf('function marcarConflitoSincronizacao(', inicioMescla);
-const clonarFonte = script.match(/^const clonarDados = .*;$/m)?.[0];
+const clonarFonte = core.match(/^const clonarDados = .*;$/m)?.[0];
 assert.ok(inicioMescla > 0 && fimMescla > inicioMescla && clonarFonte, 'Núcleo de mesclagem encontrado');
 const colecoes = ['usuarios', 'categorias', 'cartoes', 'lancamentos', 'financiamentos', 'bens',
     'notificacoes', 'logs', 'exclusao_movimento', 'edicao_movimento', 'fatura_cartao'];

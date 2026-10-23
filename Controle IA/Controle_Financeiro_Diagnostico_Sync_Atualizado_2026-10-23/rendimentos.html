@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Meus Rendimentos | Controle Financeiro</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body class="account-page income-page">
+    <main class="container account-container">
+        <header class="account-hero">
+            <div><span class="account-eyebrow">MEU FINANCEIRO · RENDIMENTOS</span>
+                <h1>Saiba de onde vem cada real.</h1>
+                <p>Seu salário estimado, adiantamentos, horas extras e entradas variáveis, com histórico e cálculos explicados.</p></div>
+            <a href="relatorios.html" class="account-hero-home">↗ <span>Relatórios</span></a>
+        </header>
+
+        <nav class="account-nav" aria-label="Navegação de rendimentos">
+            <a href="perfil.html">◉ <span>Meu perfil</span></a>
+            <a class="active" href="rendimentos.html" aria-current="page">▤ <span>Meus rendimentos</span></a>
+            <a href="relatorios.html">↗ <span>Relatórios gerais</span></a>
+        </nav>
+
+        <section class="income-filterbar" aria-label="Filtrar rendimentos">
+            <div><span class="income-eyebrow">HISTÓRICO INDIVIDUAL</span><h2>Visão dos seus ganhos</h2><p>Os filtros alteram o histórico; a média projetada sempre usa os últimos 6 meses corridos.</p></div>
+            <div class="income-filter-controls">
+                <label for="inicioPeriodoRenda">Período <select id="inicioPeriodoRenda" data-page-handler="rendimentos-1">
+                    <option value="3">Últimos 3 meses</option><option value="6" selected>Últimos 6 meses</option>
+                    <option value="12">Últimos 12 meses</option><option value="todos">Todo o histórico</option>
+                </select></label>
+                <label for="fimPeriodoRenda">Até o mês <input type="month" id="fimPeriodoRenda" data-page-handler="rendimentos-2"></label>
+                <button type="button" id="exportarRendimentosCsv" class="btn-secundario" data-page-handler="rendimentos-3">↓ Exportar CSV</button>
+            </div>
+        </section>
+
+        <div id="conteudoRendimentos">
+            <section class="income-kpis" aria-label="Projeção mensal">
+                <article><span id="rotuloRendaBrutaCard">Renda principal bruta</span><strong id="rendaBrutaCard">R$ 0,00</strong><small>Base + horas extras previstas, se CLT</small></article>
+                <article><span id="rotuloRendaLiquidaCard">Renda principal líquida estimada</span><strong id="rendaLiquidaCard">R$ 0,00</strong><small>Conforme os descontos do seu regime</small></article>
+                <article><span>Renda variável média</span><strong id="mediaVariavelCard">R$ 0,00</strong><small>6 meses, incluindo os sem ganhos</small></article>
+                <article class="income-kpi-featured"><span>Renda disponível estimada</span><strong id="rendaCompostaCard">R$ 0,00</strong><small>Líquido + média variável</small></article>
+            </section>
+
+            <section class="income-two-col">
+                <article class="account-panel income-detail-card">
+                    <div class="income-section-heading"><div><span class="income-eyebrow">SIMULAÇÃO · REFERÊNCIA 2026</span><h2>Como o líquido é calculado</h2>
+                        <p id="descricaoCalculoRegime">Descontos conforme o vínculo configurado no perfil.</p></div>
+                        <button type="button" class="btn-secundario" data-page-handler="rendimentos-4">⚙ Configurar salário</button>
+                    </div>
+                    <div id="detalheFolhaEstimado" class="income-breakdown"></div>
+                    <details class="income-legal-details" id="detalheRegrasCLT"><summary>Como o INSS e o IRRF são apurados?</summary>
+                        <div id="detalheFaixasINSS"></div>
+                        <p>O IRRF compara as deduções legais com o desconto simplificado mensal e considera a redução prevista em 2026. Valores podem diferir do contracheque.</p>
+                    </details>
+                </article>
+                <article class="account-panel income-detail-card">
+                    <div class="income-section-heading"><div><span class="income-eyebrow">RENDA VARIÁVEL</span><h2>Como calculamos a média</h2>
+                        <p>Usamos o que entrou em cada um dos seis meses mais recentes.</p></div></div>
+                    <div id="detalheMediaVariavel" class="income-breakdown"></div>
+                    <p class="income-hint">Entradas classificadas como adiantamento, folha, férias, 13º, PLR, empréstimos, transferências ou reembolsos não entram nessa média.</p>
+                </article>
+            </section>
+
+            <section class="account-panel income-history-card">
+                <div class="income-section-heading"><div><span class="income-eyebrow">HISTÓRICO DA RENDA PRINCIPAL</span><h2>Recebimentos consolidados por competência</h2>
+                    <p>Adiantamento e pagamento final entram uma única vez no total recebido; 13º, férias e PLR ficam identificados à parte.</p></div></div>
+                <div class="tabela-container income-responsive-table">
+                    <table class="tabela"><thead><tr><th>Competência</th><th>Pagamento final</th><th>Adiantamento</th><th id="rotuloExtrasSalariais">13º / férias / PLR</th><th>HE bruta</th><th>Bruto simulado</th><th>Descontos previstos</th><th>Descontos efetivos*</th><th>Descontos de extras*</th><th>Líquido principal previsto</th><th>Total recebido</th></tr></thead>
+                        <tbody id="historicoSalarioMensal"></tbody></table>
+                </div>
+                <p class="income-hint">*Desconto efetivo da folha = bruto informado − (adiantamento + pagamento final). Para 13º/férias/PLR, o desconto efetivo é a diferença entre o bruto e o líquido dessas verbas, se todos os seus brutos foram informados. O total recebido soma somente os líquidos lançados. As regras especiais dessas verbas não são confundidas com a tabela comum; sem bruto, não é possível reconstruir os descontos reais.</p>
+            </section>
+
+            <section class="account-panel income-history-card">
+                <div class="income-section-heading"><div><span class="income-eyebrow">HISTÓRICO VARIÁVEL</span><h2>O que entrou em cada mês</h2>
+                    <p>Uber, trabalhos extras, vendas e outras receitas variáveis organizadas por categoria.</p></div></div>
+                <div class="income-variable-grid"><div class="tabela-container income-responsive-table">
+                    <table class="tabela"><thead><tr><th>Mês</th><th>Quantidade</th><th>Renda variável</th></tr></thead>
+                        <tbody id="historicoVariavelMensal"></tbody></table></div>
+                    <div id="categoriasVariaveis" class="income-category-list"></div>
+                </div>
+            </section>
+
+            <section class="account-panel income-history-card">
+                <div class="income-section-heading"><div><span class="income-eyebrow">EXTRATO DE GANHOS</span><h2>Cada lançamento, sem duplicidade</h2>
+                    <p>Confira categoria, descrição, tipo de renda, hora extra e valor registrado.</p></div></div>
+                <div class="tabela-container income-responsive-table">
+                    <table class="tabela"><thead><tr><th>Data</th><th>Competência</th><th>Descrição</th><th>Categoria</th><th>Classificação</th><th>HE bruta</th><th>Recebido</th><th>Abrir</th></tr></thead>
+                        <tbody id="historicoRendimentosItens"></tbody></table>
+                </div>
+            </section>
+        </div>
+        <div id="rendaPrivacidadeOculta" class="account-panel income-privacy-note" hidden>🔒 Valores ocultos pelo modo de privacidade. Use o botão de privacidade no cabeçalho para mostrar os rendimentos.</div>
+        <p class="income-disclaimer">Este demonstrativo é uma ferramenta de organização financeira, não uma folha de pagamento oficial. Regras de 2026 foram usadas para estimar o salário CLT; consulte o holerite para valores definitivos.</p>
+    </main>
+    
+    
+    
+    
+    
+
+    <script defer src="js/script.js"></script>
+    <script defer src="js/calculos_trabalhistas.js"></script>
+    <script defer src="js/conexao_sheets.js"></script>
+    <script defer src="js/page/rendimentos.js"></script>
+</body>
+</html>

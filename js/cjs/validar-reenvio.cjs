@@ -4,12 +4,13 @@ const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
 
-const origem = fs.readFileSync(path.join(__dirname, 'script.js'), 'utf8');
+const origem = fs.readFileSync(path.resolve(__dirname, '..', 'conexao_sheets.js'), 'utf8');
+const nucleo = fs.readFileSync(path.resolve(__dirname, '..', 'script.js'), 'utf8');
 const inicioMescla = origem.indexOf('function serializarEstavel(');
 const fimMescla = origem.indexOf('function marcarConflitoSincronizacao(', inicioMescla);
-const clonarFonte = origem.match(/^const clonarDados = .*;$/m)?.[0];
-const inicioFluxo = origem.indexOf('async function forcarEnvioComBackup(');
-const fimFluxo = origem.indexOf('function atualizarIndicadorSyncUI(', inicioFluxo);
+const clonarFonte = nucleo.match(/^const clonarDados = .*;$/m)?.[0];
+const inicioFluxo = nucleo.indexOf('async function forcarEnvioComBackup(');
+const fimFluxo = nucleo.indexOf('async function adicionarCategoria(', inicioFluxo);
 assert.ok(inicioMescla > 0 && fimMescla > inicioMescla && clonarFonte);
 assert.ok(inicioFluxo > 0 && fimFluxo > inicioFluxo);
 
@@ -82,7 +83,7 @@ function ambiente(base, local, remoto, {resultadoPost, durantePost} = {}) {
         location: {reload: () => {recarregamentos++;}}
     };
     vm.createContext(ctx);
-    vm.runInContext(origem.slice(inicioFluxo, fimFluxo), ctx);
+    vm.runInContext(nucleo.slice(inicioFluxo, fimFluxo), ctx);
     return {ctx, kv, posts, backups, mensagens, estados, recarregamentos: () => recarregamentos};
 }
 

@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Detalhes do Gráfico | Controle Financeiro</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+    <main class="container">
+        <div class="page-heading" data-overline="RELATÓRIOS · EXPLORAR DADOS">
+            <div>
+                <h2 id="tituloGrafico">Detalhes do gráfico</h2>
+                <p id="subtituloGrafico">Movimentações detalhadas do período.</p>
+            </div>
+            <a href="dashboard.html" class="text-link">← Voltar ao dashboard</a>
+        </div>
+
+        <section class="form-card filter-bar">
+            <div>
+                <div class="section-title" style="margin-bottom: 2px;"><h2>Filtros</h2></div>
+                <p class="muted small">Refine a listagem abaixo conforme necessário.</p>
+            </div>
+            <div style="display: flex; gap: 12px; flex-wrap: wrap; align-items: flex-end;">
+                <div class="filter-group">
+                    <label for="filtroMesGrafico">Mês / Ano</label>
+                    <input type="month" id="filtroMesGrafico" style="width:auto; min-width:150px;" data-page-handler="grafico-1">
+                </div>
+                <div class="filter-group">
+                    <label for="filtroEscopoGrafico">Escopo</label>
+                    <select id="filtroEscopoGrafico" style="width:auto; min-width:140px;" data-page-handler="grafico-2">
+                        <option value="casal">Casal / Casa</option>
+                        <option value="individual">Individual</option>
+                        <option value="todos">Todos</option>
+                    </select>
+                </div>
+                <div class="filter-group">
+                    <label for="filtroStatusGrafico">Status</label>
+                    <select id="filtroStatusGrafico" style="width:auto; min-width:130px;" data-page-handler="grafico-3">
+                        <option value="todos">Todos os status</option>
+                        <option value="pago">Pago</option>
+                        <option value="pendente">Pendente</option>
+                        <option value="atrasado">Atrasado</option>
+                    </select>
+                </div>
+                <div class="filter-group">
+                    <label for="filtroBusca">Buscar</label>
+                    <input type="search" id="filtroBusca" placeholder="Descrição, categoria..." style="width:auto; min-width:200px;" data-page-handler="grafico-4">
+                </div>
+            </div>
+        </section>
+
+        <!-- CARDS DINÂMICOS CONFORME O CONTEXTO DO GRÁFICO -->
+        <section class="stat-grid" id="containerStatGrid">
+            <!-- Preenchido dinamicamente via JS -->
+        </section>
+        <section id="resumoRendaGrafico" class="income-graph-banner" hidden aria-label="Detalhamento das entradas"></section>
+
+        <section class="form-card">
+            <div class="section-title">
+                <div>
+                    <h2 id="tituloTabela">Movimentações</h2>
+                    <p id="subtituloTabela">Resultados filtrados abaixo.</p>
+                </div>
+            </div>
+            <div class="tabela-container">
+                <table class="tabela">
+                    <thead>
+                        <tr>
+                            <th>Data</th>
+                            <th>Descrição</th>
+                            <th>Categoria</th>
+                            <th>Forma</th>
+                            <th>Status</th>
+                            <th>Valor</th>
+                            <th style="text-align: center;">Ações</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tabelaGraficoDetalhado"></tbody>
+                </table>
+            </div>
+        </section>
+    </main>
+
+    
+    
+    
+    
+
+    <script defer src="js/script.js"></script>
+    <script defer src="js/calculos_trabalhistas.js"></script>
+    <script defer src="js/conexao_sheets.js"></script>
+    <script defer src="js/page/grafico.js"></script>
+</body>
+</html>

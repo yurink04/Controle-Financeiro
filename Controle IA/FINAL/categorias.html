@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Categorias | Controle Financeiro</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+    <main class="container">
+        <div class="page-heading" data-overline="SEU ORGANIZADOR · CATEGORIAS"><div><h2>Categorias</h2><p>Organize receitas e despesas por tipo.</p></div></div>
+
+        <section class="form-card">
+            <div class="section-title"><div><h2 id="tituloFormCategoria">Nova categoria</h2><p>Os nomes repetidos no mesmo tipo são bloqueados.</p></div></div>
+            <form id="formCategoria" data-page-handler="categorias-1">
+                <input type="hidden" id="catIdEdit">
+                <div class="form-grid-2">
+                    <div class="form-group"><label for="nomeCategoria">Nome da categoria</label><input type="text" id="nomeCategoria" maxlength="80" placeholder="Ex.: Alimentação" required></div>
+                    <div class="form-group"><label for="tipoCategoria">Tipo</label><select id="tipoCategoria"><option value="saida">Saída</option><option value="entrada">Entrada</option></select></div>
+                </div>
+                <div class="btn-row" style="margin-top:16px;">
+                    <button type="submit" id="btnSalvarCat">Salvar categoria</button>
+                    <button type="button" id="btnCancelarCat" class="btn-secondary" style="display:none;" data-page-handler="categorias-2">Cancelar edição</button>
+                </div>
+            </form>
+        </section>
+
+        <section class="form-card">
+            <div class="section-title">
+                <div><h2>Categorias cadastradas</h2><p>Edite ou remova categorias que não estejam em uso.</p></div>
+                <div class="filter-group"><label for="filtroTipoCategoria">Filtrar</label><select id="filtroTipoCategoria" style="width:auto;" data-page-handler="categorias-3"><option value="todos">Todas</option><option value="saida">Saídas</option><option value="entrada">Entradas</option></select></div>
+            </div>
+            <ul id="listaCategorias" class="lista-simples"></ul>
+        </section>
+    </main>
+    
+    
+    
+    
+    
+
+    <script defer src="js/script.js"></script>
+    <script defer src="js/calculos_trabalhistas.js"></script>
+    <script defer src="js/conexao_sheets.js"></script>
+    <script defer src="js/page/categorias.js"></script>
+</body>
+</html>

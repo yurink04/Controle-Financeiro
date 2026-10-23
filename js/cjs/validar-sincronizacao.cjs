@@ -5,7 +5,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
 
-const fonte = nome => fs.readFileSync(path.join(__dirname, nome), 'utf8');
+const fonte = nome => fs.readFileSync(path.resolve(__dirname,'..','..',nome), 'utf8');
 const sha = s => crypto.createHash('sha256').update(s, 'utf8').digest('hex');
 const tabelas = new Map();
 

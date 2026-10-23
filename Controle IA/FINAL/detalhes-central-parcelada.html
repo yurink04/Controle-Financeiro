@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Detalhes da Compra Parcelada | Controle Financeiro</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+    <main class="container">
+        <div class="page-heading" data-overline="CENTRAL DE CONTROLE · PARCELAS">
+            <div>
+                <h2 id="tituloParcelamentoDetalhe">Detalhes do Parcelamento</h2>
+                <p>Acompanhe o progresso, os valores e o status de cada parcela desta compra.</p>
+            </div>
+            <a href="central-pagamentos.html" class="text-link">← Voltar para Central de Pagamentos</a>
+        </div>
+
+        <section class="stat-grid">
+            <div class="stat-box"><div class="stat-label">Valor Total da Compra</div><div id="infoValorTotalCompra" class="stat-value">R$ 0,00</div></div>
+            <div class="stat-box"><div class="stat-label">Parcelas Pagas</div><div id="infoProgressoParcelas" class="stat-value">0 / 0</div></div>
+            <div class="stat-box"><div class="stat-label">Valor da Parcela</div><div id="infoValorParcela" class="stat-value">R$ 0,00</div></div>
+            <div class="stat-box"><div class="stat-label">Previsão de Término</div><div id="infoTerminoParcelamento" class="stat-value">--/----</div></div>
+        </section>
+
+        <section class="form-card" style="margin-top:16px;">
+            <div class="section-title">
+                <div>
+                    <h2>Informações Gerais</h2>
+                    <p>Dados consolidados do agrupamento de parcelas.</p>
+                </div>
+            </div>
+            <div class="form-grid-2">
+                <div class="form-group"><label>Descrição Base</label><input type="text" id="detalheDescricaoBase" readonly></div>
+                <div class="form-group"><label>Forma / Cartão</label><input type="text" id="detalheFormaPagamento" readonly></div>
+            </div>
+        </section>
+
+        <section class="form-card">
+            <div class="section-title">
+                <div>
+                    <h2>Parcelas Vinculadas</h2>
+                    <p>Gerencie o pagamento ou altere valores individualmente (30 por página).</p>
+                </div>
+            </div>
+
+            <div id="paginacaoTopoParcelas" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; flex-wrap: wrap; gap: 8px;"></div>
+
+            <div class="tabela-container">
+                <table class="tabela">
+                    <thead>
+                        <tr>
+                            <th>Parcela</th>
+                            <th>Vencimento</th>
+                            <th>Categoria</th>
+                            <th>Valor</th>
+                            <th>Status</th>
+                            <th>Ações</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tabelaParcelasGrupo"></tbody>
+                </table>
+            </div>
+
+            <div id="paginacaoRodapeParcelas" style="display: flex; justify-content: space-between; align-items: center; margin-top: 12px; flex-wrap: wrap; gap: 8px;"></div>
+        </section>
+    </main>
+
+    
+    
+    
+    
+
+    <script defer src="js/script.js"></script>
+    <script defer src="js/calculos_trabalhistas.js"></script>
+    <script defer src="js/conexao_sheets.js"></script>
+    <script defer src="js/page/detalhes-central-parcelada.js"></script>
+</body>
+</html>

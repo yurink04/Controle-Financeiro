@@ -1,0 +1,1 @@
+Esta página já faz referência a js/page/relatorios.js. O arquivo não foi enviado neste lote. Preserve seu arquivo relatorios.js atual; sem ele, os indicadores e interações dessa página não poderão ser validados nem funcionar corretamente.

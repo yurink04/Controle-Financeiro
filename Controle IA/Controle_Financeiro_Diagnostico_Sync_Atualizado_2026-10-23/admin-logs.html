@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin | Auditoria | Controle Financeiro</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body class="account-page audit-page">
+    <main class="container account-container">
+        <header class="account-hero"><div><span class="account-eyebrow">CENTRAL DE CONTROLE <span class="account-eyebrow-dot"></span> SEGURANÇA</span><h1>Histórico com transparência.</h1><p>Acompanhe os acontecimentos do sistema em uma linha do tempo pesquisável.</p></div><a class="account-hero-home" href="dashboard.html">↗ <span>Meu painel</span></a></header>
+        <nav class="account-nav" aria-label="Navegação da conta"><a href="perfil.html">◉ <span>Meu perfil</span></a><a href="configuracoes.html">⚙ <span>Configurações</span></a><a class="active" href="admin-logs.html" aria-current="page">▤ <span>Auditoria</span></a></nav>
+
+        <section id="divLoginAdmin" class="account-panel account-audit-login" hidden>
+            <div class="account-login-symbol">♙</div><span class="account-overline">ACESSO PROTEGIDO</span><h2>Confirmar identidade</h2>
+            <p>Para visualizar o histórico de auditoria, confirme a senha administrativa. O acesso não será lembrado neste dispositivo.</p>
+            <form id="formAcessoAuditoria" data-page-handler="admin-logs-1">
+                <label for="senhaAdminInput">Senha administrativa</label>
+                <div class="account-password-field"><input type="password" id="senhaAdminInput" autocomplete="off" placeholder="Digite a senha" required><button type="button" id="alternarSenhaAdmin" aria-label="Mostrar senha" aria-pressed="false">Mostrar</button></div>
+                <p id="statusAcessoAdmin" class="account-feedback" role="status" aria-live="polite"></p>
+                <button type="submit" id="btnAcessarAuditoria" class="account-login-submit">Desbloquear auditoria →</button>
+            </form><a class="account-return-link" href="configuracoes.html">← Voltar para configurações</a>
+        </section>
+
+        <section id="divConteudoAdmin" class="account-audit-dashboard" hidden>
+            <div class="account-section-heading"><div><span class="account-overline">VISÃO GERAL</span><h2>Atividade do sistema</h2><p>Consulte alterações, acessos e outras operações registradas.</p></div><button type="button" class="btn-secundario" data-page-handler="admin-logs-2">↳ Bloquear painel</button></div>
+            <div class="account-kpis account-audit-stats"><article class="account-kpi"><div class="account-kpi-label">Total de eventos <span class="account-kpi-icon">▤</span></div><strong class="account-kpi-value" id="auditoriaTotalEventos">0</strong><p>Histórico disponível</p></article><article class="account-kpi"><div class="account-kpi-label">Últimos 7 dias <span class="account-kpi-icon">↗</span></div><strong class="account-kpi-value" id="auditoriaEventosRecentes">0</strong><p>Eventos recentes</p></article><article class="account-kpi"><div class="account-kpi-label">Usuários no histórico <span class="account-kpi-icon">♧</span></div><strong class="account-kpi-value" id="auditoriaUsuariosUnicos">0</strong><p>Identificações distintas</p></article></div>
+
+            <section class="account-panel account-audit-table-panel"><div class="account-panel-heading"><div><span class="account-overline">EXPLORAR HISTÓRICO</span><h2>Registros de auditoria</h2><p id="contadorLogs" role="status" aria-live="polite">Carregando registros...</p></div><div class="account-inline-actions"><button type="button" class="btn-secundario" data-page-handler="admin-logs-3">↻ Atualizar</button><button type="button" class="btn-secundario" data-page-handler="admin-logs-4">↓ Exportar CSV</button></div></div>
+                <div class="account-audit-filters"><label class="account-search-field"><span aria-hidden="true">⌕</span><input type="search" id="filtroLogs" placeholder="Buscar usuário, ação ou detalhes..." aria-label="Pesquisar no histórico"></label><div class="account-select-wrap"><label for="filtroAcaoLogs">Ação</label><select id="filtroAcaoLogs"><option value="">Todas as ações</option></select></div><div class="account-select-wrap"><label for="filtroPeriodoLogs">Período</label><select id="filtroPeriodoLogs"><option value="todos">Todo o período</option><option value="7">Últimos 7 dias</option><option value="30">Últimos 30 dias</option><option value="90">Últimos 90 dias</option></select></div><button type="button" class="account-clear-filters" data-page-handler="admin-logs-5">Limpar filtros</button></div>
+                <div class="tabela-container account-responsive-table"><table class="tabela"><thead><tr><th>Data / hora</th><th>Usuário</th><th>Ação</th><th>Detalhes</th></tr></thead><tbody id="tabelaLogs"></tbody></table></div>
+                <footer class="account-table-footer"><span id="paginacaoResumoLogs">Nenhum registro</span><div class="account-page-controls"><label for="quantidadeLogsPagina">Por página</label><select id="quantidadeLogsPagina"><option value="20">20</option><option value="50">50</option><option value="100">100</option></select><button type="button" id="logsPaginaAnterior" aria-label="Página anterior" data-page-handler="admin-logs-6">←</button><span id="paginacaoLogs">1 / 1</span><button type="button" id="logsPaginaProxima" aria-label="Próxima página" data-page-handler="admin-logs-7">→</button></div></footer>
+            </section>
+            <details class="account-danger-zone"><summary>Gerenciamento avançado do histórico <span>▾</span></summary><div><div><strong>Apagar registros de auditoria</strong><p>Esta ação é permanente e precisa de nova confirmação administrativa. Um registro da limpeza é gerado.</p></div><button type="button" class="btn-danger" data-page-handler="admin-logs-8">Limpar histórico</button></div></details>
+        </section>
+    </main>
+
+    
+    
+    
+    
+
+    <script defer src="js/script.js"></script>
+    <script defer src="js/calculos_trabalhistas.js"></script>
+    <script defer src="js/conexao_sheets.js"></script>
+    <script defer src="js/page/admin-logs.js"></script>
+</body>
+</html>

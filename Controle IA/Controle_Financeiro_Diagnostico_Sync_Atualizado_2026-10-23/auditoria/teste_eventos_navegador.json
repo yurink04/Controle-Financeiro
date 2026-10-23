@@ -1,0 +1,138 @@
+{
+  "admin-logs.html": {
+    "result": {
+      "marked": 8,
+      "wired": 8,
+      "inlineScripts": 1
+    },
+    "errors": []
+  },
+  "bens.html": {
+    "result": {
+      "marked": 4,
+      "wired": 4,
+      "inlineScripts": 1
+    },
+    "errors": []
+  },
+  "cartoes.html": {
+    "result": {
+      "marked": 3,
+      "wired": 3,
+      "inlineScripts": 1
+    },
+    "errors": []
+  },
+  "categorias.html": {
+    "result": {
+      "marked": 3,
+      "wired": 3,
+      "inlineScripts": 1
+    },
+    "errors": []
+  },
+  "central-pagamentos.html": {
+    "result": {
+      "marked": 11,
+      "wired": 11,
+      "inlineScripts": 1
+    },
+    "errors": []
+  },
+  "configuracoes.html": {
+    "result": {
+      "marked": 10,
+      "wired": 10,
+      "inlineScripts": 1
+    },
+    "errors": []
+  },
+  "dashboard.html": {
+    "result": {
+      "marked": 10,
+      "wired": 10,
+      "inlineScripts": 1
+    },
+    "errors": []
+  },
+  "detalhes-central-parcelada.html": {
+    "result": {
+      "marked": 0,
+      "wired": 0,
+      "inlineScripts": 1
+    },
+    "errors": []
+  },
+  "detalhes-financiamento.html": {
+    "result": {
+      "marked": 1,
+      "wired": 1,
+      "inlineScripts": 1
+    },
+    "errors": []
+  },
+  "editar-lancamento.html": {
+    "result": {
+      "marked": 6,
+      "wired": 6,
+      "inlineScripts": 1
+    },
+    "errors": []
+  },
+  "financiamentos.html": {
+    "result": {
+      "marked": 5,
+      "wired": 5,
+      "inlineScripts": 1
+    },
+    "errors": []
+  },
+  "grafico.html": {
+    "result": {
+      "marked": 4,
+      "wired": 4,
+      "inlineScripts": 1
+    },
+    "errors": []
+  },
+  "index.html": {
+    "result": {
+      "marked": 4,
+      "wired": 4,
+      "inlineScripts": 1
+    },
+    "errors": []
+  },
+  "lancamentos.html": {
+    "result": {
+      "marked": 17,
+      "wired": 17,
+      "inlineScripts": 1
+    },
+    "errors": []
+  },
+  "perfil.html": {
+    "result": {
+      "marked": 8,
+      "wired": 8,
+      "inlineScripts": 1
+    },
+    "errors": []
+  },
+  "relatorios.html": {
+    "result": {
+      "marked": 0,
+      "wired": 0,
+      "inlineScripts": 1
+    },
+    "errors": []
+  },
+  "rendimentos.html": {
+    "result": {
+      "marked": 4,
+      "wired": 4,
+      "inlineScripts": 1
+    },
+    "errors": []
+  }
+}

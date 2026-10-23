@@ -1,6 +1,6 @@
 /* Offline: nenhum dado real. Uso: node validar-lancamentos-parceiro.cjs [Code.gs] */
 const fs=require('fs'),vm=require('vm'),crypto=require('crypto'),path=require('path');
-const arquivoGs=path.resolve(process.argv[2]||path.join(__dirname,'Code.gs'));
+const arquivoGs=path.resolve(process.argv[2]||path.join(__dirname,'..','..','Code.gs'));
 const planilhas=new Map(),cache=new Map(),props=new Map([['SENHA_MESTRA_API','k'],['SENHA_ADMIN','a']]);
 class P{constructor(){this.l=[]}getLastRow(){return this.l.length}getLastColumn(){return this.l[0]?.length||0}setFrozenRows(){}clearContents(){this.l=[]}
  getRange(r,c,q,w){return{getValues:()=>Array.from({length:q},(_,i)=>Array.from({length:w},(_,j)=>this.l[r-1+i]?.[c-1+j]??'')),setValues:m=>m.forEach((v,i)=>{this.l[r-1+i]=v.slice()})}}}

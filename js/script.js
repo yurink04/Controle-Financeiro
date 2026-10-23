@@ -1,8 +1,3 @@
-// Controle Financeiro — script.js (núcleo de interface e regras de negócio)
-// Dependências: carregue este arquivo ANTES de calculos_trabalhistas.js e conexao_sheets.js.
-// Use <script defer> nos três arquivos em todas as páginas, sem carregar o monolito antigo.
-// Os três arquivos compartilham um único escopo global clássico (não use type="module").
-
 // Estados exclusivos das telas e do fluxo de autenticação.
 let processandoAcaoModal = false;
 let processandoSaidaSistema = false;

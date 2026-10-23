@@ -6,7 +6,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
 
-const fonte = nome => fs.readFileSync(path.join(__dirname, nome), 'utf8');
+const fonte = nome => fs.readFileSync(path.resolve(__dirname, '..', '..', nome === 'script.js' ? 'js/script.js' : nome), 'utf8');
 new vm.Script(fonte('Code.gs'), {filename: 'Code.gs'});
 new vm.Script(fonte('script.js'), {filename: 'script.js'});
 if (fs.existsSync(path.join(__dirname, 'index.html'))) {
@@ -129,10 +129,10 @@ assert.equal(locksAbertos, 0, 'Todos os bloqueios liberados');
 if (fs.existsSync(path.join(__dirname, 'index.html'))) {
     assert.doesNotMatch(fonte('index.html'), /CHECK_APENAS_USUARIO'[\s\S]*?Não foi possível entrar\. Confira sua senha\./,
         'Página não deve mascarar erros de autenticação');
-    assert.equal((fonte('index.html').match(/action=statusCadastro/g) || []).length, 1,
+    assert.equal((fonte('js/page/index.js').match(/action=statusCadastro/g) || []).length, 1,
         'Pré-verificação deve usar apenas uma consulta');
 
-    const inline = [...fonte('index.html').matchAll(/<script\b(?![^>]*\bsrc\s*=)[^>]*>([\s\S]*?)<\/script>/gi)][0][1];
+    const inline = fonte('js/page/index.js');
     const pagina = {document: {addEventListener() {}}, window: {}, console};
     vm.createContext(pagina);
     vm.runInContext(inline, pagina);

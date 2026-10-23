@@ -25,11 +25,11 @@
             <div style="display: flex; gap: 12px; flex-wrap: wrap; align-items: flex-end;">
                 <div class="filter-group">
                     <label for="filtroMesGrafico">Mês / Ano</label>
-                    <input type="month" id="filtroMesGrafico" onchange="carregarGraficoDetalhado()" style="width:auto; min-width:150px;">
+                    <input type="month" id="filtroMesGrafico" style="width:auto; min-width:150px;" data-page-handler="grafico-1">
                 </div>
                 <div class="filter-group">
                     <label for="filtroEscopoGrafico">Escopo</label>
-                    <select id="filtroEscopoGrafico" onchange="carregarGraficoDetalhado()" style="width:auto; min-width:140px;">
+                    <select id="filtroEscopoGrafico" style="width:auto; min-width:140px;" data-page-handler="grafico-2">
                         <option value="casal">Casal / Casa</option>
                         <option value="individual">Individual</option>
                         <option value="todos">Todos</option>
@@ -37,7 +37,7 @@
                 </div>
                 <div class="filter-group">
                     <label for="filtroStatusGrafico">Status</label>
-                    <select id="filtroStatusGrafico" onchange="carregarGraficoDetalhado()" style="width:auto; min-width:130px;">
+                    <select id="filtroStatusGrafico" style="width:auto; min-width:130px;" data-page-handler="grafico-3">
                         <option value="todos">Todos os status</option>
                         <option value="pago">Pago</option>
                         <option value="pendente">Pendente</option>
@@ -46,7 +46,7 @@
                 </div>
                 <div class="filter-group">
                     <label for="filtroBusca">Buscar</label>
-                    <input type="search" id="filtroBusca" placeholder="Descrição, categoria..." oninput="carregarGraficoDetalhado()" style="width:auto; min-width:200px;">
+                    <input type="search" id="filtroBusca" placeholder="Descrição, categoria..." style="width:auto; min-width:200px;" data-page-handler="grafico-4">
                 </div>
             </div>
         </section>
@@ -83,350 +83,14 @@
         </section>
     </main>
 
+    
+    
+    
+    
+
     <script defer src="js/script.js"></script>
     <script defer src="js/calculos_trabalhistas.js"></script>
     <script defer src="js/conexao_sheets.js"></script>
-    <script>
-        let _graficoConfig = { tipo: 'todos' };
-
-        document.addEventListener('DOMContentLoaded', async () => {
-            injetarHeader();
-            const autenticado = await verificarAutenticacao();
-            if (!autenticado) return;
-
-            const params = new URLSearchParams(window.location.search);
-            _graficoConfig = {
-    tipo: params.get('tipo') || 'todos',
-    categoriaId: params.get('categoriaId') || '',
-    filtroEss: params.get('filtro') || '',
-    cartaoId: params.get('cartaoId') || '',
-    formaPagamento: params.get('formaPagamento') || ''
-};
-
-            const inputMes = document.getElementById('filtroMesGrafico');
-            const selectEscopo = document.getElementById('filtroEscopoGrafico');
-            if (inputMes) inputMes.value = params.get('mes') || '';
-            if (selectEscopo) selectEscopo.value = params.get('escopo') || 'casal';
-
-            atualizarTituloGrafico();
-            carregarGraficoDetalhado();
-        });
-
-        async function quitarFaturaAtual(faturaId, statusPago) {
-            const msg = statusPago 
-                ? 'Deseja marcar toda esta fatura como paga? Todos os lançamentos serão quitados.' 
-                : 'Deseja reabrir esta fatura? Todos os lançamentos atrelados ficarão pendentes.';
-                
-            if (await mostrarConfirmacaoModal(msg)) {
-                const ok = await alternarStatusFaturaConsolidada(faturaId, statusPago);
-                if (ok) carregarGraficoDetalhado();
-            }
-        }
-
-        function atualizarTituloGrafico() {
-            const dados = obterDados();
-            const cfg = _graficoConfig;
-            const elTit = document.getElementById('tituloGrafico');
-            const elSub = document.getElementById('subtituloGrafico');
-            const elTitTab = document.getElementById('tituloTabela');
-
-            let t = 'Detalhes do gráfico';
-            let s = 'Movimentações detalhadas do período.';
-
-            if (cfg.tipo === 'entradas') { t = 'Entradas'; s = 'Todas as entradas do período selecionado.'; }
-            else if (cfg.tipo === 'saidas') { t = 'Saídas'; s = 'Todas as saídas do período selecionado.'; }
-            else if (cfg.tipo === 'categoria' && cfg.categoriaId) {
-                const cat = (dados.categorias || []).find(c => String(c.id) === String(cfg.categoriaId));
-                t = cat ? `Categoria: ${cat.nome}` : 'Movimentações por categoria';
-                s = 'Todos os lançamentos da categoria selecionada.';
-            }
-            else if (cfg.tipo === 'essencial') {
-                t = cfg.filtroEss === 'sim' ? 'Gastos essenciais'
-                    : cfg.filtroEss === 'nao' ? 'Gastos não essenciais'
-                    : 'Essenciais e não essenciais';
-                s = 'Movimentações classificadas quanto à essencialidade.';
-            }
-            else if (cfg.tipo === 'cartao' && cfg.cartaoId) {
-                const c = (dados.cartoes || []).find(c => String(c.id) === String(cfg.cartaoId));
-                t = c ? `Cartão: ${c.nome}` : 'Movimentações no cartão';
-                s = 'Compras e lançamentos vinculados ao cartão selecionado.';
-            }
-            else if (cfg.tipo === 'formaPagamento' && cfg.formaPagamento) {
-    const mapa = { DINHEIRO: 'Dinheiro / Pix / Débito', BOLETO: 'Boleto', PIX: 'Pix', DEBITO: 'Débito', FIXO: 'Conta Fixa', CARTAO: 'Cartão de crédito' };
-    t = `Forma de pagamento: ${mapa[cfg.formaPagamento] || cfg.formaPagamento}`;
-    s = 'Saídas filtradas pela forma de pagamento selecionada.';
-}else if (cfg.tipo === 'todos') { t = 'Todas as movimentações'; s = 'Histórico completo do período.'; }
-
-            if (elTit) elTit.textContent = t;
-            if (elSub) elSub.textContent = s;
-            if (elTitTab) elTitTab.textContent = t;
-            document.title = t + ' | Controle Financeiro';
-        }
-
-        function renderizarCardsDinamicos(lista, cfg, dados) {
-            const grid = document.getElementById('containerStatGrid');
-            if (!grid) return;
-
-            let totalRegistros = lista.length;
-            let somaValores = 0;
-            let totalEntradas = 0;
-            let totalSaidas = 0;
-
-            lista.forEach(l => {
-                const val = Number(l.valor || 0);
-                somaValores += val;
-                if (l.tipo === 'entrada') totalEntradas += val;
-                else totalSaidas += val;
-            });
-
-            // CASO 1: EXIBIÇÃO PARA CARTÃO DE CRÉDITO (Apenas Saídas/Fatura)
-            if (cfg.tipo === 'cartao' && cfg.cartaoId) {
-                const mesAtual = document.getElementById('filtroMesGrafico')?.value || '';
-                const isFaturaEspecifica = mesAtual !== '';
-
-                const cartao = (dados.cartoes || []).find(c => String(c.id) === String(cfg.cartaoId));
-                const limite = cartao ? Number(cartao.limite || 0) : 0;
-                
-                // O limite disponível é calculado no cenário global da base (todo o uso pendente do cartão), não apenas do filtro
-                const usoGlobalPendente = (dados.lancamentos || []).filter(l => l.formaPagamento === 'CARTAO' && String(l.cartaoId) === String(cfg.cartaoId) && !l.pago).reduce((a, l) => a + Number(l.valor || 0), 0);
-                const disponivel = Math.max(0, limite - usoGlobalPendente);
-                
-                let faturaHtml = '';
-                if (isFaturaEspecifica) {
-                    const faturaId = `fat_${cfg.cartaoId}_${mesAtual}`;
-                    
-                    // LÊ DIRETAMENTE DA NOVA TABELA O STATUS REAL
-                    const faturaDb = (dados.fatura_cartao || []).find(f => String(f.id) === String(faturaId));
-                    let textoStatus = 'Pendente';
-                    let corStatus = 'var(--text-muted)';
-                    
-                    if (faturaDb) {
-                        if (faturaDb.status === 'paga') { textoStatus = 'Totalmente Quitada'; corStatus = 'var(--success)'; }
-                        else if (faturaDb.status === 'parcial') { textoStatus = 'Parcialmente Paga'; corStatus = 'var(--warning)'; }
-                    }
-
-                    const todasPagas = faturaDb ? (faturaDb.status === 'paga') : (lista.length > 0 && lista.every(l => l.pago));
-                    
-                    faturaHtml = `
-                        <div class="stat-box" style="grid-column: 1 / -1; display: flex; justify-content: space-between; align-items: center; background: var(--surface-2); border: 1px solid var(--primary);">
-                            <div style="text-align: left;">
-                                <div class="stat-label" style="display: flex; align-items: center; gap: 10px;">
-                                    Gestão da Fatura (${mesAtual})
-                                    <span style="font-size: 0.75rem; border: 1px solid currentColor; color: ${corStatus}; padding: 2px 8px; border-radius: 99px; font-weight: 700;">${textoStatus}</span>
-                                </div>
-                                <div class="muted small">A quitação centralizada alterará o status de ${lista.length} compras no banco de dados.</div>
-                            </div>
-                            <button class="${todasPagas ? 'btn-secundario' : ''}" style="${!todasPagas ? 'background-color: var(--primary);' : ''} padding: 8px 24px; border-radius: 8px;" onclick="quitarFaturaAtual('${faturaId}', ${!todasPagas})">
-                                ${todasPagas ? 'Reabrir Fatura' : 'Quitar Fatura Completa'}
-                            </button>
-                        </div>
-                    `;
-                }
-                
-                grid.innerHTML = `
-                    <div class="stat-box">
-                        <div class="stat-label">Compras Listadas</div>
-                        <div class="stat-value">${totalRegistros}</div>
-                    </div>
-                    <div class="stat-box">
-                        <div class="stat-label">${isFaturaEspecifica ? 'Total da Fatura' : 'Uso no Período Filtrado'}</div>
-                        <div class="stat-value negativo">${formatarMoeda(somaValores)}</div>
-                    </div>
-                    <div class="stat-box">
-                        <div class="stat-label">Limite do Cartão</div>
-                        <div class="stat-value">${formatarMoeda(limite)}</div>
-                    </div>
-                    <div class="stat-box">
-                        <div class="stat-label">Limite Disponível</div>
-                        <div class="stat-value positivo">${formatarMoeda(disponivel)}</div>
-                    </div>
-                    ${faturaHtml}
-                `;
-                return;
-            }
-
-            // CASO 2: EXIBIÇÃO APENAS PARA ENTRADAS
-            if (cfg.tipo === 'entradas') {
-                grid.innerHTML = `
-                    <div class="stat-box">
-                        <div class="stat-label">Total de Registros</div>
-                        <div class="stat-value">${totalRegistros}</div>
-                    </div>
-                    <div class="stat-box" style="grid-column: span 3;">
-                        <div class="stat-label">Total de Entradas no Período</div>
-                        <div class="stat-value positivo" style="font-size: 1.8rem;">${formatarMoeda(totalEntradas)}</div>
-                    </div>
-                `;
-                return;
-            }
-
-            // CASO 3: EXIBIÇÃO APENAS PARA SAÍDAS OU CATEGORIAS / ESSENCIAIS
-            if (cfg.tipo === 'saidas' || cfg.tipo === 'categoria' || cfg.tipo === 'essencial' || cfg.tipo === 'formaPagamento') {
-                const mediaGasto = totalRegistros > 0 ? somaValores / totalRegistros : 0;
-                grid.innerHTML = `
-                    <div class="stat-box">
-                        <div class="stat-label">Quantidade de Gastos</div>
-                        <div class="stat-value">${totalRegistros}</div>
-                    </div>
-                    <div class="stat-box">
-                        <div class="stat-label">Total Gasto</div>
-                        <div class="stat-value negativo">${formatarMoeda(somaValores)}</div>
-                    </div>
-                    <div class="stat-box" style="grid-column: span 2;">
-                        <div class="stat-label">Média por Lançamento</div>
-                        <div class="stat-value">${formatarMoeda(mediaGasto)}</div>
-                    </div>
-                `;
-                return;
-            }
-
-            // PADRÃO (VISÃO GERAL / TODOS)
-            const saldo = totalEntradas - totalSaidas;
-            grid.innerHTML = `
-                <div class="stat-box">
-                    <div class="stat-label">Registros</div>
-                    <div class="stat-value">${totalRegistros}</div>
-                </div>
-                <div class="stat-box">
-                    <div class="stat-label">Entradas</div>
-                    <div class="stat-value positivo">${formatarMoeda(totalEntradas)}</div>
-                </div>
-                <div class="stat-box">
-                    <div class="stat-label">Saídas</div>
-                    <div class="stat-value negativo">${formatarMoeda(totalSaidas)}</div>
-                </div>
-                <div class="stat-box">
-                    <div class="stat-label">Saldo do Filtro</div>
-                    <div class="stat-value ${saldo >= 0 ? 'positivo' : 'negativo'}">${formatarMoeda(saldo)}</div>
-                </div>
-            `;
-        }
-
-        function carregarGraficoDetalhado() {
-    const dados = obterDados();
-    const cfg = _graficoConfig || { tipo: 'todos' };
-    const mes = document.getElementById('filtroMesGrafico')?.value || '';
-    const escopo = document.getElementById('filtroEscopoGrafico')?.value || 'casal';
-    const statusFiltro = document.getElementById('filtroStatusGrafico')?.value || 'todos';
-    const busca = normalizarTexto(document.getElementById('filtroBusca')?.value || '');
-
-    // [MODO DISCRETO] — esconde KPIs e tabela detalhada
-    if (document.body.classList.contains('privacidade-ativa')) {
-        document.getElementById('resumoRendaGrafico').hidden = true;
-        const grid = document.getElementById('containerStatGrid');
-        if (grid) grid.innerHTML = `
-            <div class="stat-box" style="grid-column: 1 / -1;">
-                <div class="privacy-section-placeholder">
-                    <div><strong>Indicadores ocultos</strong></div>
-                    <div style="font-size:0.82rem;font-weight:500;">Toque no banner de privacidade para revelar.</div>
-                </div>
-            </div>`;
-        const tb = document.getElementById('tabelaGraficoDetalhado');
-        if (tb) tb.innerHTML = `<tr><td colspan="7" style="text-align:center;padding:32px 12px;">
-            <div style="display:flex;flex-direction:column;align-items:center;gap:8px;color:var(--text-muted);">
-                <span style="font-size:2rem;opacity:.6;">🔒</span>
-                <strong style="color:var(--text-main);">Movimentações ocultas</strong>
-                <span style="font-size:.82rem;">Toque no banner de privacidade para ver os lançamentos.</span>
-            </div>
-        </td></tr>`;
-        return;
-    }
-
-    let lista = filtrarDadosPorPermissao(dados.lancamentos || [], dados, escopo);
-
-    if (cfg.tipo === 'entradas') lista = lista.filter(l => l.tipo === 'entrada');
-    else if (cfg.tipo === 'saidas') lista = lista.filter(l => l.tipo === 'saida');
-    else if (cfg.tipo === 'categoria' && cfg.categoriaId) lista = lista.filter(l => String(l.categoriaId) === String(cfg.categoriaId));
-    else if (cfg.tipo === 'essencial' && cfg.filtroEss) {
-        lista = lista.filter(l => l.tipo === 'saida');
-        if (cfg.filtroEss === 'sim') lista = lista.filter(l => normalizarTexto(l.servicoEssencial) === 'sim');
-        else if (cfg.filtroEss === 'nao') lista = lista.filter(l => normalizarTexto(l.servicoEssencial) !== 'sim');
-    }
-    else if (cfg.tipo === 'cartao' && cfg.cartaoId) lista = lista.filter(l => String(l.cartaoId) === String(cfg.cartaoId));
-else if (cfg.tipo === 'formaPagamento' && cfg.formaPagamento) lista = lista.filter(l => l.tipo === 'saida' && String(l.formaPagamento) === String(cfg.formaPagamento));
-
-    if (mes) lista = lista.filter(l => String(l.vencimento || l.dataCompra || '').startsWith(mes));
-
-    if (statusFiltro !== 'todos') {
-        lista = lista.filter(l => {
-            const st = l.pago ? 'pago' : (l.status === 'atrasado' ? 'atrasado' : 'pendente');
-            return st === statusFiltro;
-        });
-    }
-
-    if (busca) {
-        const nomeCatBusca = id => (dados.categorias.find(x => String(x.id) === String(id)) || {}).nome || '';
-        lista = lista.filter(l => {
-            const txt = `${l.descricao || ''} ${nomeCatBusca(l.categoriaId)} ${l.formaPagamento || ''} ${l.observacao || ''}`;
-            return normalizarTexto(txt).includes(busca);
-        });
-    }
-
-    lista.sort((a, b) => String(b.vencimento || b.dataCompra || '').localeCompare(String(a.vencimento || a.dataCompra || '')));
-
-    renderizarCardsDinamicos(lista, cfg, dados);
-    const areaRenda = document.getElementById('resumoRendaGrafico');
-    const exibirRenda = cfg.tipo === 'entradas' || cfg.tipo === 'todos';
-    areaRenda.hidden = !exibirRenda;
-    if (exibirRenda) {
-        const usuarioId = obterUsuarioAtualId(dados);
-        const parciais = { folha: 0, adiantamento: 0, salarial_extra: 0, variavel: 0, horasExtras: 0 };
-        lista.filter(l => l.tipo === 'entrada' && String(l.usuarioId) === String(usuarioId) && (l.pago === true || l.status === 'pago'))
-            .forEach(l => {
-                const classe = classificarEntradaRendimento(l, dados);
-                if (!(classe in parciais)) return;
-                parciais[classe] += Number(l.valor || 0);
-                if (classe === 'folha') parciais.horasExtras += Math.min(Number(l.horaExtra || 0), Number(l.valor || 0));
-            });
-        const linkMes = mes ? '?mes=' + encodeURIComponent(mes) : '';
-        areaRenda.innerHTML = `
-            <div><strong>Suas entradas, explicadas</strong>
-                <p>Folha: ${formatarMoeda(parciais.folha)} · Adiantamentos: ${formatarMoeda(parciais.adiantamento)}
-                · Variáveis: ${formatarMoeda(parciais.variavel)} · Outros salariais: ${formatarMoeda(parciais.salarial_extra)}.
-                Hora extra inclusa na folha: ${formatarMoeda(parciais.horasExtras)}.</p>
-                <p>Valores dos seus lançamentos pagos neste filtro; a projeção de salário líquido é calculada separadamente.</p></div>
-            <a href="rendimentos.html${linkMes}">Ver histórico completo ↗</a>`;
-    }
-
-    const tb = document.getElementById('tabelaGraficoDetalhado');
-    if (!tb) return;
-
-    if (!lista.length) {
-        tb.innerHTML = '<tr><td colspan="7" class="muted" style="text-align:center; padding: 30px;">Nenhuma movimentação encontrada para os filtros selecionados.</td></tr>';
-        return;
-    }
-
-    const nomeCat = id => (dados.categorias.find(x => String(x.id) === String(id)) || {}).nome || 'Sem categoria';
-    tb.innerHTML = lista.map(l => {
-        const ent = l.tipo === 'entrada';
-        const st = l.pago ? 'Pago' : (l.status === 'atrasado' ? 'Atrasado' : 'Pendente');
-        const stCls = l.pago ? 'status-pago' : (l.status === 'atrasado' ? 'status-atrasado' : 'status-pendente');
-
-        const fId = l.faturaId || (l.formaPagamento === 'CARTAO' && l.cartaoId && l.vencimento ? `fat_${l.cartaoId}_${String(l.vencimento).slice(0, 7)}` : null);
-        const podeAlternar = !fId && l.formaPagamento !== 'CARTAO';
-
-        let acaoPagar;
-        if (podeAlternar) {
-            acaoPagar = `<button class="btn-acao-icone ${l.pago ? 'desfazer' : 'pagar'}" title="${l.pago ? 'Desfazer pagamento' : 'Marcar como pago'}" onclick="alternarStatusPagamento('${escaparHTML(l.id)}').then(function(ok){ if(ok) carregarGraficoDetalhado(); })"><img src="imagens/${l.pago ? 'desfazer' : 'pagar'}.png" style="width:18px;" alt="Ação"></button>`;
-        } else {
-            const mesFat = String(l.vencimento).slice(0, 7);
-            acaoPagar = `<a href="grafico.html?tipo=cartao&cartaoId=${l.cartaoId}&mes=${mesFat}" class="btn-acao-icone ver-fatura" title="Ir para o espelho da Fatura" style="display:inline-flex; align-items:center; justify-content:center; text-decoration:none;"><span style="font-size:16px;">💳</span></a>`;
-        }
-
-        return `<tr>
-            <td>${formatarDataBR(l.vencimento || l.dataCompra)}</td>
-            <td><strong>${escaparHTML(l.descricao || '-')}</strong></td>
-            <td>${escaparHTML(nomeCat(l.categoriaId))}</td>
-            <td>${escaparHTML(l.formaPagamento || '-')}</td>
-            <td><span class="status-badge ${stCls}">${st}</span></td>
-            <td class="${ent ? 'positivo' : 'negativo'}">${ent ? '+' : '-'} ${formatarMoeda(l.valor)}</td>
-            <td style="text-align:center;">
-                <a href="editar-lancamento.html?id=${encodeURIComponent(String(l.id))}&returnUrl=grafico.html" class="btn-acao-icone editar" title="Editar"><img src="imagens/editar.png" style="width:18px;" alt="Editar"></a>
-                ${acaoPagar}
-            </td>
-        </tr>`;
-    }).join('');
-}
-    </script>
+    <script defer src="js/page/grafico.js"></script>
 </body>
 </html>

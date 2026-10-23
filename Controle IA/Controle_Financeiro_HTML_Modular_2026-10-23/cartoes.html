@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cartões | Controle Financeiro</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+    <main class="container">
+        <div class="page-heading" data-overline="SUAS FINANÇAS · CARTÕES"><div><h2>Cartões</h2><p>Acompanhe limites de crédito e saldos de benefícios (VR/VA).</p></div></div>
+
+        <section class="form-card">
+            <div class="section-title"><div><h2 id="tituloFormCartao">Novo cartão</h2><p>Cadastre cartões de crédito ou de benefício.</p></div></div>
+            <form id="formCartao" data-page-handler="cartoes-1">
+                <input type="hidden" id="cartaoIdEdit">
+                <div class="form-grid-2">
+                    <div class="form-group"><label for="nomeCartao">Nome do cartão</label><input type="text" id="nomeCartao" maxlength="60" placeholder="Ex.: Nubank ou VR Refeição" required></div>
+                    <div class="form-group"><label for="limiteCartao" id="labelLimiteCartao">Limite total (R$)</label><input type="number" step="0.01" min="0" id="limiteCartao" placeholder="3500.00" required></div>
+                </div>
+                
+                <div id="camposCredito" class="form-grid-2" style="margin-top:12px;">
+                    <div class="form-group"><label for="fechamentoCartao">Dia do fechamento</label><input type="number" min="1" max="31" id="fechamentoCartao" placeholder="13"></div>
+                    <div class="form-group"><label for="vencimentoCartao">Dia do vencimento</label><input type="number" min="1" max="31" id="vencimentoCartao" placeholder="20"></div>
+                </div>
+
+                <div style="margin-top: 16px;">
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="isBeneficioCartao" data-page-handler="cartoes-2"> 
+                        Cartão de Benefício (VR/VA - Saldo variável por recargas/compras)
+                    </label>
+                </div>
+
+                <div class="btn-row" style="margin-top:16px;">
+                    <button type="submit" id="btnSalvarCartao">Salvar cartão</button>
+                    <button type="button" id="btnCancelarCartao" class="btn-secondary" style="display:none;" data-page-handler="cartoes-3">Cancelar edição</button>
+                </div>
+            </form>
+        </section>
+
+        <section class="form-card">
+            <div class="section-title"><div><h2>Cartões de Crédito</h2><p>Gerenciamento de faturas e limites.</p></div></div>
+            <div id="gridCartoesCredito" class="grid-3"></div>
+        </section>
+
+        <section class="form-card" style="margin-top: 24px;">
+            <div class="section-title"><div><h2>Cartões de Benefício (VR / VA)</h2><p>Saldos alimentados por recargas e movimentações específicas.</p></div></div>
+            <div id="gridCartoesBeneficio" class="grid-3"></div>
+        </section>
+    </main>
+
+    
+    
+    
+    
+
+    <script defer src="js/script.js"></script>
+    <script defer src="js/calculos_trabalhistas.js"></script>
+    <script defer src="js/conexao_sheets.js"></script>
+    <script defer src="js/page/cartoes.js"></script>
+</body>
+</html>

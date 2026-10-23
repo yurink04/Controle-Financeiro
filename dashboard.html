@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Painel Financeiro | Controle Financeiro</title>
     <link rel="stylesheet" href="style.css">
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body class="dashboard-page">
 
@@ -29,13 +29,13 @@
                         <span style="font-size: 0.8rem;">▼</span>
                     </button>
                     <div class="dropdown-acao-conteudo">
-                        <button onclick="redirecionarNovoLancamento('entrada')">
+                        <button data-page-handler="dashboard-1">
                             <span class="indicador-entrada">+</span> Nova Entrada
                         </button>
-                        <button onclick="redirecionarNovoLancamento('saida')">
+                        <button data-page-handler="dashboard-2">
                             <span class="indicador-saida">−</span> Nova Saída
                         </button>
-                        <button onclick="redirecionarNovoLancamento('cartao')">
+                        <button data-page-handler="dashboard-3">
                             <span class="indicador-cartao">💳</span> Nova Saída no Cartão
                         </button>
                     </div>
@@ -51,18 +51,18 @@
             <div style="display: flex; gap: 12px; flex-wrap: wrap; align-items: flex-end;">
                 <div class="filter-group">
                     <label for="filtroDescricaoDashboard">Buscar descrição</label>
-                    <input type="search" id="filtroDescricaoDashboard" placeholder="Ex.: Abastecimento, McDonald's..." oninput="carregarDashboard()" style="width:auto; min-width:200px;">
+                    <input type="search" id="filtroDescricaoDashboard" placeholder="Ex.: Abastecimento, McDonald's..." style="width:auto; min-width:200px;" data-page-handler="dashboard-4">
                 </div>
                 <div class="filter-group">
                     <label for="filtroEscopoDashboardGeral">Escopo</label>
-                    <select id="filtroEscopoDashboardGeral" onchange="carregarDashboard()" style="width:auto; min-width:140px;">
+                    <select id="filtroEscopoDashboardGeral" style="width:auto; min-width:140px;" data-page-handler="dashboard-5">
                         <option value="casal">Casal / Casa</option>
                         <option value="individual">Individual</option>
                     </select>
                 </div>
                 <div class="filter-group">
                     <label for="filtroMesAno">Mês / Ano</label>
-                    <input type="month" id="filtroMesAno" onchange="carregarDashboard()" style="width:auto; min-width:150px;">
+                    <input type="month" id="filtroMesAno" style="width:auto; min-width:150px;" data-page-handler="dashboard-6">
                 </div>
             </div>
         </section>
@@ -127,7 +127,7 @@
             <article class="form-card chart-card" id="cardGraficoCategorias">
                 <div class="chart-head">
                     <div><h3>Gastos por categoria</h3><span class="muted small">Distribuição das despesas</span></div>
-                    <select id="filtroCategoriaDashboard" onchange="carregarDashboard()">
+                    <select id="filtroCategoriaDashboard" data-page-handler="dashboard-7">
                         <option value="todas">Todas</option>
                     </select>
                 </div>
@@ -137,7 +137,7 @@
             <article class="form-card chart-card" id="cardGraficoEssenciais">
                 <div class="chart-head">
                     <div><h3>Essenciais x não essenciais</h3><span class="muted small">Classificação das saídas</span></div>
-                    <select id="filtroServicoEssencialDashboard" onchange="carregarDashboard()">
+                    <select id="filtroServicoEssencialDashboard" data-page-handler="dashboard-8">
                         <option value="todos">Todos</option>
                         <option value="sim">Essenciais</option>
                         <option value="nao">Não essenciais</option>
@@ -149,7 +149,7 @@
             <article class="form-card chart-card" id="cardGraficoCartoes">
                 <div class="chart-head">
                     <div><h3>Limite dos cartões</h3><span class="muted small">Uso atual</span></div>
-                    <select id="filtroGraficoCartao" onchange="carregarDashboard()">
+                    <select id="filtroGraficoCartao" data-page-handler="dashboard-9">
                         <option value="todos">Todos</option>
                     </select>
                 </div>
@@ -162,7 +162,7 @@
                 <div><h2>Últimos lançamentos do mês</h2><p>Histórico recente para conferência rápida.</p></div>
                 <div class="filter-group">
                     <label for="filtroTipoUltimosLancamentos">Exibir</label>
-                    <select id="filtroTipoUltimosLancamentos" onchange="carregarDashboard()" style="width:auto;">
+                    <select id="filtroTipoUltimosLancamentos" style="width:auto;" data-page-handler="dashboard-10">
                         <option value="todos">Todos</option>
                         <option value="entrada">Entradas</option>
                         <option value="saida">Saídas</option>
@@ -182,228 +182,15 @@
         </section>
     </main>
 
-    <script>
-    (function () {
-        const el = document.getElementById('filtroMesAno');
-        if (el && !el.value) {
-            const h = new Date();
-            el.value = h.getFullYear() + '-' + String(h.getMonth() + 1).padStart(2, '0');
-        }
-    })();
-    </script>
+    
+    
+    
+    
+    
+
     <script defer src="js/script.js"></script>
     <script defer src="js/calculos_trabalhistas.js"></script>
     <script defer src="js/conexao_sheets.js"></script>
-    <script>
-    /* ============================================================
-       FUNÇÕES EXTRAS DO PAINEL
-       ============================================================ */
-
-    function renderizarSessoesDashboardExtras() {
-        try {
-            const mes = document.getElementById('filtroMesAno')?.value || '';
-            const esc = document.getElementById('filtroEscopoDashboardGeral')?.value || 'casal';
-            const d = obterDados();
-            const lns = filtrarDadosPorPermissao(d.lancamentos || [], d, esc)
-                .filter(l => String(l.vencimento || l.dataCompra || '').startsWith(mes)
-                    && (esc === 'todos' || l.tipo === 'entrada' || (l.escopo || 'casal') === esc));
-
-            renderizarPulsoDashboard(lns, d, mes);
-            renderizarTopCategoriasDashboard(d, lns);
-        } catch (e) {
-            console.warn('[Extras Dashboard]', e);
-        }
-    }
-
-/* 🚦 PULSO DO MÊS — clicável, com redirecionamento contextual */
-function renderizarPulsoDashboard(lns, dados, mes) {
-    const cont = document.getElementById('pulsoDashboard');
-    if (!cont) return;
-
-    if (document.body.classList.contains('privacidade-ativa')) {
-        cont.innerHTML = `
-            <div class="privacy-section-placeholder">
-                <div><strong>Pulso do mês oculto</strong></div>
-                <div style="font-size:0.82rem;font-weight:500;">Toque no banner de privacidade para revelar o veredito.</div>
-            </div>`;
-        return;
-    }
-
-    let ent = 0, sai = 0, ess = 0;
-    lns.forEach(l => {
-        const v = Number(l.valor || 0);
-        if (l.tipo === 'entrada') ent += v;
-        else { sai += v; if (l.servicoEssencial === 'sim') ess += v; }
-    });
-
-    const hoje = dataLocalYYYYMMDD();
-    const atrasadas = lns.filter(l => !l.pago && l.vencimento && l.vencimento < hoje && l.tipo === 'saida');
-    const totalAtrasado = atrasadas.reduce((a, l) => a + Number(l.valor || 0), 0);
-    const saldoMes = ent - sai;
-
-    const baseCompleta = (typeof obterDados === 'function') ? obterDados() : (dados || {});
-    const escopoAtual = document.getElementById('filtroEscopoDashboardGeral')?.value || 'casal';
-    const calcularSaldoAte = (limiteMes) => {
-        if (!limiteMes) return 0;
-        return filtrarDadosPorPermissao(baseCompleta.lancamentos || [], baseCompleta, escopoAtual)
-            .filter(l => {
-                const mLanc = String(l.vencimento || l.dataCompra || '').slice(0, 7);
-                if (!mLanc || mLanc > limiteMes) return false;
-                return l.tipo === 'entrada' || (l.escopo || 'casal') === escopoAtual;
-            })
-            .reduce((acc, l) => acc + (l.tipo === 'entrada' ? 1 : -1) * Number(l.valor || 0), 0);
-    };
-    let saldoAnterior = 0;
-    if (/^\d{4}-\d{2}$/.test(mes)) {
-        const [anoRef, mesRef] = mes.split('-').map(Number);
-        const dataAnt = new Date(anoRef, mesRef - 2, 1);
-        saldoAnterior = calcularSaldoAte(
-            dataAnt.getFullYear() + '-' + String(dataAnt.getMonth() + 1).padStart(2, '0')
-        );
-    }
-    const saldoAcumulado = saldoAnterior + saldoMes;
-    const taxaPoupMes = ent > 0 ? (saldoMes / ent) * 100 : 0;
-    const compEss = ent > 0 ? (ess / ent) * 100 : 0;
-
-    let nivel = 'saudavel', icone = '🟢', titulo = '', detalhe = '';
-    let destino = { href: 'relatorios.html' + (mes ? '?mes=' + encodeURIComponent(mes) : ''), dica: 'Ver análise completa do mês nos Relatórios →' };
-
-    if (saldoAcumulado < 0) {
-        nivel = 'perigo'; icone = '🚨';
-        if (saldoMes < 0 && saldoAnterior >= 0) {
-            titulo = `Conta no vermelho: ${formatarMoeda(Math.abs(saldoAcumulado))}`;
-            detalhe = `O mês fechou negativo em ${formatarMoeda(Math.abs(saldoMes))} e consumiu o saldo anterior de ${formatarMoeda(saldoAnterior)}.`;
-        } else if (saldoMes >= 0 && saldoAnterior < 0) {
-            titulo = `Ainda no vermelho: ${formatarMoeda(Math.abs(saldoAcumulado))}`;
-            detalhe = `O mês foi positivo (${formatarMoeda(saldoMes)}), mas ainda faltam ${formatarMoeda(Math.abs(saldoAcumulado))} para quitar o saldo negativo anterior.`;
-        } else {
-            titulo = `Conta no vermelho: ${formatarMoeda(Math.abs(saldoAcumulado))}`;
-            detalhe = 'Entradas e saídas acumuladas deixaram a conta negativa. Priorize cortar gastos não essenciais.';
-        }
-        destino = { href: 'relatorios.html' + (mes ? '?mes=' + encodeURIComponent(mes) : ''), dica: 'Analisar saídas e saldo nos Relatórios →' };
-    } else if (totalAtrasado > 0) {
-        nivel = 'perigo'; icone = '⏰';
-        titulo = `${atrasadas.length} conta(s) atrasada(s) — ${formatarMoeda(totalAtrasado)}`;
-        detalhe = 'Priorize a quitação para evitar juros e negativação. Abra a Central de Pagamentos.';
-        destino = { href: `central-pagamentos.html?visao=competencia&mes=${encodeURIComponent(mes || '')}`, dica: 'Ver contas atrasadas na Central de Pagamentos →' };
-    } else if (lns.length === 0 && saldoAnterior === 0) {
-        nivel = 'neutro'; icone = '📊';
-        titulo = 'Mês sem movimento';
-        detalhe = 'Registre seus lançamentos para ver o pulso do mês.';
-        destino = { href: 'lancamentos.html', dica: 'Registrar o primeiro lançamento do mês →' };
-    } else if (lns.length === 0 && saldoAcumulado > 0) {
-        nivel = 'saudavel'; icone = '🟢';
-        titulo = `Sem movimentações — saldo preservado`;
-        detalhe = `Sua conta mantém ${formatarMoeda(saldoAcumulado)} do período anterior. Nenhuma despesa nova este mês.`;
-    } else if (saldoMes < 0) {
-        nivel = 'perigo'; icone = '🚨';
-        titulo = `Mês no vermelho: ${formatarMoeda(Math.abs(saldoMes))}`;
-        detalhe = `Gastou mais do que recebeu neste mês. O saldo acumulado de ${formatarMoeda(saldoAcumulado)} ainda cobre — mas fique atento.`;
-        destino = { href: 'relatorios.html' + (mes ? '?mes=' + encodeURIComponent(mes) : ''), dica: 'Investigar saídas nos Relatórios →' };
-    } else if (compEss > 70 && ent > 0) {
-        nivel = 'atencao'; icone = '⚠️';
-        titulo = `Essenciais consomem ${compEss.toFixed(0)}% da renda`;
-        detalhe = `${formatarMoeda(ess)} foram para despesas essenciais. Revise contratos e assinaturas.`;
-        destino = { href: 'relatorios.html' + (mes ? '?mes=' + encodeURIComponent(mes) : ''), dica: 'Revisar essenciais nos Relatórios →' };
-    } else if (taxaPoupMes < 10 && ent > 0) {
-        nivel = 'atencao'; icone = '📉';
-        titulo = `Poupança baixa no mês: ${taxaPoupMes.toFixed(0)}%`;
-        detalhe = `Guardou ${formatarMoeda(saldoMes)} de ${formatarMoeda(ent)} recebidos. Ideal é guardar 20% ou mais.`;
-        destino = { href: 'relatorios.html' + (mes ? '?mes=' + encodeURIComponent(mes) : ''), dica: 'Ver onde reduzir nos Relatórios →' };
-    } else {
-        nivel = 'saudavel'; icone = '✅';
-        if (saldoMes > 0) {
-            titulo = `Boa saúde financeira — ${formatarMoeda(saldoAcumulado)} em conta`;
-            detalhe = `Guardou ${formatarMoeda(saldoMes)} este mês${saldoAnterior > 0 ? ` e manteve os ${formatarMoeda(saldoAnterior)} do período anterior` : ''}. Continue assim.`;
-        } else {
-            titulo = `Saldo preservado — ${formatarMoeda(saldoAcumulado)} em conta`;
-            detalhe = `Sem novas dívidas. Seu saldo positivo do período anterior continua disponível.`;
-        }
-    }
-
-    cont.innerHTML = `
-        <a href="${escaparHTML(destino.href)}" class="pulso-card ${nivel}" aria-label="${escaparHTML(destino.dica.replace(/[→↗]/g, '').trim())}">
-            <div class="pulso-icone">${icone}</div>
-            <div class="pulso-conteudo">
-                <div class="pulso-eyebrow">Pulso do mês · Saldo em conta</div>
-                <div class="pulso-titulo">${escaparHTML(titulo)}</div>
-                <div class="pulso-detalhe">${escaparHTML(detalhe)}</div>
-                <span class="pulso-dica">${escaparHTML(destino.dica)}</span>
-            </div>
-        </a>`;
-}
-
-    /* 💸 ONDE O DINHEIRO FOI — totalmente oculto no modo discreto */
-    function renderizarTopCategoriasDashboard(dados, lns) {
-        const cont = document.getElementById('topCategoriasDashboard');
-        if (!cont) return;
-
-        // Modo Discreto: substitui por placeholder neutro
-        if (document.body.classList.contains('privacidade-ativa')) {
-            cont.innerHTML = `
-                <div class="privacy-section-placeholder">
-                    <div><strong>Distribuição de gastos oculta</strong></div>
-                    <div style="font-size:0.82rem;font-weight:500;">Categorias ficam protegidas no modo discreto.</div>
-                </div>`;
-            return;
-        }
-
-        const saidas = lns.filter(l => l.tipo !== 'entrada');
-        const totalSaidas = saidas.reduce((a, l) => a + Number(l.valor || 0), 0);
-
-        if (!saidas.length) {
-            cont.innerHTML = `<p class="muted" style="text-align:center; padding:24px 0;">Nenhum gasto registrado no mês.</p>`;
-            return;
-        }
-
-        const nomeCat = id => (dados.categorias.find(x => String(x.id) === String(id)) || {}).nome || 'Sem categoria';
-        const somasCat = {};
-        const essencialCat = {};
-        saidas.forEach(l => {
-            const k = nomeCat(l.categoriaId);
-            somasCat[k] = (somasCat[k] || 0) + Number(l.valor || 0);
-            if (l.servicoEssencial === 'sim') essencialCat[k] = true;
-        });
-
-        const ranking = Object.entries(somasCat).sort((a, b) => b[1] - a[1]).slice(0, 5);
-        const maxVal = ranking[0]?.[1] || 1;
-
-        cont.innerHTML = ranking.map(([nome, valor], i) => {
-            const pctTotal = totalSaidas > 0 ? (valor / totalSaidas) * 100 : 0;
-            const pctBarra = (valor / maxVal) * 100;
-            const essencial = essencialCat[nome];
-            return `
-                <div class="categoria-barra">
-                    <div class="categoria-barra-header">
-                        <div class="categoria-barra-info">
-                            <span class="categoria-barra-pos">${i + 1}</span>
-                            <span class="categoria-barra-nome">${escaparHTML(nome)}${essencial ? ' <span style="font-size:0.65rem;color:var(--danger);font-weight:800;">ESSENCIAL</span>' : ''}</span>
-                        </div>
-                        <div class="categoria-barra-valores">
-                            <span class="categoria-barra-valor">${formatarMoeda(valor)}</span>
-                            <span class="categoria-barra-pct">${pctTotal.toFixed(1)}% do total</span>
-                        </div>
-                    </div>
-                    <div class="categoria-barra-track">
-                        <div class="categoria-barra-fill ${essencial ? 'essencial' : ''}" style="width:${pctBarra}%"></div>
-                    </div>
-                </div>`;
-        }).join('');
-    }
-
-        document.addEventListener('DOMContentLoaded', async () => {
-        injetarHeader();
-
-        const dd = document.querySelector('.dropdown-acao');
-        if (dd) {
-            dd.querySelector('.btn-acao-principal').addEventListener('click', e => {
-                e.stopPropagation();
-                dd.classList.toggle('aberto');
-            });
-            document.addEventListener('click', () => dd.classList.remove('aberto'));
-        }
-        if (await verificarAutenticacao()) carregarDashboard();
-    });
-    </script>
+    <script defer src="js/page/dashboard.js"></script>
 </body>
 </html>

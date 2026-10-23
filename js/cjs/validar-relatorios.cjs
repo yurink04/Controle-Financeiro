@@ -28,7 +28,7 @@ const contexto = {
         escopo === 'casal' || String(l.usuarioId) === '1')
 };
 vm.createContext(contexto);
-vm.runInContext(fs.readFileSync(path.join(__dirname, 'relatorios-page.js'), 'utf8'), contexto);
+vm.runInContext(fs.readFileSync(path.resolve(__dirname, '..', 'page', 'relatorios.js'), 'utf8'), contexto);
 const executar = codigo => vm.runInContext(codigo, contexto);
 
 const lancamentos = [

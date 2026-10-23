@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Painel Financeiro | Controle Financeiro</title>
+    <link rel="stylesheet" href="style.css">
+    <script defer src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body class="dashboard-page">
+
+    <main class="container">
+        <div class="page-heading" data-overline="VISÃO GERAL · SUA VIDA FINANCEIRA">
+            <div>
+                <h2>Painel Financeiro</h2>
+                <p>O que entra, o que sai e para onde vai — em um olhar. Aja agora, detalhe em <a href="relatorios.html" class="text-link">Relatórios</a>.</p>
+            </div>
+
+            <div class="toolbar-actions" style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+                <a href="relatorios.html" id="btnRelatorios" class="btn-acao-secundario" title="Ver análise completa do mês">
+                    📊 Relatórios
+                </a>
+                <a href="rendimentos.html" class="btn-acao-secundario" title="Entenda seu salário líquido e veja o histórico de ganhos">
+                    💼 Meus rendimentos
+                </a>
+                <div class="dropdown-acao">
+                    <button class="btn-acao-principal">
+                        <span>+ Novo Lançamento</span>
+                        <span style="font-size: 0.8rem;">▼</span>
+                    </button>
+                    <div class="dropdown-acao-conteudo">
+                        <button data-page-handler="dashboard-1">
+                            <span class="indicador-entrada">+</span> Nova Entrada
+                        </button>
+                        <button data-page-handler="dashboard-2">
+                            <span class="indicador-saida">−</span> Nova Saída
+                        </button>
+                        <button data-page-handler="dashboard-3">
+                            <span class="indicador-cartao">💳</span> Nova Saída no Cartão
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+                <section class="form-card filter-bar">
+            <div>
+                <div class="section-title" style="margin-bottom: 2px;"><h2>Resumo mensal</h2></div>
+                <p class="muted small">Ajuste período e escopo para recalcular o pulso.</p>
+            </div>
+            <div style="display: flex; gap: 12px; flex-wrap: wrap; align-items: flex-end;">
+                <div class="filter-group">
+                    <label for="filtroDescricaoDashboard">Buscar descrição</label>
+                    <input type="search" id="filtroDescricaoDashboard" placeholder="Ex.: Abastecimento, McDonald's..." style="width:auto; min-width:200px;" data-page-handler="dashboard-4">
+                </div>
+                <div class="filter-group">
+                    <label for="filtroEscopoDashboardGeral">Escopo</label>
+                    <select id="filtroEscopoDashboardGeral" style="width:auto; min-width:140px;" data-page-handler="dashboard-5">
+                        <option value="casal">Casal / Casa</option>
+                        <option value="individual">Individual</option>
+                    </select>
+                </div>
+                <div class="filter-group">
+                    <label for="filtroMesAno">Mês / Ano</label>
+                    <input type="month" id="filtroMesAno" style="width:auto; min-width:150px;" data-page-handler="dashboard-6">
+                </div>
+            </div>
+        </section>
+
+        <section id="pulsoDashboard"></section>
+
+        <section class="stat-grid" aria-label="Indicadores financeiros do mês">
+            <div class="stat-box kpi-card card-mestre">
+                <span class="kpi-accent" style="background: var(--primary);"></span>
+
+                <div class="mestre-grid">
+                    <div class="mestre-bloco">
+                        <div class="stat-label">Saldo do Mês</div>
+                        <div id="saldoGeral" class="stat-value saldo-destaque">R$ 0,00</div>
+                        <p class="stat-detail">Entradas − Saídas</p>
+                    </div>
+
+                    <div class="mestre-bloco">
+                        <div class="stat-label kpi-entrada"><span>↓</span> Entradas</div>
+                        <div id="totalEntradas" class="stat-value positivo detalhe-valor">R$ 0,00</div>
+                        <div id="subDetalhesEntradas" class="stat-detail"></div>
+                    </div>
+
+                    <div class="mestre-bloco">
+                        <div class="stat-label kpi-saida"><span>↑</span> Saídas</div>
+                        <div id="totalSaidas" class="stat-value negativo detalhe-valor">R$ 0,00</div>
+                        <div id="subDetalhesSaidas" class="stat-detail"></div>
+                    </div>
+
+                    <div class="mestre-bloco">
+                        <div class="stat-label" style="color: #b91c1c;">⚠️ Maior foco</div>
+                        <div id="maiorFocoValor" class="stat-value" style="color: #b91c1c;">R$ 0,00</div>
+                        <div id="maiorFocoDetalhe" class="stat-detail">Nenhum gasto registrado</div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="form-card" id="cardTopCategorias" style="margin-top: 16px;">
+            <div class="section-title">
+                <div>
+                    <h2>💸 Onde o dinheiro foi</h2>
+                    <p>Top 5 categorias de gasto do mês — clique em <a href="relatorios.html" class="text-link">Relatórios</a> para auditoria completa.</p>
+                </div>
+            </div>
+            <div id="topCategoriasDashboard"></div>
+        </section>
+
+        <section class="grid-2" style="margin-top:16px;">
+            <article class="form-card chart-card">
+                <div class="chart-head">
+                    <div><h3>Entradas x saídas</h3><span class="muted small">Comparação do período</span></div>
+                </div>
+                <div class="chart-container"><canvas id="graficoEntradasSaidas"></canvas></div>
+            </article>
+            <article class="form-card chart-card" id="cardGraficoTiposSaida">
+    <div class="chart-head">
+        <div><h3>Tipos de saída</h3><span class="muted small">Distribuição por forma de pagamento</span></div>
+    </div>
+    <div class="chart-container"><canvas id="graficoTiposSaida"></canvas></div>
+</article>
+            <article class="form-card chart-card" id="cardGraficoCategorias">
+                <div class="chart-head">
+                    <div><h3>Gastos por categoria</h3><span class="muted small">Distribuição das despesas</span></div>
+                    <select id="filtroCategoriaDashboard" data-page-handler="dashboard-7">
+                        <option value="todas">Todas</option>
+                    </select>
+                </div>
+                <div class="chart-container"><canvas id="graficoGastosCategorias"></canvas></div>
+            </article>
+
+            <article class="form-card chart-card" id="cardGraficoEssenciais">
+                <div class="chart-head">
+                    <div><h3>Essenciais x não essenciais</h3><span class="muted small">Classificação das saídas</span></div>
+                    <select id="filtroServicoEssencialDashboard" data-page-handler="dashboard-8">
+                        <option value="todos">Todos</option>
+                        <option value="sim">Essenciais</option>
+                        <option value="nao">Não essenciais</option>
+                    </select>
+                </div>
+                <div class="chart-container"><canvas id="graficoServicosEssenciais"></canvas></div>
+            </article>
+
+            <article class="form-card chart-card" id="cardGraficoCartoes">
+                <div class="chart-head">
+                    <div><h3>Limite dos cartões</h3><span class="muted small">Uso atual</span></div>
+                    <select id="filtroGraficoCartao" data-page-handler="dashboard-9">
+                        <option value="todos">Todos</option>
+                    </select>
+                </div>
+                <div class="chart-container"><canvas id="graficoCartoesLimite"></canvas></div>
+            </article>
+        </section>
+
+        <section class="form-card" id="cardUltimosLancamentos" style="margin-top: 16px;">
+            <div class="section-title">
+                <div><h2>Últimos lançamentos do mês</h2><p>Histórico recente para conferência rápida.</p></div>
+                <div class="filter-group">
+                    <label for="filtroTipoUltimosLancamentos">Exibir</label>
+                    <select id="filtroTipoUltimosLancamentos" style="width:auto;" data-page-handler="dashboard-10">
+                        <option value="todos">Todos</option>
+                        <option value="entrada">Entradas</option>
+                        <option value="saida">Saídas</option>
+                    </select>
+                </div>
+            </div>
+            <div class="tabela-container">
+                <table class="tabela">
+                    <thead>
+                        <tr>
+                            <th>Usuário</th><th>Descrição</th><th>Categoria</th><th>Pagamento</th><th>Vencimento</th><th>Valor</th><th>Ações</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tabelaUltimosLancamentos"></tbody>
+                </table>
+            </div>
+        </section>
+    </main>
+
+    
+    
+    
+    
+    
+
+    <script defer src="js/script.js"></script>
+    <script defer src="js/calculos_trabalhistas.js"></script>
+    <script defer src="js/conexao_sheets.js"></script>
+    <script defer src="js/page/dashboard.js"></script>
+</body>
+</html>

@@ -1,46 +1,42 @@
-// Diagnóstico somente leitura: GET statusCadastro e POST revisao sem sessão.
-// Nunca envia login, PIN, sessão real ou dados financeiros; não mostra o token.
+/*
+  Diagnóstico remoto somente leitura. Execute explicitamente com --online.
+  Não envia informações de usuários ou dados financeiros nem altera planilhas.
+  Sem --online, não faz requisições de rede.
+*/
+'use strict';
 const fs = require('node:fs');
 const path = require('node:path');
-const {execFileSync} = require('node:child_process');
-
-const fonte = fs.readFileSync(path.join(__dirname, 'script.js'), 'utf8');
-function constante(nome) {
-    const m = fonte.match(new RegExp('const ' + nome + '\\s*=\\s*["\']([^"\']+)["\']'));
-    if (!m) throw new Error(`Não encontrei ${nome} no script.js.`);
-    return m[1];
+if (!process.argv.includes('--online')) {
+  console.log('Diagnóstico remoto NÃO executado. Use: node js/cjs/diagnosticar-api.cjs --online');
+  process.exit(0);
 }
-
-const url = new URL(constante('API_URL'));
-url.searchParams.set('action', 'statusCadastro');
-url.searchParams.set('token', constante('TOKEN_API'));
-
-try {
-    const resposta = execFileSync('curl', [
-        '--location', '--silent', '--show-error', '--max-time', '25', url.toString()
-    ], {encoding: 'utf8', timeout: 30000});
-    const dados = JSON.parse(resposta);
-    console.log('Serviço:', dados.status === 'sucesso' ? 'respondeu corretamente' : 'recusou o diagnóstico');
-    console.log('Versão de acesso:', dados.versaoAcesso || 'não informada pela implantação ativa');
-    console.log('Proteção de sincronização:', dados.versaoSincronizacao || 'ainda não publicada nesta implantação');
-    console.log('Cadastro inicial:', dados.status === 'sucesso'
-        ? (dados.primeiroCadastroDisponivel === true ? 'disponível' : 'já existe usuário') : 'não verificado');
-    if (dados.status !== 'sucesso') console.log('Ação recomendada: conferir as Script Properties e a implantação /exec.');
-
-    // Valida também o endpoint de POST usado pela sincronização, mas envia
-    // uma sessão propositalmente vazia: a resposta esperada é de autenticação.
-    const post = execFileSync('curl', [
-        '--location', '--silent', '--show-error', '--max-time', '25',
-        '--header', 'Content-Type: text/plain;charset=utf-8',
-        '--data', JSON.stringify({action: 'revisao', token: constante('TOKEN_API'), sessao: ''}),
-        constante('API_URL')
-    ], {encoding: 'utf8', timeout: 30000});
-    const retornoPost = JSON.parse(post);
-    const autorizacaoExigida = retornoPost.status === 'erro' && /sess[aã]o expirada/i.test(retornoPost.mensagem || '');
-    console.log('POST de sincronização:', autorizacaoExigida
-        ? 'endpoint acessível; autenticação exigida corretamente'
-        : 'resposta inesperada, confira implantação e permissões');
-} catch (erro) {
-    console.error('Não foi possível obter uma resposta JSON da API. Confira conexão, URL e implantação.');
-    process.exitCode = 1;
-}
+const fonte = fs.readFileSync(path.resolve(__dirname, '..', 'conexao_sheets.js'), 'utf8');
+const constante = nome => {
+  const trecho = fonte.match(new RegExp(`const ${nome}\\s*=\\s*["']([^"']+)["']`));
+  if (!trecho) throw new Error(`Configuração ${nome} não encontrada.`);
+  return trecho[1];
+};
+const api = constante('API_URL');
+const token = constante('TOKEN_API');
+(async () => {
+  const url = new URL(api);
+  url.searchParams.set('action','statusCadastro');
+  url.searchParams.set('token',token);
+  const req = async (url, options) => {
+    const resposta = await fetch(url, {...options, signal: AbortSignal.timeout(25000), cache:'no-store'});
+    if (!resposta.ok) throw new Error(`HTTP ${resposta.status}`);
+    const dados = await resposta.json();
+    if (!dados || typeof dados !== 'object') throw new Error('JSON inesperado');
+    return dados;
+  };
+  const get = await req(url);
+  console.log('Status GET:', get.status === 'sucesso' ? 'resposta válida' : 'resposta de erro');
+  console.log('Versão acesso:', get.versaoAcesso || '(não informada)');
+  console.log('Versão sincronização:', get.versaoSincronizacao || '(não informada)');
+  const post = await req(api, {method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'},
+    body: JSON.stringify({action:'revisao', token, sessao:''})});
+  console.log('POST revisao sem sessão:', post.status === 'erro' ? 'acesso recusado como esperado' : 'verificar autenticação');
+})().catch(e => {
+  console.error('Falha ao verificar endpoint:', e.message || String(e));
+  process.exitCode=1;
+});
