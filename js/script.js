@@ -217,15 +217,18 @@ const obterUsuarioAtualId = () => localStorage.getItem('usuarioLogado');
 const obterUsuarioAtual = (dados = obterDados()) => (dados.usuarios || []).find(u => String(u.id) === String(obterUsuarioAtualId())) || null;
 
 function filtrarDadosPorPermissao(lista, dadosGlobais, escopoFiltro = 'casal') {
-    const usuarioAtualId = Number(obterUsuarioAtualId());
-    const usuarioAtual = (dadosGlobais.usuarios || []).find(u => Number(u.id) === usuarioAtualId);
-    if (!usuarioAtual) return [];
-    const parceiroId = usuarioAtual.parceiroId ? Number(usuarioAtual.parceiroId) : null;
+    const usuarioId = String(obterUsuarioAtualId() || '');
+    const usuario = (dadosGlobais.usuarios || []).find(u => String(u.id) === usuarioId);
+    if (!usuario) return [];
+    const parceiroId = usuario.parceiroId == null ? '' : String(usuario.parceiroId);
+    const parceiro = (dadosGlobais.usuarios || []).find(u => String(u.id) === parceiroId);
+    const vinculoReciproco = parceiro && String(parceiro.parceiroId || '') === usuarioId;
     return (lista || []).filter(item => {
-        const donoId = Number(item.usuarioId);
-        if (!item.usuarioId) return true;
-        if (escopoFiltro === 'individual') return donoId === usuarioAtualId;
-        return donoId === usuarioAtualId || (parceiroId && donoId === parceiroId);
+        const donoId = item?.usuarioId == null ? '' : String(item.usuarioId);
+        // Registros antigos sem dono não são apresentados como pertencentes a outra conta.
+        if (donoId === usuarioId) return true;
+        if (escopoFiltro === 'individual' || !vinculoReciproco || donoId !== parceiroId) return false;
+        return (item.escopo || 'casal') === 'casal';
     });
 }
 
@@ -235,7 +238,9 @@ function usuarioPodeAlterarLancamento(lancamento, dados = obterDados()) {
     const donoId = lancamento.usuarioId == null ? null : String(lancamento.usuarioId);
     if (donoId === String(u.id)) return true;
     const pId = u.parceiroId == null ? null : String(u.parceiroId);
-    return Boolean(pId && donoId === pId && (lancamento.escopo || 'casal') === 'casal');
+    const parceiro = (dados.usuarios || []).find(item => String(item.id) === pId);
+    return Boolean(pId && parceiro && String(parceiro.parceiroId || '') === String(u.id)
+        && donoId === pId && (lancamento.escopo || 'casal') === 'casal');
 }
 
 function permissaoPaginaAtual() {
@@ -1111,7 +1116,7 @@ async function adicionarCategoria(nome, tipo) {
         const d = obterDados(), nl = normalizarTexto(nome);
         if (!nl || !['entrada','saida'].includes(tipo)) throw new Error('Dados inválidos.');
         if ((d.categorias || []).some(c => c.tipo === tipo && normalizarTexto(c.nome) === nl)) throw new Error('Categoria já existe.');
-        d.categorias.push({ id: d.categorias.reduce((m, c) => Math.max(m, c.id||0), 0)+1, nome: nome.trim(), tipo, classificacao: 'personalizado', criadopor: obterUsuarioAtualId(d) });
+        d.categorias.push({ id: proximoIdLancamento(d.categorias), nome: nome.trim(), tipo, classificacao: 'personalizado', criadopor: obterUsuarioAtualId(d) });
         registrarLog(d, 'CADASTRO CATEGORIA', `Criada: ${nome} (${tipo})`);
         await salvarDados(d); notificarOperacao('Categoria adicionada. Sincronização em segundo plano.'); return true;
     } catch (e) { await mostrarAlertaModal(e.message); return false; } finally { esconderLoading(); processandoAcaoModal = false; }
@@ -1648,7 +1653,7 @@ async function adicionarFinanciamentoComRecorrencia(nome, recorrente, valorParce
             escopoContrato = bem?.compartilhado ? 'casal' : 'individual';
         }
 
-        const finId = (dados.financiamentos || []).reduce((m, f) => Math.max(m, Number(f.id) || 0), 0) + 1;
+        const finId = proximoIdLancamento(dados.financiamentos || []);
         const parcelamentoId = tipoContrato === 'financiamento' ? gerarId('finparc') : null;
         const totalMeses = recorrente === 'sim' ? meses : 1;
         const valorParcelaFinal = Number(valorFinal.toFixed(2));
@@ -2557,7 +2562,12 @@ async function abrirModalNotificacoes(abaInicial) {
 async function responderSolicitacaoParceiro(notificacaoId, aprovado) {
     const dados = obterDados();
     const notif = (dados.notificacoes || []).find(n => String(n.id) === String(notificacaoId));
-    if (!notif) return;
+    if (!notif || notif.tipo !== 'solicitacao_parceiro' ||
+        notif.statusAprovacao !== 'pendente' ||
+        String(notif.usuarioDestinoId) !== String(obterUsuarioAtualId())) {
+        await mostrarAlertaModal('Esta solicitação não está mais pendente ou não pertence à sua conta.');
+        return;
+    }
     notif.statusAprovacao = aprovado ? 'aprovado' : 'negado';
     const usuarioDestino = dados.usuarios.find(u => Number(u.id) === Number(notif.usuarioDestinoId));
     const remetente = dados.usuarios.find(u => Number(u.id) === Number(notif.remetenteId));
@@ -2644,15 +2654,19 @@ function gerarLembretesVencimento() {
 function limparNotificacoesResolvidas(dados) {
     if (!dados.notificacoes || !dados.lancamentos) return false;
     const totalAntes = dados.notificacoes.length;
-    
-    dados.notificacoes = dados.notificacoes.filter(n => {
-        if (n.tipo === 'alerta_vencimento') {
-            const lancamentoId = String(n.id).split('_')[3];
-            const lanc = dados.lancamentos.find(l => String(l.id).replace(/[^a-zA-Z0-9_-]/g, '_') === lancamentoId);
-            if (!lanc || lanc.pago || String(lanc.status).toLowerCase() === 'pago') return false;
-        }
-        return true;
+    const alertasPendentes = new Set();
+    dados.lancamentos.forEach(l => {
+        if (l.pago === true || normalizarTexto(l.status) === 'pago') return;
+        const vencimento = normalizarDataISO(l.vencimento);
+        if (!vencimento) return;
+        const usuario = String(l.usuarioId ?? '');
+        const identificador = String(l.id).replace(/[^a-zA-Z0-9_-]/g, '_');
+        const data = vencimento.replace(/-/g, '');
+        alertasPendentes.add(`alerta_vencimento_${usuario}_${identificador}_${data}`);
+        alertasPendentes.add(`alerta_atraso_${usuario}_${identificador}_${data}`);
     });
+    dados.notificacoes = dados.notificacoes.filter(n =>
+        n.tipo !== 'alerta_vencimento' || alertasPendentes.has(String(n.id)));
     
     return dados.notificacoes.length !== totalAntes;
 }
@@ -2665,8 +2679,7 @@ async function abrirModalPrimeiroAcesso() {
         return;
     }
     try {
-        const req = await fetch(`${API_URL}?action=statusCadastro&token=${encodeURIComponent(TOKEN_API)}`, { cache: 'no-store' });
-        const situacao = await req.json();
+        const situacao = await executarPostAPI('statusCadastro');
         if (situacao.status !== 'sucesso') throw new Error(situacao.mensagem || 'Não foi possível verificar o cadastro.');
         if (!situacao.primeiroCadastroDisponivel) {
             await mostrarAlertaModal('O sistema já possui contas. Solicite a criação do seu acesso a um administrador em Configurações.');
@@ -2727,13 +2740,8 @@ async function abrirModalPrimeiroAcesso() {
                 throw new Error('Há uma sincronização pendente. Conclua-a antes de cadastrar outro usuário.');
             }
             const hashSenha = await gerarHash(senha);
-            const resposta = await fetch(API_URL, {
-                method: 'POST',
-                headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-                body: JSON.stringify({ action: 'registrarPrimeiroUsuario', token: TOKEN_API, usuario, nome, senhaHash: hashSenha, senhaAdmin })
-            });
-            if (!resposta.ok) throw new Error('Servidor indisponível para salvar o cadastro.');
-            const resultado = await resposta.json();
+            const resultado = await executarPostAPI('registrarPrimeiroUsuario',
+                { usuario, nome, senhaHash: hashSenha, senhaAdmin });
             if (resultado.status !== 'sucesso') throw new Error(resultado.status === 'conflito'
                 ? 'Os dados mudaram durante o cadastro. Tente novamente.'
                 : resultado.mensagem || 'O servidor não confirmou o cadastro.');

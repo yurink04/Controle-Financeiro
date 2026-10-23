@@ -270,7 +270,11 @@ function agendarSincronizacaoSilenciosa(urgente = false) {
 
 async function buscarDadosServidor() {
     const json = await executarPostAPI('obterDados', { sessao: obterSessaoAPI() });
-    if (json.status === 'erro' || !Array.isArray(json.usuarios)) throw new Error(json.mensagem || 'Dados inválidos.');
+    if (!json || json.status === 'erro') throw new Error(json?.mensagem || 'Falha ao carregar os dados do servidor.');
+    if (!COLECOES_DADOS.every(nome => Array.isArray(json[nome])) ||
+        !Number.isSafeInteger(Number(json._revision)) || Number(json._revision) < 0) {
+        throw new Error('Resposta incompleta do Google Sheets. Os dados locais foram preservados para evitar perda de informações.');
+    }
     return json;
 }
 
@@ -367,12 +371,20 @@ function protegerUsuariosNaoProprios(payload) {
 
 async function sincronizarComServidor() {
     if (reenvioEmAndamento || syncInFlight || !syncPendingData || localStorage.getItem(SYNC_CONFLICT_KEY) || !navigator.onLine) return;
+    const donoPendente = localStorage.getItem(CHAVE_DONO_PENDENCIAS);
+    const usuarioAtivo = localStorage.getItem('usuarioLogado');
+    if (donoPendente && donoPendente !== usuarioAtivo) {
+        marcarConflitoSincronizacao(lerJSONLocal(DB_KEY, null), [],
+            'Existem alterações pertencentes a outra conta neste navegador. Entre na conta de origem para reconciliá-las.');
+        return;
+    }
     syncInFlight = true; let payloadAtual = null, tentativas = 0;
     try {
         while (syncPendingData && tentativas < 5 && !localStorage.getItem(SYNC_CONFLICT_KEY)) {
             tentativas++;
             payloadAtual = protegerUsuariosNaoProprios(syncPendingData);
             syncPendingData = null;
+            const snapshotNoInicioEnvio = localStorage.getItem(DB_KEY);
             const json = await executarPostAPI('salvarDados',
                 { sessao: obterSessaoAPI(), dados: payloadAtual }, 45000);
             if (json.status === 'conflito') {
@@ -380,9 +392,13 @@ async function sincronizarComServidor() {
                 const base = lerJSONLocal(SYNC_BASELINE_KEY, null);
                 const serv = clonarDados(await buscarDadosServidor());
                 if (!base) { marcarConflitoSincronizacao(lAtual, [], 'Sem snapshot-base.'); break; }
+                // Uma edição pode ter ocorrido enquanto o servidor era consultado.
+                // Mescle sempre o snapshot local mais recente, nunca o capturado
+                // antes do await buscarDadosServidor().
+                const localMaisRecente = lerJSONLocal(DB_KEY, lAtual) || lAtual;
                 const mescla = prepararReenvioSeguro(
                     migrarDados(clonarDados(base)).dados,
-                    migrarDados(clonarDados(lAtual)).dados,
+                    migrarDados(clonarDados(localMaisRecente)).dados,
                     serv,
                     localStorage.getItem('usuarioLogado')
                 );
@@ -401,6 +417,15 @@ async function sincronizarComServidor() {
             payloadAtual._revision = rev;
             localStorage.setItem(SYNC_BASELINE_KEY, JSON.stringify(payloadAtual));
             window.revisaoServidorAtual = rev;
+            // Uma outra aba pode ter gravado o cache enquanto a chamada estava
+            // em andamento. Não substitua essas edições pelo snapshot já enviado.
+            if (!syncPendingData && localStorage.getItem(DB_KEY) !== snapshotNoInicioEnvio) {
+                const dadosDeOutraAba = lerJSONLocal(DB_KEY, null);
+                if (dadosDeOutraAba) {
+                    syncPendingData = clonarDados(dadosDeOutraAba);
+                    memoriaSistema = clonarDados(dadosDeOutraAba);
+                }
+            }
             if (syncPendingData) syncPendingData._revision = rev;
             if (memoriaSistema) { memoriaSistema._revision = rev; localStorage.setItem(DB_KEY, JSON.stringify(memoriaSistema)); }
             if (!syncPendingData) {
@@ -430,6 +455,15 @@ async function sincronizarComServidor() {
 async function inicializarBanco() {
     window.ultimaOrigemBanco = 'indefinida';
     const local = lerJSONLocal(DB_KEY, null);
+    const pendenteDe = localStorage.getItem(CHAVE_DONO_PENDENCIAS);
+    const usuarioAtivo = localStorage.getItem('usuarioLogado');
+    if (local && localStorage.getItem('syncPendente') === 'true' &&
+        pendenteDe && pendenteDe !== usuarioAtivo) {
+        window.ultimaOrigemBanco = 'pendencia-outra-conta';
+        marcarConflitoSincronizacao(local, [],
+            'Existem alterações locais pendentes de outra conta. Entre na conta de origem antes de sincronizar.');
+        throw new Error('Alterações locais de outro usuário preservadas. Faça login na conta original para sincronizar.');
+    }
     if (local && localStorage.getItem('syncPendente') === 'true') {
         window.ultimaOrigemBanco = 'local-pendente';
         memoriaSistema = migrarDados(local).dados;

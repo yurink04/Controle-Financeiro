@@ -605,9 +605,7 @@ body.dark-mode .login-theme-toggle:hover { border-color: var(--primary); color: 
     .filter-group > * { flex: 1 1 150px; }
     .chart-card { min-height: 320px; }
     .chart-head { align-items: flex-start; flex-direction: column; }
-    .chart-head select { width: 100%; }
     .lista-simples li { align-items: flex-start; }
-    .modal-buttons { flex-direction: column-reverse; }
     .modal-buttons button { width: 100%; }
     .btn-row > * { flex: 1 1 100%; }
 }
@@ -992,7 +990,6 @@ button:focus-visible,
     .filter-group > input, .filter-group > select { width: 100% !important; min-width: 0 !important; }
 
     .toolbar-actions { width: 100% !important; flex-direction: column !important; }
-    .toolbar-actions > * { width: 100% !important; }
     .btn-acao-principal { width: 100% !important; justify-content: center !important; padding: 12px !important; }
 
     .tabela-container { border-radius: 10px; overflow-x: auto; -webkit-overflow-scrolling: touch; }
@@ -2780,4 +2777,80 @@ body.profile-page .account-photo-inline-note p { font-size: .75rem; color: var(-
     display: block;
     font-size: 0.7rem;
     color: var(--text-soft);
+}
+
+
+/* ============================================================================
+   SISTEMA VISUAL COMPARTILHADO | Auditoria 23/10/2026
+   Regras de consistência; mantém compatibilidade com o HTML atual.
+   ============================================================================ */
+:root {
+    --control-height: 44px;
+    --focus-ring: 0 0 0 3px var(--primary-soft);
+    --content-gap: clamp(12px, 2vw, 22px);
+}
+
+:where(button, a, input, select, textarea, summary, [role="button"]):focus-visible {
+    outline: 2px solid var(--primary);
+    outline-offset: 3px;
+}
+
+:where(button, input, select, textarea):disabled {
+    cursor: not-allowed;
+    opacity: .64;
+}
+
+:where(.container, .form-card, .chart-card, .stat-box, .modal-box, .filter-bar) {
+    min-width: 0;
+}
+
+:where(.form-card, .chart-card, .stat-box, .filter-bar, .table-wrap, .tabela-container) {
+    border-color: var(--border);
+}
+
+:where(.stat-grid, .grid-2, .grid-3, .grid-4) > * {
+    min-width: 0;
+}
+
+:where(.tabela-container, .table-wrap) {
+    max-width: 100%;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior-x: contain;
+}
+
+:where(.modal-box) {
+    overscroll-behavior-y: contain;
+    scrollbar-gutter: stable;
+}
+
+:where(.form-card, .filter-bar, .modal-box) :is(input, select, textarea) {
+    max-width: 100%;
+    min-height: var(--control-height);
+}
+:where(.form-card, .filter-bar, .modal-box) :is(input, select, textarea):focus-visible {
+    box-shadow: var(--focus-ring);
+}
+
+:where(.empty-state, .muted) {
+    color: var(--text-muted);
+}
+
+:where(.status-badge) {
+    line-height: 1.3;
+    white-space: nowrap;
+}
+
+@media (max-width: 760px) {
+    :where(.container, .form-card, .chart-card, .filter-bar) { min-width: 0; }
+    :where(.stat-grid, .grid-2, .grid-3, .grid-4) { gap: var(--content-gap); }
+    :where(.modal-box) { max-height: calc(100dvh - 24px); }
+    :where(.tabela-container, .table-wrap) { overflow-x: auto; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    :where(.form-card, .stat-box, .chart-card, .filter-bar, .modal-box, .status-badge) {
+        scroll-behavior: auto;
+        animation-duration: .01ms !important;
+        transition-duration: .01ms !important;
+    }
 }

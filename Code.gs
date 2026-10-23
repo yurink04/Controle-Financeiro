@@ -107,6 +107,15 @@ function tokenValido(token) {
   return tokenInformado !== '' && tokenConfigurado !== '' && tokenInformado === tokenConfigurado;
 }
 
+// Mesmo contrato de status para GET legado e POST usado pelo navegador.
+function statusCadastroResposta() {
+  return {
+    status: 'sucesso', versaoAcesso: VERSAO_ACESSO,
+    versaoSincronizacao: VERSAO_SINCRONIZACAO,
+    primeiroCadastroDisponivel: lerAba('usuarios').length === 0
+  };
+}
+
 // O token de integração identifica o aplicativo, NÃO um usuário autenticado.
 // Sessões de curta duração impedem o uso da API apenas com a chave pública do JS.
 // [FIX] Reduzido de 21600 (6h) para 3600 (1h): diminui a janela de uso de um
@@ -409,8 +418,23 @@ function conferirNotificacoes(original, proposta, usuario, elevado) {
     var id = String(n.id);
     if (!id || depois[id]) throw new Error('Notificação duplicada.');
     depois[id] = true;
-    if (antes[id] && registroAlterado(antes[id], n, SCHEMA.notificacoes) && String(antes[id].usuarioDestinoId) !== String(usuario.id)) {
-      throw new Error('Não é permitido modificar notificações de outro usuário.');
+    if (antes[id] && registroAlterado(antes[id], n, SCHEMA.notificacoes)) {
+      var antiga = antes[id];
+      if (String(antiga.usuarioDestinoId) !== String(usuario.id)) {
+        throw new Error('Não é permitido modificar notificações de outro usuário.');
+      }
+      var camposImutaveis = SCHEMA.notificacoes.filter(function(campo) {
+        return campo !== 'lida' && campo !== 'statusAprovacao';
+      });
+      if (registroAlterado(antiga, n, camposImutaveis)) {
+        throw new Error('O conteúdo e os participantes de uma notificação não podem ser alterados.');
+      }
+      if (String(antiga.statusAprovacao || '') !== String(n.statusAprovacao || '')) {
+        if (antiga.tipo !== 'solicitacao_parceiro' || antiga.statusAprovacao !== 'pendente' ||
+            ['aprovado', 'negado'].indexOf(n.statusAprovacao) < 0) {
+          throw new Error('Transição de aprovação de notificação inválida.');
+        }
+      }
     }
     if (!antes[id] && n.tipo !== 'alerta_vencimento' && String(n.remetenteId) !== String(usuario.id)) {
       throw new Error('Remetente da notificação inválido.');
@@ -451,10 +475,36 @@ function conferirAlteracoesFinanceiras(antes, depois, usuario) {
       // [FIX] Categorias continuam compartilhadas, mas o backend agora valida
       // que só o criador pode editar/excluir. Antes isso só era checado no frontend.
       if (nome === 'categorias') {
+        if (!velho && (!novo || String(novo.criadopor) !== String(usuario.id))) {
+          throw new Error('Categorias novas devem pertencer ao usuário autenticado.');
+        }
         if (velho && String(velho.criadopor) !== String(usuario.id)) {
           throw new Error('Só o criador pode editar esta categoria.');
         }
+        if (velho && velho.classificacao === 'padrao') {
+          throw new Error('Categorias padrão não podem ser alteradas por usuários comuns.');
+        }
+        if (velho && novo && String(novo.criadopor) !== String(velho.criadopor)) {
+          throw new Error('Não é permitido alterar o criador de uma categoria.');
+        }
         return;
+      }
+      // A propriedade de cartões, contratos e bens é imutável. O parceiro
+      // pode editar itens compartilhados que já existem, mas não criá-los
+      // atribuindo-os unilateralmente à outra conta.
+      if (['cartoes', 'financiamentos', 'bens'].indexOf(nome) >= 0) {
+        var donoAntigo = velho && String(velho.usuarioId == null ? '' : velho.usuarioId);
+        var donoNovo = novo && String(novo.usuarioId == null ? '' : novo.usuarioId);
+        if (!velho && novo && donoNovo !== String(usuario.id)) {
+          throw new Error('Registros novos devem pertencer à conta autenticada.');
+        }
+        if (velho && novo && donoAntigo !== donoNovo) {
+          throw new Error('O proprietário de um registro existente não pode ser alterado.');
+        }
+      }
+      if (nome === 'fatura_cartao' && velho && novo &&
+          String(velho.cartaoId) !== String(novo.cartaoId)) {
+        throw new Error('Não é permitido transferir uma fatura entre cartões.');
       }
       // Lançamentos: novos registros nascem sempre no usuário autenticado e o dono nunca muda.
       if (nome === 'lancamentos') {
@@ -472,7 +522,11 @@ function conferirAlteracoesFinanceiras(antes, depois, usuario) {
         var cartaoId = novo && novo.cartaoId || velho && velho.cartaoId;
         var cartao = depois.cartoes.filter(function(c) { return String(c.id) === String(cartaoId); })[0] ||
           antes.cartoes.filter(function(c) { return String(c.id) === String(cartaoId); })[0];
-        dono = cartao && cartao.usuarioId;
+        if (!cartao) throw new Error('A fatura precisa estar vinculada a um cartão existente.');
+        // Faturas são registros derivados da compra. Uma conta vinculada pode
+        // gerar a fatura do cartão compartilhado do parceiro; a checagem de
+        // donosPermitidos abaixo garante que o vínculo seja recíproco.
+        dono = cartao.usuarioId;
       }
       if (dono == null || donosPermitidos.indexOf(String(dono)) < 0) {
         throw new Error('Não é permitido alterar lançamentos de outra conta sem vínculo de parceiro.');
@@ -481,8 +535,9 @@ function conferirAlteracoesFinanceiras(antes, depois, usuario) {
       // verificação, um cliente malicioso poderia editar lançamentos
       // individuais do parceiro, mesmo que o frontend os escondesse.
       if (nome === 'lancamentos' && String(dono) !== String(usuario.id)) {
-        var escopoEfetivo = (novo && novo.escopo) || (velho && velho.escopo) || 'casal';
-        if (escopoEfetivo !== 'casal') {
+        var escopoAnterior = (velho && velho.escopo) || 'casal';
+        var escopoEfetivo = (novo && novo.escopo) || escopoAnterior;
+        if (escopoAnterior !== 'casal' || escopoEfetivo !== 'casal') {
           throw new Error('Lançamentos individuais do parceiro só podem ser editados pelo dono.');
         }
       }
@@ -577,9 +632,7 @@ function doGet(e) {
     }
 
     if (action === 'statusCadastro') {
-      return respostaJson({ status: 'sucesso', versaoAcesso: VERSAO_ACESSO,
-        versaoSincronizacao: VERSAO_SINCRONIZACAO,
-        primeiroCadastroDisponivel: lerAba('usuarios').length === 0 });
+      return respostaJson(statusCadastroResposta());
     }
 
     if (action === 'obterDados') {
@@ -644,6 +697,11 @@ function doPost(e) {
         status: 'erro',
         mensagem: 'Acesso não autorizado'
       });
+    }
+
+    // Evita colocar a chave de integração na URL para consultas do aplicativo.
+    if (action === 'statusCadastro') {
+      return respostaJson(statusCadastroResposta());
     }
 
     // Consultas protegidas via POST evitam colocar o identificador da sessão na URL.
@@ -833,6 +891,20 @@ function doPost(e) {
         status: 'erro',
         mensagem: 'Estrutura inválida: cada registro deve ser um objeto.'
       });
+    }
+    // IDs duplicados em qualquer coleção tornam a reconciliação por ID insegura.
+    var idsValidos = Object.keys(SCHEMA).every(function(nomeAba) {
+      var ids = Object.create(null);
+      return data.dados[nomeAba].every(function(registro) {
+        var id = String(registro.id == null ? '' : registro.id).trim();
+        if (!id || Object.prototype.hasOwnProperty.call(ids, id)) return false;
+        ids[id] = true;
+        return true;
+      });
+    });
+    if (!idsValidos) {
+      return respostaJson({ status: 'erro',
+        mensagem: 'Há identificadores ausentes ou duplicados. Nenhum dado foi gravado.' });
     }
 
     var usuarioAtual = autenticarSessao(data.sessao);

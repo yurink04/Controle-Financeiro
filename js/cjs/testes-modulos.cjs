@@ -4,11 +4,11 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
-const raiz = __dirname;
+const raiz = path.resolve(__dirname, '..', '..');
 const storage = () => { const m=new Map(); return {getItem:k=>m.has(k)?m.get(k):null, setItem:(k,v)=>m.set(k,String(v)),removeItem:k=>m.delete(k),clear:()=>m.clear()}; };
 const localStorage=storage(), sessionStorage=storage();
 const noop=()=>{};
-const doc={body:{classList:{contains:()=>false}},getElementById:()=>null,querySelector:()=>null,querySelectorAll:()=>[],addEventListener:noop,hidden:false};
+const doc={body:{classList:{contains:()=>false}},getElementById:()=>null,querySelector:()=>null,querySelectorAll:()=>[],addEventListener:noop,createElement:()=>({innerHTML:'',set textContent(v){this.innerHTML=String(v??'')}}),hidden:false};
 const context={
  addEventListener:noop, console, localStorage, sessionStorage, document:doc, navigator:{onLine:true},
  setTimeout:()=>1,clearTimeout:noop,setInterval:()=>1,clearInterval:noop,
@@ -87,5 +87,44 @@ sessionStorage.setItem('financeiroSessaoUsuario','u1');
  await get('sincronizarComServidor()');
  assert.equal(localStorage.getItem('syncPendente'),null);
  assert.ok(servidor.lancamentos.some(l=>l.id==='l2'));
- console.log('PASSOU: 3 arquivos carregados juntos; funções globais essenciais; regras salariais; mesclagem; início, escrita, isolamento de perfil, falha de rede e reenvio.');
+ // Resposta incompleta não pode substituir o cache por arrays vazios.
+ const localIntegro=localStorage.getItem('sistemaFinanceiroCompartilhado');
+ context.fetch=async()=>({ok:true,status:200,text:async()=>JSON.stringify({usuarios:[],_revision:20})});
+ await assert.rejects(get('buscarDadosServidor()'),/incompleta/);
+ assert.equal(localStorage.getItem('sistemaFinanceiroCompartilhado'),localIntegro);
+ context.fetch=anterior;
+ // Uma alteração na outra aba durante o POST nunca deve ser sobrescrita.
+ const d4=get('obterDados()');d4.lancamentos.push({id:'l3',usuarioId:'u1',tipo:'saida',valor:9,status:'pendente'});
+ await get('salvarDados(obterDados())');
+ const rotinaNormal=context.fetch;
+ context.fetch=async (url,opts)=>{
+   const body=JSON.parse(opts.body);
+   if(body.action==='salvarDados'){
+     const aindaLocal=JSON.parse(localStorage.getItem('sistemaFinanceiroCompartilhado'));
+     aindaLocal.lancamentos.push({id:'l4',usuarioId:'u1',tipo:'saida',valor:7,status:'pendente'});
+     localStorage.setItem('sistemaFinanceiroCompartilhado',JSON.stringify(aindaLocal));
+   }
+   return rotinaNormal(url,opts);
+ };
+ await get('sincronizarComServidor()');
+ context.fetch=rotinaNormal;
+ assert.ok(servidor.lancamentos.some(l=>l.id==='l4'),'A edição da outra aba deve chegar ao servidor');
+ assert.ok(get('obterDados().lancamentos.some(l=>l.id===\'l4\')'));
+ // O filtro de relatórios só mostra os próprios e os de parceiro recíproco no escopo casal.
+ const dadosEscopo={usuarios:[{id:'u1',parceiroId:'u2'},{id:'u2',parceiroId:'u1'},{id:'u3'}]};
+ context.dadosEscopo=dadosEscopo;
+ const resultadoFiltro=get(`filtrarDadosPorPermissao([
+   {id:1,usuarioId:'u1',escopo:'individual'},
+   {id:2,usuarioId:'u2',escopo:'casal'},
+   {id:3,usuarioId:'u2',escopo:'individual'},
+   {id:4,usuarioId:'u3',escopo:'casal'}], dadosEscopo, 'casal').map(l=>l.id)`);
+ assert.deepEqual(Array.from(resultadoFiltro),[1,2]);
+ const dadosNotificacoes={lancamentos:[{id:'xx_12',usuarioId:'u1',vencimento:'2026-11-02',pago:false,status:'pendente'}],notificacoes:[
+  {id:'alerta_vencimento_u1_xx_12_20261102',tipo:'alerta_vencimento'},
+  {id:'alerta_atraso_u1_indefinido_20261102',tipo:'alerta_vencimento'}]};
+ context.dadosNotificacoes=dadosNotificacoes;
+ get('limparNotificacoesResolvidas(dadosNotificacoes)');
+ assert.equal(dadosNotificacoes.notificacoes.length,1);
+ assert.equal(dadosNotificacoes.notificacoes[0].id,'alerta_vencimento_u1_xx_12_20261102');
+ console.log('PASSOU: 3 scripts integrados; contratos de API; validação de snapshot; mesclagem; isolamento de casal; lembretes; resiliência a falhas; reenvio e alterações de outra aba.');
 })().catch(e=>{console.error(e);process.exitCode=1});
