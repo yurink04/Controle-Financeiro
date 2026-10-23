@@ -97,6 +97,16 @@
                     </div>
                 </div>
 
+                <div id="blocoFormaPagamentoSaida" class="form-group" style="display:none; margin-top:12px;">
+                    <label for="formaPagamentoSaida">Forma de pagamento</label>
+                    <select id="formaPagamentoSaida">
+                        <option value="DINHEIRO">Dinheiro / Pix / Débito</option>
+                        <option value="BOLETO">Boleto</option>
+                        <option value="PIX">Pix</option>
+                        <option value="DEBITO">Débito</option>
+                    </select>
+                </div>
+
                 <div id="blocoPeriodoLote" class="lote-wizard-section" hidden>
                     <div class="lote-section-heading">
                         <strong>Como essas contas serão lançadas?</strong>
@@ -227,7 +237,9 @@
         </section>
     </main>
 
-    <script src="script.js"></script>
+    <script defer src="js/script.js"></script>
+    <script defer src="js/calculos_trabalhistas.js"></script>
+    <script defer src="js/conexao_sheets.js"></script>
     <script>
         const wizardState = { step: 1, intent: null, saving: false, avancoPendente: null };
 
@@ -407,6 +419,7 @@
             const ehFixo = intent === 'fixo';
             const ehLote = intent === 'lote';
             const ehEntrada = intent === 'entrada';
+            const ehSaidaAVista = intent === 'saida';
             const ehSaida = tipo === 'saida';
 
             document.getElementById('blocoCartao').style.display = ehCartao ? 'block' : 'none';
@@ -416,6 +429,7 @@
             document.getElementById('labelValorLancamento').innerHTML = ehLote ? 'Valor de cada mês (R$) <span class="campo-obrigatorio">*</span>' : 'Valor total (R$) <span class="campo-obrigatorio">*</span>';
 
             document.getElementById('blocoServicoEssencial').style.display = ehSaida ? 'block' : 'none';
+            document.getElementById('blocoFormaPagamentoSaida').style.display = ehSaidaAVista ? 'block' : 'none';
             document.getElementById('blocoEscopo').style.display = ehSaida ? 'block' : 'none';
             document.getElementById('blocoBemLancamento').style.display = ehSaida ? 'block' : 'none';
             document.getElementById('blocoStatusPagamento').style.display = (ehEntrada || ehCartao || ehLote) ? 'none' : 'block';
@@ -447,8 +461,6 @@
             const dados = obterDados();
             const cat = dados.categorias.find(c => String(c.id) === String(sel.value));
 
-            // Reaproveita o valor do último adiantamento digitado (mesma conta).
-            // Mantém o comportamento que existia antes da consolidação do wizard.
             if (cat && /adiantamento/i.test(normalizarTexto(cat.nome))) {
                 const campoValor = document.getElementById('valorTotalLancamento');
                 if (campoValor && !campoValor.value) {
@@ -580,6 +592,12 @@
                 ['Data', escaparHTML(formatarDataBR(dataResumo))]
             ];
 
+            if (intent === 'saida') {
+                const formaSel = document.getElementById('formaPagamentoSaida');
+                const formaMap = { DINHEIRO: 'Dinheiro / Pix / Débito', BOLETO: 'Boleto', PIX: 'Pix', DEBITO: 'Débito' };
+                linhas.push(['Forma de pagamento', formaMap[formaSel.value] || formaSel.value]);
+            }
+
             if (intent === 'cartao') {
                 const cartaoId = document.getElementById('cartaoLancamento').value;
                 const cartao = (dados.cartoes || []).find(c => String(c.id) === String(cartaoId));
@@ -705,9 +723,15 @@
             }
             const intent = wizardState.intent;
             const tipo = intent === 'entrada' ? 'entrada' : 'saida';
-            const forma = intent === 'entrada' ? 'DINHEIRO'
-                : intent === 'cartao' ? 'CARTAO'
-                : intent === 'fixo' ? 'FIXO' : 'BOLETO';
+
+            // CORREÇÃO: 'saida' (à vista) usa o select de forma de pagamento;
+            // 'cartao' e 'fixo' têm formas fixas; 'entrada' é sempre DINHEIRO.
+            let forma;
+            if (intent === 'entrada') forma = 'DINHEIRO';
+            else if (intent === 'cartao') forma = 'CARTAO';
+            else if (intent === 'fixo') forma = 'FIXO';
+            else if (intent === 'saida') forma = document.getElementById('formaPagamentoSaida')?.value || 'DINHEIRO';
+            else forma = 'BOLETO';
 
             const descricao = document.getElementById('descricaoLancamento').value.trim();
             const categoriaId = document.getElementById('categoriaLancamento').value;

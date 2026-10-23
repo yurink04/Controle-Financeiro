@@ -1,72 +1,12 @@
-// ============================================================================
-// 1. CONSTANTES E ESTADO GLOBAL
-// ============================================================================
-const DB_KEY = 'sistemaFinanceiroCompartilhado';
-const BACKUP_TESTE_KEY = 'sistemaFinanceiroBackupTeste';
-const API_URL = "https://script.google.com/macros/s/AKfycbyIvhvGrU_So-XNN6nfov6XFLMjXiN73JQiprxpOLXz2Y13ZOVcuDny2xNONgbb3y4-Zw/exec";
-const TOKEN_API = "PLANOF1NALPRAS4AIRD@MERDA";
-const CHAVE_SESSAO_API = 'financeiroSessaoSegura';
-const CHAVE_USUARIO_SESSAO = 'financeiroSessaoUsuario';
-const CHAVE_DONO_PENDENCIAS = 'financeiroSyncUsuario';
-const obterSessaoAPI = () => sessionStorage.getItem(CHAVE_SESSAO_API) || '';
+// Controle Financeiro — script.js (núcleo de interface e regras de negócio)
+// Dependências: carregue este arquivo ANTES de calculos_trabalhistas.js e conexao_sheets.js.
+// Use <script defer> nos três arquivos em todas as páginas, sem carregar o monolito antigo.
+// Os três arquivos compartilham um único escopo global clássico (não use type="module").
 
-function conferirSessaoRespostaAPI(resposta) {
-    if (resposta?.status === 'erro' && /sess[aã]o (expirada|inv[aá]lida)/i.test(String(resposta.mensagem || ''))) {
-        sessionStorage.removeItem(CHAVE_SESSAO_API);
-        sessionStorage.removeItem(CHAVE_USUARIO_SESSAO);
-        localStorage.removeItem('usuarioLogado');
-        if (!window.location.pathname.endsWith('index.html')) window.location.href = 'index.html';
-        throw new Error('Sua sessão expirou. Entre novamente para continuar a sincronização.');
-    }
-    return resposta;
-}
-
-// Requisições de sincronização com tempo máximo e erros legíveis. Mantém o
-// Content-Type simples para evitar um preflight desnecessário no Apps Script.
-async function executarPostAPI(acao, campos = {}, tempoLimiteMs = 35000) {
-    const controlador = new AbortController();
-    const temporizador = setTimeout(() => controlador.abort(), tempoLimiteMs);
-    try {
-        const resposta = await fetch(API_URL, {
-            method: 'POST',
-            headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-            cache: 'no-store',
-            signal: controlador.signal,
-            body: JSON.stringify({ action: acao, token: TOKEN_API, ...campos })
-        });
-        if (!resposta.ok) throw new Error(`Servidor indisponível (HTTP ${resposta.status}).`);
-        const texto = await resposta.text();
-        let dados;
-        try { dados = JSON.parse(texto); }
-        catch (_) { throw new Error('A API não retornou JSON. Verifique o link /exec e as permissões da implantação.'); }
-        return conferirSessaoRespostaAPI(dados);
-    } catch (erro) {
-        if (erro?.name === 'AbortError') throw new Error('Tempo limite ao comunicar com o Google Sheets. Os dados continuam salvos neste navegador.');
-        if (erro instanceof TypeError) throw new Error('Falha de conexão com o Google Apps Script. Verifique sua rede, a URL /exec e a implantação publicada.');
-        throw erro;
-    } finally {
-        clearTimeout(temporizador);
-    }
-}
-const SCHEMA_VERSION = 5;
-const SYNC_DEBOUNCE_MS = 1500;
-const SYNC_RETRY_MAX_MS = 90000;
-const SYNC_BASELINE_KEY = 'sistemaFinanceiroSnapshotSincronizado';
-const SYNC_CONFLICT_KEY = 'sistemaFinanceiroConflitoSync';
-const COLECOES_DADOS = ['usuarios', 'categorias', 'cartoes', 'lancamentos', 'financiamentos', 'bens', 'notificacoes', 'logs', 'exclusao_movimento', 'edicao_movimento', 'fatura_cartao'];
-
-let syncTimer = null;
-let syncPendingData = null;
-let syncInFlight = false;
-let syncFalhasConsecutivas = 0;
-let reenvioEmAndamento = false;
+// Estados exclusivos das telas e do fluxo de autenticação.
 let processandoAcaoModal = false;
 let processandoSaidaSistema = false;
-let memoriaSistema = null;
 let verificacaoAutenticacaoPromise = null;
-
-let _migracaoCacheRef = null;
-let _migracaoCacheDados = null;
 
 const charts = {
     entradasSaidas: null, gastosCategorias: null, cartoesLimite: null,
@@ -80,10 +20,6 @@ function privacidadeAtiva() {
 function formatarMoedaPrivada(v) {
     if (privacidadeAtiva()) return 'R$ •••,••';
     return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(numeroSeguro(v));
-}
-function formatarPercentualPrivado(v, casas = 0) {
-    if (privacidadeAtiva()) return '••%';
-    return Number(v).toFixed(casas) + '%';
 }
 
 // ============================================================================
@@ -114,6 +50,19 @@ const gerarId = (prefixo = 'id') => {
     return `${prefixo}_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
 };
 
+// IDs numéricos de lançamentos precisam ser únicos ENTRE aparelhos. "Maior id + 1" gera o mesmo
+// número quando duas contas (ou dois aparelhos) lançam antes de sincronizar, e a mesclagem por id
+// trava a sincronização ou descarta um dos lançamentos. Aqui o id nasce do relógio + sorteio.
+// Fica abaixo de 1e15 (exato na planilha) até ~2041. Devolve o primeiro id de um bloco consecutivo.
+function proximoIdLancamento(lista, quantidade = 1) {
+    const total = Math.max(1, Math.floor(Number(quantidade)) || 1);
+    const usados = new Set((Array.isArray(lista) ? lista : []).map(l => String(l?.id)));
+    const livre = inicio => { for (let k = 0; k < total; k++) if (usados.has(String(inicio + k))) return false; return true; };
+    let inicio = (Date.now() - 1767225600000) * 2048 + Math.floor(Math.random() * 2048);
+    while (!livre(inicio)) inicio += total;
+    return inicio;
+}
+
 async function gerarHash(texto) {
     if (typeof crypto === 'undefined' || !crypto.subtle?.digest) {
         throw new Error('A verificação segura de senha exige HTTPS ou localhost. Abra o sistema em uma origem segura.');
@@ -124,414 +73,6 @@ async function gerarHash(texto) {
 }
 
 // ============================================================================
-// REMUNERAÇÃO CLT E HISTÓRICO DE RENDIMENTOS
-// Referência: INSS / Receita Federal (competência 2026). É uma estimativa:
-// rescisões, férias, 13º, múltiplos vínculos e rubricas específicas têm regras
-// próprias. O lançamento financeiro registra o valor efetivamente recebido.
-// ============================================================================
-const REFERENCIA_CALCULO_SALARIAL = '2026';
-const FAIXAS_INSS_2026 = Object.freeze([
-    { limite: 1621.00, taxa: .075 },
-    { limite: 2902.84, taxa: .09 },
-    { limite: 4354.27, taxa: .12 },
-    { limite: 8475.55, taxa: .14 }
-]);
-const FAIXAS_IRRF_2026 = Object.freeze([
-    { limite: 2428.80, aliquota: 0, deducao: 0 },
-    { limite: 2826.65, aliquota: .075, deducao: 182.16 },
-    { limite: 3751.05, aliquota: .15, deducao: 394.16 },
-    { limite: 4664.68, aliquota: .225, deducao: 675.49 },
-    { limite: Infinity, aliquota: .275, deducao: 908.73 }
-]);
-function centavosRenda(valor) {
-    const n = Number(valor);
-    return Number.isFinite(n) ? Math.round((n + Number.EPSILON) * 100) / 100 : 0;
-}
-function normalizarConfiguracaoSalarial(valor) {
-    const c = valor && typeof valor === 'object' && !Array.isArray(valor) ? valor : {};
-    const regimeRenda = ['clt', 'pj', 'aposentado'].includes(c.regimeRenda) ? c.regimeRenda : 'clt';
-    return {
-        regimeRenda,
-        utilizaAdiantamento: regimeRenda === 'clt' && c.utilizaAdiantamento !== false,
-        aposentado65Mais: regimeRenda === 'aposentado' && c.aposentado65Mais === true,
-        horasExtrasPrevistas: regimeRenda === 'clt' ? Math.max(0, centavosRenda(c.horasExtrasPrevistas)) : 0,
-        vtAtivo: c.vtAtivo === true,
-        vtCustoMensal: Math.max(0, centavosRenda(c.vtCustoMensal)),
-        irrfAtivo: c.irrfAtivo !== false,
-        dependentes: Math.min(20, Math.max(0, Math.trunc(Number(c.dependentes) || 0))),
-        descontos: Array.isArray(c.descontos) ? c.descontos.slice(0, 20)
-            .filter(d => d && typeof d === 'object')
-            .map(d => ({
-                id: String(d.id || gerarId('desc')).slice(0, 70),
-                nome: String(d.nome || 'Outro desconto').trim().slice(0, 70),
-                tipo: d.tipo === 'percentual' ? 'percentual' : 'fixo',
-                valor: Math.max(0, centavosRenda(d.valor))
-            })) : []
-    };
-}
-function calcularINSSSalario2026(remuneracaoBruta) {
-    const base = Math.min(Math.max(0, Number(remuneracaoBruta) || 0), 8475.55);
-    let anterior = 0, total = 0;
-    const faixas = [];
-    for (const faixa of FAIXAS_INSS_2026) {
-        const parcela = Math.max(0, Math.min(base, faixa.limite) - anterior);
-        if (parcela > 0) {
-            const descontado = centavosRenda(parcela * faixa.taxa);
-            faixas.push({ de: anterior, ate: Math.min(base, faixa.limite), aliquota: faixa.taxa, valor: descontado });
-            total += descontado;
-        }
-        anterior = faixa.limite;
-        if (base <= faixa.limite) break;
-    }
-    return { valor: centavosRenda(total), base, faixas };
-}
-function calcularIRRFSalario2026(remuneracaoBruta, inss, dependentes = 0, isencaoAposentadoria = 0) {
-    const brutoOriginal = Math.max(0, Number(remuneracaoBruta) || 0);
-    const bruto = Math.max(0, centavosRenda(brutoOriginal - Math.max(0, isencaoAposentadoria)));
-    const deducaoDependentes = Math.max(0, Number(dependentes) || 0) * 189.59;
-    const baseLegal = Math.max(0, bruto - inss - deducaoDependentes);
-    const baseSimplificada = Math.max(0, bruto - 607.20);
-    const simplificado = baseSimplificada < baseLegal;
-    const base = centavosRenda(Math.min(baseLegal, baseSimplificada));
-    const faixa = FAIXAS_IRRF_2026.find(f => base <= f.limite);
-    const impostoTabela = centavosRenda(Math.max(0, base * faixa.aliquota - faixa.deducao));
-    const reducaoLegal = bruto <= 5000 ? impostoTabela
-        : bruto <= 7350 ? Math.max(0, 978.62 - 0.133145 * bruto) : 0;
-    const reducao = Math.min(impostoTabela, centavosRenda(reducaoLegal));
-    return {
-        valor: centavosRenda(Math.max(0, impostoTabela - reducao)),
-        base, baseLegal: centavosRenda(baseLegal), baseSimplificada: centavosRenda(baseSimplificada),
-        simplificado, aliquota: faixa.aliquota, deducaoTabela: faixa.deducao,
-        impostoTabela, reducao, dependentes: Math.max(0, Number(dependentes) || 0)
-    };
-}
-function calcularSalarioLiquido(brutoInformado, configuracao, extraBrutaInformada = null) {
-    const conf = normalizarConfiguracaoSalarial(configuracao);
-    const extraBruta = conf.regimeRenda === 'clt'
-        ? Math.max(0, centavosRenda(extraBrutaInformada == null ? conf.horasExtrasPrevistas : extraBrutaInformada)) : 0;
-    const bruto = Math.max(0, centavosRenda(brutoInformado)) + extraBruta;
-    const brutoTotal = centavosRenda(bruto);
-    const inss = conf.regimeRenda === 'clt' ? calcularINSSSalario2026(brutoTotal)
-        : { valor: 0, base: 0, faixas: [], naoAplicavel: true };
-    const isencaoAposentadoria = conf.aposentado65Mais ? Math.min(brutoTotal, 1903.98) : 0;
-    const irrf = conf.regimeRenda !== 'pj' && conf.irrfAtivo
-        ? calcularIRRFSalario2026(brutoTotal, inss.valor, conf.dependentes, isencaoAposentadoria)
-        : { valor: 0, base: 0, impostoTabela: 0, reducao: 0, desativado: true };
-    const vtMaximo = centavosRenda(Math.max(0, centavosRenda(brutoInformado)) * .06);
-    const valeTransporte = conf.regimeRenda === 'clt' && conf.vtAtivo
-        ? centavosRenda(conf.vtCustoMensal > 0 ? Math.min(vtMaximo, conf.vtCustoMensal) : vtMaximo) : 0;
-    const descontos = conf.descontos.map(d => ({
-        ...d, calculado: centavosRenda(d.tipo === 'percentual' ? brutoTotal * d.valor / 100 : d.valor)
-    }));
-    const outrosDescontos = centavosRenda(descontos.reduce((acc, d) => acc + d.calculado, 0));
-    const totalDescontos = centavosRenda(inss.valor + irrf.valor + valeTransporte + outrosDescontos);
-    return {
-        bruto: brutoTotal, brutoBase: centavosRenda(brutoInformado), extraBruta,
-        regimeRenda: conf.regimeRenda, isencaoAposentadoria,
-        inss, irrf, valeTransporte, vtMaximo, descontos, outrosDescontos, totalDescontos,
-        liquido: Math.max(0, centavosRenda(brutoTotal - totalDescontos)),
-        descontosExcedemBruto: totalDescontos > brutoTotal, referencia: REFERENCIA_CALCULO_SALARIAL
-    };
-}
-function categoriaRemuneracaoRestrita(nome) {
-    const n = normalizarTexto(nome || '');
-    if (/(^|\s)adiantamento(?:\s+(?:de|do))?\s+salario|antecipacao\s+salario/.test(n)) return 'adiantamento';
-    if (/(^|\s)(?:decimo\s+terceiro|13(?:o|\s)?\s*salario|13\s*salario)/.test(n)) return 'decimo';
-    if (/(^|\s)ferias(?:\s|$)/.test(n)) return 'ferias';
-    if (/(^|\s)plr(?:\s|$)|participacao nos lucros/.test(n)) return 'plr';
-    return '';
-}
-function categoriaRendaDisponivel(categoria, usuario) {
-    if (!categoria || categoria.tipo !== 'entrada') return true;
-    const conf = normalizarConfiguracaoSalarial(usuario?.configuracaoSalarial);
-    const restricao = categoriaRemuneracaoRestrita(categoria.nome);
-    if (conf.regimeRenda === 'pj') return !restricao;
-    if (conf.regimeRenda === 'aposentado') return !['adiantamento', 'ferias', 'plr'].includes(restricao);
-    return restricao !== 'adiantamento' || conf.utilizaAdiantamento;
-}
-function validarRendaPorRegime(lancamento, dados, usuario) {
-    if (lancamento.tipo !== 'entrada') return true;
-    const cat = (dados.categorias || []).find(c => String(c.id) === String(lancamento.categoriaId));
-    if (!categoriaRendaDisponivel(cat, usuario)) return false;
-    const conf = normalizarConfiguracaoSalarial(usuario?.configuracaoSalarial);
-    const manual = lancamento.naturezaRenda || '';
-    return !(manual === 'adiantamento' && (conf.regimeRenda !== 'clt' || !conf.utilizaAdiantamento)) &&
-        !(manual === 'salarial_extra' && conf.regimeRenda === 'pj');
-}
-function atualizarOpcoesNaturezaRenda(select, usuario = obterUsuarioAtual(), naturezaHistorica = '') {
-    if (!select) return;
-    const conf = normalizarConfiguracaoSalarial(usuario?.configuracaoSalarial);
-    for (const opt of select.options) {
-        const desabilitada = (opt.value === 'adiantamento' &&
-            (conf.regimeRenda !== 'clt' || !conf.utilizaAdiantamento)) ||
-            (opt.value === 'salarial_extra' && conf.regimeRenda === 'pj');
-        const legado = desabilitada && opt.value === naturezaHistorica;
-        opt.disabled = desabilitada && !legado;
-        opt.hidden = desabilitada && !legado;
-        if (opt.value === 'folha') opt.textContent = conf.regimeRenda === 'clt' ? 'Folha de pagamento / salário'
-            : conf.regimeRenda === 'pj' ? 'Recebimento principal PJ' : 'Aposentadoria / pensão mensal';
-        if (opt.value === 'salarial_extra' && conf.regimeRenda === 'aposentado') opt.textContent = '13º da aposentadoria';
-    }
-    if (select.selectedOptions[0]?.disabled) select.value = '';
-}
-function classificarEntradaRendimento(lancamento, dados) {
-    if (!lancamento || lancamento.tipo !== 'entrada') return 'fora';
-    const contrato = (dados.financiamentos || []).find(f => String(f.id) === String(lancamento.financiamentoId));
-    if (contrato && ['emprestimo', 'consignado', 'financiamento'].includes(normalizarTexto(contrato.tipoContrato))) return 'nao_renda';
-    const cat = (dados.categorias || []).find(c => String(c.id) === String(lancamento.categoriaId));
-    const categoria = normalizarTexto(cat?.nome);
-    const descricao = normalizarTexto(lancamento.descricao);
-    // Crédito financeiro, reembolso e transferência não são rendimentos do trabalho.
-    if (/emprestimo|financiamento|consignado|transferencia|estorno|reembolso|resgate/.test(categoria)) return 'nao_renda';
-    // Categorias trabalhistas explícitas prevalecem sobre seleção manual. Para
-    // legado, adiantamento descrito dentro da categoria "Salário" também conta.
-    const rubrica = categoriaRemuneracaoRestrita(cat?.nome);
-    if (rubrica === 'adiantamento' || /adiantamento.*salario|antecipacao.*salario/.test(descricao)) return 'adiantamento';
-    if (['decimo', 'ferias', 'plr'].includes(rubrica) ||
-        /ferias|decimo|13.?salario|participacao.*lucro|\bplr\b/.test(descricao)) return 'salarial_extra';
-    if (/^(salario|folha de pagamento|salario mensal)$/.test(categoria)) return 'folha';
-    const manual = String(lancamento.naturezaRenda || '');
-    if (['folha', 'adiantamento', 'salarial_extra', 'variavel', 'nao_renda'].includes(manual)) return manual;
-    const texto = categoria + ' ' + descricao;
-    if (/adiantamento|antecipacao.*salario|vale.*salario/.test(texto)) return 'adiantamento';
-    if (/ferias|decimo|13.?salario|participacao.*lucro|\bplr\b/.test(texto)) return 'salarial_extra';
-    if (/salario|folha de pagamento|pagamento de folha/.test(texto)) return 'folha';
-    if (/emprestimo|transferencia|estorno|reembolso|resgate/.test(descricao)) return 'nao_renda';
-    return 'variavel';
-}
-function obterMesRendimento(lancamento) {
-    const competencia = String(lancamento.competenciaRenda || '');
-    return /^\d{4}-(0[1-9]|1[0-2])$/.test(competencia) ? competencia
-        : String(lancamento.dataPagamento || lancamento.vencimento || lancamento.dataCompra || lancamento.createdAt || '').slice(0, 7);
-}
-function consolidarRendimentosUsuario(dados, usuarioId, referencia = new Date()) {
-    const mensal = new Map();
-    const registros = [];
-    const usuario = (dados.usuarios || []).find(u => String(u.id) === String(usuarioId)) || {};
-    const conf = normalizarConfiguracaoSalarial(usuario.configuracaoSalarial);
-    for (const l of (dados.lancamentos || [])) {
-        if (String(l.usuarioId) !== String(usuarioId) || l.tipo !== 'entrada') continue;
-        if (l.pago !== true && l.status !== 'pago') continue;
-        const classe = classificarEntradaRendimento(l, dados);
-        if (classe === 'fora' || classe === 'nao_renda') continue;
-        const mes = obterMesRendimento(l);
-        if (!/^\d{4}-\d{2}$/.test(mes)) continue;
-        const valor = Math.max(0, centavosRenda(l.valor));
-        const horaExtra = classe === 'folha' ? Math.min(valor, Math.max(0, centavosRenda(l.horaExtra))) : 0;
-        const extraBruta = classe === 'folha' ? Math.max(0, centavosRenda(l.horaExtraBruta)) : 0;
-        const brutoRegistrado = classe === 'folha' ? Math.max(0, centavosRenda(l.remuneracaoBruta)) : 0;
-        const brutoExtra = classe === 'salarial_extra' ? Math.max(0, centavosRenda(l.remuneracaoBruta)) : 0;
-        if (!mensal.has(mes)) mensal.set(mes, {
-            mes, folha: 0, adiantamento: 0, salarial_extra: 0, variavel: 0, horasExtras: 0,
-            horasExtrasBrutas: 0, brutoInformado: 0, brutoExtrasInformado: 0,
-            extrasSemBruto: 0, total: 0, quantidade: 0
-        });
-        const grupo = mensal.get(mes);
-        grupo[classe] = centavosRenda(grupo[classe] + valor);
-        grupo.horasExtras = centavosRenda(grupo.horasExtras + horaExtra);
-        grupo.horasExtrasBrutas = centavosRenda(grupo.horasExtrasBrutas + extraBruta);
-        grupo.brutoInformado = centavosRenda(grupo.brutoInformado + brutoRegistrado);
-        grupo.brutoExtrasInformado = centavosRenda(grupo.brutoExtrasInformado + brutoExtra);
-        if (classe === 'salarial_extra' && !brutoExtra) grupo.extrasSemBruto++;
-        grupo.total = centavosRenda(grupo.total + valor);
-        grupo.quantidade++;
-        registros.push({ ...l, classeRenda: classe, mesRenda: mes, valor,
-            horasExtrasIncluidas: horaExtra, horasExtrasBrutas: extraBruta });
-    }
-    for (const grupo of mensal.values()) {
-        grupo.totalClt = centavosRenda(grupo.folha + grupo.adiantamento + grupo.salarial_extra);
-        grupo.totalPrincipal = centavosRenda(grupo.folha + grupo.adiantamento);
-        // O valor registrado é sempre líquido recebido. O bruto da folha, quando
-        // informado, já contém as horas extras; senão, usa a base do perfil + HE.
-        const base = grupo.brutoInformado > 0 ? grupo.brutoInformado : Number(usuario.rendaFixa || 0);
-        grupo.calculoFolha = calcularSalarioLiquido(base, conf,
-            grupo.brutoInformado > 0 ? 0 : grupo.horasExtrasBrutas);
-        grupo.diferencaProjecao = centavosRenda(grupo.totalPrincipal - grupo.calculoFolha.liquido);
-        grupo.brutoEstimado = grupo.calculoFolha.bruto;
-        grupo.descontosEfetivos = grupo.brutoInformado > 0 && grupo.folha > 0
-            ? centavosRenda(grupo.brutoInformado - grupo.totalPrincipal) : null;
-        grupo.descontosExtrasEfetivos = grupo.brutoExtrasInformado > 0 && grupo.extrasSemBruto === 0
-            ? centavosRenda(grupo.brutoExtrasInformado - grupo.salarial_extra) : null;
-    }
-    const hoje = referencia instanceof Date ? referencia : new Date(referencia);
-    const mesesMedia = [];
-    let totalVariavelJanela = 0;
-    for (let i = 0; i < 6; i++) {
-        const d = new Date(hoje.getFullYear(), hoje.getMonth() - i, 1);
-        const mes = String(d.getFullYear()) + '-' + String(d.getMonth() + 1).padStart(2, '0');
-        mesesMedia.push(mes);
-        totalVariavelJanela += mensal.get(mes)?.variavel || 0;
-    }
-    const grupos = [...mensal.values()].sort((a, b) => b.mes.localeCompare(a.mes));
-    registros.sort((a, b) => String(b.dataPagamento || b.vencimento || '').localeCompare(String(a.dataPagamento || a.vencimento || '')));
-    return {
-        meses: grupos, registros, mesesMedia, totalVariavelJanela: centavosRenda(totalVariavelJanela),
-        mediaVariavel: centavosRenda(totalVariavelJanela / 6),
-        totalFolha: centavosRenda(grupos.reduce((v, g) => v + g.folha, 0)),
-        totalAdiantamentos: centavosRenda(grupos.reduce((v, g) => v + g.adiantamento, 0)),
-        totalHorasExtras: centavosRenda(grupos.reduce((v, g) => v + g.horasExtras, 0))
-    };
-}
-
-function abrirEditorSalarial() {
-    if (document.getElementById('modalConfiguracaoSalarial')) return;
-    const dados = obterDados(), usuario = obterUsuarioAtual(dados);
-    if (!usuario) return;
-    const conf = normalizarConfiguracaoSalarial(usuario.configuracaoSalarial);
-    const modal = document.createElement('div');
-    modal.className = 'modal-overlay salary-modal-overlay';
-    modal.id = 'modalConfiguracaoSalarial';
-    modal.innerHTML = `
-        <div class="modal-box salary-modal" role="dialog" aria-modal="true" aria-labelledby="salarioModalTitulo">
-            <div class="salary-modal-head">
-                <div><span class="income-eyebrow">PERFIL DE RENDA</span><h3 id="salarioModalTitulo">Configure seus rendimentos</h3>
-                    <p>Escolha seu vínculo e informe a remuneração bruta habitual. O cálculo muda conforme o regime.</p></div>
-                <button type="button" class="salary-close-btn" aria-label="Fechar edição">×</button>
-            </div>
-            <div class="form-group"><label for="regimeRendaEditor">Como você recebe sua renda principal?</label>
-                <select id="regimeRendaEditor">
-                    <option value="clt">CLT · empregado com carteira assinada</option>
-                    <option value="pj">PJ · prestador de serviços / empresa</option>
-                    <option value="aposentado">Aposentadoria / pensão</option>
-                </select></div>
-            <div class="salary-modal-grid">
-                <div class="form-group"><label for="salarioBrutoEditor" id="labelSalarioEditor">Remuneração bruta mensal habitual (R$)</label>
-                    <input type="number" step="0.01" min="0" max="10000000" id="salarioBrutoEditor" value="${Number(usuario.rendaFixa || 0)}"></div>
-                <div class="form-group" data-regimes="clt aposentado"><label for="dependentesSalarioEditor">Dependentes para IRRF</label>
-                    <input type="number" min="0" max="20" step="1" id="dependentesSalarioEditor" value="${conf.dependentes}"></div>
-            </div>
-            <div class="salary-modal-options">
-                <label class="salary-option" data-regimes="clt"><input type="checkbox" id="adiantamentoSalarioEditor" ${conf.utilizaAdiantamento ? 'checked' : ''}><span><strong>Recebo adiantamento de salário</strong><small>Habilita a categoria de adiantamento nos lançamentos.</small></span></label>
-                <div class="form-group" data-regimes="clt"><label for="horasExtrasPrevistasEditor">Horas extras brutas previstas por mês (R$, opcional)</label><input type="number" min="0" step="0.01" id="horasExtrasPrevistasEditor" value="${conf.horasExtrasPrevistas || 0}"></div>
-                <label class="salary-option" data-regimes="clt aposentado"><input type="checkbox" id="irrfSalarioEditor" ${conf.irrfAtivo ? 'checked' : ''}><span><strong>Estimar IRRF, quando aplicável</strong><small>Usa a tabela progressiva e a redução mensal de 2026.</small></span></label>
-                <label class="salary-option" data-regimes="aposentado"><input type="checkbox" id="aposentado65Editor" ${conf.aposentado65Mais ? 'checked' : ''}><span><strong>Tenho 65 anos ou mais</strong><small>Considerar parcela mensal isenta dos proventos, quando elegível.</small></span></label>
-                <label class="salary-option" data-regimes="clt"><input type="checkbox" id="vtSalarioEditor" ${conf.vtAtivo ? 'checked' : ''}><span><strong>Utilizo vale-transporte</strong><small>Até 6% do salário básico; o desconto real pode ser menor.</small></span></label>
-                <div class="form-group salary-vt-cost" data-regimes="clt"><label for="vtCustoEditor">Custo mensal do transporte (R$, opcional)</label><input type="number" min="0" step="0.01" max="1000000" id="vtCustoEditor" value="${conf.vtCustoMensal || ''}" placeholder="Se vazio, estima 6%"></div>
-            </div>
-            <div class="salary-deductions-head"><div><strong>Descontos personalizados</strong><p>Valores fixos ou percentuais. Para PJ, informe aqui os tributos, custos e retenções que conhece.</p></div>
-                <button type="button" class="btn-secundario" id="adicionarDescontoSalario">+ Adicionar</button></div>
-            <div id="listaDescontosSalario" class="salary-deductions-list"></div>
-            <div id="previaSalarioLiquido" class="salary-preview" aria-live="polite"></div>
-            <p id="avisoRegimeEditor" class="salary-disclaimer"></p>
-            <div class="salary-modal-actions"><span class="salary-editor-feedback" id="feedbackEditorSalario" role="status"></span>
-                <button type="button" class="btn-secundario" id="cancelarEditorSalario">Cancelar</button>
-                <button type="button" id="salvarEditorSalario">Salvar configuração</button>
-            </div>
-        </div>`;
-    document.body.appendChild(modal);
-    const campo = id => modal.querySelector('#' + id);
-    const areaDescontos = campo('listaDescontosSalario');
-    const salvar = campo('salvarEditorSalario');
-    campo('regimeRendaEditor').value = conf.regimeRenda;
-    function atualizarCamposRegime() {
-        const regime = campo('regimeRendaEditor').value;
-        modal.querySelectorAll('[data-regimes]').forEach(el => {
-            el.hidden = !el.dataset.regimes.split(' ').includes(regime);
-        });
-        campo('labelSalarioEditor').textContent = regime === 'clt' ? 'Salário-base bruto (sem horas extras) (R$)'
-            : regime === 'pj' ? 'Receita mensal bruta de serviços (R$)' : 'Benefício bruto mensal (R$)';
-        campo('avisoRegimeEditor').textContent = regime === 'clt'
-            ? 'CLT: estimamos INSS e IRRF sobre salário-base + horas extras brutas. 13º, férias e PLR possuem apurações próprias e não integram automaticamente a base mensal.'
-            : regime === 'pj' ? 'PJ: não aplicamos descontos de CLT. Informe manualmente custos, impostos e pró-labore conforme seu regime tributário; isto não substitui cálculo contábil.'
-            : 'Aposentadoria: não descontamos contribuição previdenciária de empregado. Estimamos IRRF, considerando a isenção adicional após 65 anos quando marcada; confira o informe da fonte pagadora.';
-    }
-    function adicionarLinha(desconto = {}) {
-        if (areaDescontos.children.length >= 20) return;
-        const linha = document.createElement('div');
-        linha.className = 'salary-deduction-row';
-        linha.innerHTML = `
-            <input type="text" class="salary-deduction-name" maxlength="70" aria-label="Nome do desconto" placeholder="Ex.: vale-refeição" value="${escaparHTML(desconto.nome || '')}">
-            <select class="salary-deduction-type" aria-label="Tipo do desconto"><option value="fixo">R$</option><option value="percentual">%</option></select>
-            <input type="number" class="salary-deduction-value" min="0" max="10000000" step="0.01" aria-label="Valor do desconto" value="${Math.max(0, Number(desconto.valor) || 0)}">
-            <button type="button" class="salary-deduction-remove" aria-label="Remover desconto">×</button>`;
-        linha.querySelector('select').value = desconto.tipo === 'percentual' ? 'percentual' : 'fixo';
-        linha.querySelector('button').onclick = () => { linha.remove(); atualizarPrevia(); };
-        areaDescontos.appendChild(linha);
-    }
-    function lerEditor() {
-        const bruto = Number(campo('salarioBrutoEditor').value);
-        const dependentes = Number(campo('dependentesSalarioEditor').value);
-        const regimeRenda = campo('regimeRendaEditor').value;
-        if (!Number.isFinite(bruto) || bruto < 0 || bruto > 10000000) throw new Error('Informe um salário bruto válido.');
-        if (!Number.isInteger(dependentes) || dependentes < 0 || dependentes > 20) throw new Error('Informe entre 0 e 20 dependentes.');
-        const descontos = [...areaDescontos.children].map((linha, i) => {
-            const nome = linha.querySelector('.salary-deduction-name').value.trim();
-            const tipo = linha.querySelector('.salary-deduction-type').value;
-            const valor = Number(linha.querySelector('.salary-deduction-value').value);
-            if (!nome || !Number.isFinite(valor) || valor < 0 || valor > 10000000 || (tipo === 'percentual' && valor > 100))
-                throw new Error('Revise o nome e o valor dos descontos adicionais (percentual máximo: 100%).');
-            return { id: 'desconto_' + i, nome, tipo, valor };
-        });
-        const vtCusto = Number(campo('vtCustoEditor').value || 0);
-        const extrasPrevistas = Number(campo('horasExtrasPrevistasEditor').value || 0);
-        if (!Number.isFinite(vtCusto) || vtCusto < 0 || vtCusto > 1000000) throw new Error('Custo de transporte inválido.');
-        if (!Number.isFinite(extrasPrevistas) || extrasPrevistas < 0 || extrasPrevistas > 10000000) throw new Error('Horas extras previstas inválidas.');
-        return {
-            bruto, configuracao: {
-                regimeRenda, utilizaAdiantamento: campo('adiantamentoSalarioEditor').checked,
-                aposentado65Mais: campo('aposentado65Editor').checked,
-                horasExtrasPrevistas: extrasPrevistas,
-                vtAtivo: campo('vtSalarioEditor').checked, vtCustoMensal: vtCusto,
-                irrfAtivo: campo('irrfSalarioEditor').checked, dependentes, descontos
-            }
-        };
-    }
-    function atualizarPrevia() {
-        const area = campo('previaSalarioLiquido');
-        try {
-            const { bruto, configuracao } = lerEditor();
-            const c = calcularSalarioLiquido(bruto, configuracao);
-            area.innerHTML = `
-                <div><span>Renda-base bruta</span><strong>${formatarMoeda(c.brutoBase)}</strong></div>
-                ${c.extraBruta ? `<div><span>Horas extras brutas</span><strong>+ ${formatarMoeda(c.extraBruta)}</strong></div>` : ''}
-                <div><span>Total bruto estimado</span><strong>${formatarMoeda(c.bruto)}</strong></div>
-                ${c.regimeRenda === 'clt' ? `<div><span>INSS (faixas progressivas)</span><strong>− ${formatarMoeda(c.inss.valor)}</strong></div>` : ''}
-                ${c.regimeRenda !== 'pj' ? `<div><span>IRRF estimado</span><strong>− ${formatarMoeda(c.irrf.valor)}</strong></div>` : ''}
-                ${c.isencaoAposentadoria ? `<div><span>Parcela isenta 65+ (base de IRRF)</span><strong>${formatarMoeda(c.isencaoAposentadoria)}</strong></div>` : ''}
-                ${c.regimeRenda === 'clt' ? `<div><span>Vale-transporte</span><strong>− ${formatarMoeda(c.valeTransporte)}</strong></div>` : ''}
-                <div><span>Outros descontos</span><strong>− ${formatarMoeda(c.outrosDescontos)}</strong></div>
-                <div class="salary-preview-total"><span>Renda disponível estimada</span><strong>${formatarMoeda(c.liquido)}</strong></div>
-                ${c.descontosExcedemBruto ? '<p>Os descontos ultrapassaram o salário bruto. Revise os valores.</p>' : ''}`;
-            campo('feedbackEditorSalario').textContent = '';
-        } catch (e) {
-            area.replaceChildren();
-            campo('feedbackEditorSalario').textContent = e.message;
-        }
-    }
-    conf.descontos.forEach(adicionarLinha);
-    atualizarCamposRegime();
-    campo('regimeRendaEditor').addEventListener('change', atualizarCamposRegime);
-    modal.addEventListener('input', atualizarPrevia);
-    modal.addEventListener('change', atualizarPrevia);
-    campo('adicionarDescontoSalario').onclick = () => { adicionarLinha(); atualizarPrevia(); };
-    const fechar = () => modal.remove();
-    modal.querySelector('.salary-close-btn').onclick = fechar;
-    campo('cancelarEditorSalario').onclick = fechar;
-    modal.addEventListener('click', e => { if (e.target === modal) fechar(); });
-    modal.addEventListener('keydown', e => { if (e.key === 'Escape') fechar(); });
-    salvar.onclick = async () => {
-        try {
-            const { bruto, configuracao } = lerEditor();
-            salvar.disabled = true; salvar.textContent = 'Salvando…';
-            const atual = obterDados();
-            const u = obterUsuarioAtual(atual);
-            if (!u) throw new Error('Sessão inválida.');
-            u.rendaFixa = centavosRenda(bruto);
-            u.configuracaoSalarial = normalizarConfiguracaoSalarial(configuracao);
-            registrarLog(atual, 'ATUALIZAÇÃO SALARIAL', 'Remuneração e descontos do próprio usuário atualizados.');
-            await salvarDados(atual);
-            fechar();
-            if (typeof carregarDadosPerfil === 'function') carregarDadosPerfil();
-            if (typeof carregarHistoricoRendimentos === 'function') carregarHistoricoRendimentos();
-            notificarOperacao('Configuração salarial salva. Sincronização em segundo plano.');
-        } catch (e) {
-            campo('feedbackEditorSalario').textContent = e.message;
-            salvar.disabled = false; salvar.textContent = 'Salvar configuração';
-        }
-    };
-    atualizarPrevia();
-    campo('salarioBrutoEditor').focus();
-}
 
 // ============================================================================
 // 3. UTILITÁRIOS DE DATA E PARCELAMENTO
@@ -754,12 +295,6 @@ function aplicarPermissoesNavegacao(usuario = obterUsuarioAtual()) {
     }
 }
 
-async function selecionarUsuario(id) {
-    // Entrada legada sem credenciais removida: somente o login cria uma sessão válida.
-    window.location.href = 'index.html';
-    return false;
-}
-
 async function deslogarSistema(solicitadoPeloUsuario = true) {
     if (processandoSaidaSistema) return false;
     processandoSaidaSistema = true;
@@ -795,7 +330,7 @@ async function deslogarSistema(solicitadoPeloUsuario = true) {
         if (uId) {
             const dados = obterDados();
             const u = dados.usuarios.find(user => Number(user.id) === Number(uId));
-            if (u && normalizarTexto(u.nome) === 'teste') {
+            if (ehModoTesteAtivo(u)) {
                 const bkp = localStorage.getItem(BACKUP_TESTE_KEY);
                 if (bkp) { localStorage.setItem(DB_KEY, bkp); localStorage.removeItem(BACKUP_TESTE_KEY); }
             }
@@ -853,9 +388,9 @@ function verificarAutenticacao() {
                 window.location.href = 'index.html'; return false;
             }
             try {
-                const dadosL = lerJSONLocal(DB_KEY, null);
+                                const dadosL = lerJSONLocal(DB_KEY, null);
                 const uL = (dadosL?.usuarios || []).find(u => String(u.id) === String(uId));
-                if (uL && normalizarTexto(uL.nome) === 'teste' && localStorage.getItem(BACKUP_TESTE_KEY)) {
+                if (ehModoTesteAtivo(uL)) {
                     memoriaSistema = migrarDados(dadosL).dados;
                 } else if (localStorage.getItem(SYNC_CONFLICT_KEY)) {
                     memoriaSistema = migrarDados(dadosL || {}).dados;
@@ -894,542 +429,13 @@ function verificarAutenticacao() {
 }
 
 // ============================================================================
-// 5. BANCO DE DADOS E SYNC
-// ============================================================================
-function obterDados() {
-    let d = memoriaSistema || lerJSONLocal(DB_KEY, null) || { usuarios: [], categorias: [], cartoes: [], lancamentos: [], financiamentos: [], bens: [], notificacoes: [], logs: [], exclusao_movimento: [], edicao_movimento: [], fatura_cartao: [] };
-    if (_migracaoCacheRef === d && _migracaoCacheDados) return _migracaoCacheDados;
-    const res = migrarDados(d);
-    memoriaSistema = res.dados;
-    _migracaoCacheRef = res.dados;
-    _migracaoCacheDados = res.dados;
-    return res.dados;
-}
 
-function lerJSONLocal(chave, padrao = null) {
-    try { const b = localStorage.getItem(chave); return b == null ? padrao : JSON.parse(b); } catch { return padrao; }
-}
-
-function gravarSnapshotLocal(dados, definirBase = false) {
-    _migracaoCacheRef = null;
-    _migracaoCacheDados = null;
-    const c = clonarDados(dados);
-    memoriaSistema = c;
-    localStorage.setItem(DB_KEY, JSON.stringify(c));
-    if (definirBase) { localStorage.setItem(SYNC_BASELINE_KEY, JSON.stringify(c)); localStorage.setItem('ultimoSyncMs', String(Date.now())); }
-    window.revisaoServidorAtual = Number(c._revision) || 0;
-    return c;
-}
-
-async function salvarDados(dados, opcoes = {}) {
-    const dono = localStorage.getItem('usuarioLogado');
-    const outroDono = localStorage.getItem(CHAVE_DONO_PENDENCIAS);
-    if (localStorage.getItem('syncPendente') === 'true' && outroDono && dono && outroDono !== dono) {
-        throw new Error('Há alterações pendentes de outro usuário neste navegador. Entre na conta anterior para sincronizá-las.');
-    }
-    _migracaoCacheRef = null;
-    _migracaoCacheDados = null;
-    const norm = migrarDados(dados).dados;
-    norm._revision = Number(norm._revision) || Number(window.revisaoServidorAtual) || 0;
-    memoriaSistema = norm;
-    localStorage.setItem(DB_KEY, JSON.stringify(norm));
-
-    [
-        () => typeof carregarDashboard === 'function' && carregarDashboard(),
-        () => typeof carregarRelatorios === 'function' && carregarRelatorios(),
-        () => typeof renderizarCategorias === 'function' && renderizarCategorias(),
-        () => typeof carregarCentralPagamentos === 'function' && carregarCentralPagamentos()
-    ].forEach(fn => { try { fn(); } catch (e) { console.error('Falha ao atualizar tela:', e); } });
-
-    const u = obterUsuarioAtual(norm);
-    if (opcoes.sincronizar !== false && (!u || normalizarTexto(u.nome) !== 'teste')) {
-        syncPendingData = clonarDados(norm);
-        localStorage.setItem('syncPendente', 'true');
-        if (dono) localStorage.setItem(CHAVE_DONO_PENDENCIAS, dono);
-        if (!localStorage.getItem(SYNC_CONFLICT_KEY)) {
-            atualizarIndicadorSyncUI('pending');
-            agendarSincronizacaoSilenciosa();
-        } else atualizarIndicadorSyncUI('error');
-    } else if (u && normalizarTexto(u.nome) === 'teste') {
-        clearTimeout(syncTimer); syncTimer = null; syncPendingData = null; localStorage.removeItem('syncPendente');
-    }
-    return true;
-}
-
+// Histórico de ações da interface; a persistência é feita por conexao_sheets.js.
 function registrarLog(dados, acao, detalhes, extras = {}) {
     if (!Array.isArray(dados.logs)) dados.logs = [];
     const u = obterUsuarioAtual(dados);
     const agora = new Date();
     dados.logs.push({ id: gerarId('log'), dataHora: agora.toISOString(), dataHoraFormatada: formatarDataSemHora(agora), usuario: u?.nome || 'Sistema', usuarioId: u?.id || null, acao, detalhes, ...extras });
-}
-
-function serializarEstavel(v) {
-    if (v === undefined) return '__UNDEFINED__';
-    if (v === null || typeof v !== 'object') return JSON.stringify(v);
-    if (Array.isArray(v)) return '[' + v.map(serializarEstavel).join(',') + ']';
-    return '{' + Object.keys(v).sort().map(k => JSON.stringify(k) + ':' + serializarEstavel(v[k])).join(',') + '}';
-}
-
-function mesclarValorTresVias(base, local, remoto, caminho, conflitos) {
-    if (serializarEstavel(local) === serializarEstavel(base)) return clonarDados(remoto);
-    if (serializarEstavel(remoto) === serializarEstavel(base)) return clonarDados(local);
-    if (serializarEstavel(local) === serializarEstavel(remoto)) return clonarDados(local);
-    const isObj = o => o !== null && typeof o === 'object' && !Array.isArray(o);
-    if (isObj(local) && isObj(remoto) && (base === undefined || isObj(base))) {
-        const res = {};
-        new Set([...Object.keys(base || {}), ...Object.keys(local || {}), ...Object.keys(remoto || {})]).forEach(k => {
-            const m = mesclarValorTresVias(base?.[k], local?.[k], remoto?.[k], `${caminho}.${k}`, conflitos);
-            if (m !== undefined) res[k] = m;
-        });
-        return res;
-    }
-    conflitos.push(caminho);
-    return clonarDados(local);
-}
-
-function indexarColecao(lista) {
-    const map = new Map(), oc = new Map();
-    (Array.isArray(lista) ? lista : []).forEach(item => {
-        let key = item?.id ? `id:${item.id}` : null;
-        if (!key) {
-            const ass = serializarEstavel(item);
-            const ord = oc.get(ass) || 0;
-            oc.set(ass, ord + 1);
-            key = `registro:${ass}#${ord}`;
-        }
-        map.set(key, item);
-    });
-    return map;
-}
-
-function mesclarColecaoTresVias(nome, baseLista, localLista, remotoLista, conflitos) {
-    const base = indexarColecao(baseLista), local = indexarColecao(localLista), remoto = indexarColecao(remotoLista);
-    const vistos = new Set(), res = [];
-    [...remoto.keys(), ...local.keys(), ...base.keys()].forEach(k => {
-        if (vistos.has(k)) return; vistos.add(k);
-        const v = mesclarValorTresVias(base.get(k), local.get(k), remoto.get(k), `${nome}[${k}]`, conflitos);
-        if (v !== undefined) res.push(v);
-    });
-    return res;
-}
-
-function mesclarSnapshotsTresVias(base, local, remoto) {
-    const conflitos = [], res = clonarDados(remoto || {});
-    COLECOES_DADOS.forEach(n => res[n] = mesclarColecaoTresVias(n, base?.[n], local?.[n], remoto?.[n], conflitos));
-    new Set([...Object.keys(base || {}), ...Object.keys(local || {}), ...Object.keys(remoto || {})]).forEach(k => {
-        if (COLECOES_DADOS.includes(k) || k === '_revision') return;
-        const v = mesclarValorTresVias(base?.[k], local?.[k], remoto?.[k], k, conflitos);
-        if (v !== undefined) res[k] = v;
-    });
-    res._revision = Number(remoto?._revision) || 0;
-    return { dados: res, conflitos: [...new Set(conflitos)] };
-}
-
-// Reenvio de emergência não é uma operação administrativa: perfis de terceiros
-// e campos de segurança da própria conta são sempre mantidos como no servidor.
-// Só as alterações locais efetivamente diferentes do último snapshot entram
-// na mesclagem. Sem base confiável, o reenvio deve parar após gerar o backup.
-function prepararReenvioSeguro(baseOriginal, localOriginal, remotoOriginal, usuarioId) {
-    const idAtual = String(usuarioId || '').trim();
-    if (!idAtual) throw new Error('Usuário não identificado. Entre novamente antes de sincronizar.');
-    if (!baseOriginal || !localOriginal || !remotoOriginal) {
-        throw new Error('Não há histórico de sincronização suficiente para conciliar os dados. O backup local foi preservado.');
-    }
-    const usuariosRemotos = Array.isArray(remotoOriginal.usuarios) ? remotoOriginal.usuarios : [];
-    const porId = usuario => String(usuario?.id ?? '') === idAtual;
-    const usuarioRemoto = usuariosRemotos.find(porId);
-    if (!usuarioRemoto) throw new Error('Sua conta não consta na resposta do servidor. Reenvio interrompido.');
-
-    const camposProtegidos = ['id', 'ativo', 'permissoes', 'trocaSenhaObrigatoria'];
-    const protegerProprioPerfil = usuario => {
-        const protegido = clonarDados(usuario || usuarioRemoto);
-        camposProtegidos.forEach(campo => {
-            if (Object.prototype.hasOwnProperty.call(usuarioRemoto, campo)) {
-                protegido[campo] = clonarDados(usuarioRemoto[campo]);
-            } else delete protegido[campo];
-        });
-        // PIN/senha só podem ser alterados pelo fluxo específico do perfil.
-        delete protegido.pin;
-        delete protegido.senha;
-        return protegido;
-    };
-    const protegerColecaoUsuarios = snapshot => {
-        const proprio = (Array.isArray(snapshot.usuarios) ? snapshot.usuarios : []).find(porId);
-        snapshot.usuarios = usuariosRemotos.map(usuarioRemotoLista =>
-            porId(usuarioRemotoLista) ? protegerProprioPerfil(proprio) : clonarDados(usuarioRemotoLista));
-    };
-
-    const base = clonarDados(baseOriginal);
-    const local = clonarDados(localOriginal);
-    protegerColecaoUsuarios(base);
-    protegerColecaoUsuarios(local);
-    const resultado = mesclarSnapshotsTresVias(base, local, remotoOriginal);
-    // Defesa adicional: a coleção final jamais pode enviar alterações em
-    // terceiros, criar usuários ou excluir contas pelo reenvio comum.
-    const proprioFinal = (resultado.dados.usuarios || []).find(porId);
-    resultado.dados.usuarios = usuariosRemotos.map(usuarioRemotoLista =>
-        porId(usuarioRemotoLista) ? protegerProprioPerfil(proprioFinal) : clonarDados(usuarioRemotoLista));
-    return resultado;
-}
-
-function marcarConflitoSincronizacao(dadosLocais, campos, mensagem) {
-    _migracaoCacheRef = null;
-    _migracaoCacheDados = null;
-    const conflito = { dataHora: new Date().toISOString(), campos: (campos || []).slice(0, 30), mensagem: mensagem || 'Conflito de alterações.' };
-    localStorage.setItem(SYNC_CONFLICT_KEY, JSON.stringify(conflito));
-    localStorage.setItem('syncPendente', 'true');
-    if (dadosLocais) {
-        memoriaSistema = dadosLocais;
-        localStorage.setItem(DB_KEY, JSON.stringify(dadosLocais));
-        syncPendingData = clonarDados(dadosLocais);
-    }
-    atualizarIndicadorSyncUI('error');
-    console.error('Sincronização bloqueada:', conflito);
-}
-
-function agendarSincronizacaoSilenciosa(urgente = false) {
-    clearTimeout(syncTimer);
-    // Em modo offline, os dados permanecem salvos localmente. A rede ativa o
-    // próximo envio, sem requisições repetidas a cada segundo.
-    if (!navigator.onLine) {
-        syncTimer = null;
-        atualizarIndicadorSyncUI('pending');
-        return;
-    }
-    const atraso = urgente ? 120 : Math.min(SYNC_RETRY_MAX_MS, SYNC_DEBOUNCE_MS * Math.pow(2, Math.min(syncFalhasConsecutivas, 6)));
-    syncTimer = setTimeout(() => {
-        syncTimer = null;
-        sincronizarComServidor();
-    }, atraso);
-}
-
-async function buscarDadosServidor() {
-    const json = await executarPostAPI('obterDados', { sessao: obterSessaoAPI() });
-    if (json.status === 'erro' || !Array.isArray(json.usuarios)) throw new Error(json.mensagem || 'Dados inválidos.');
-    return json;
-}
-
-// ---- Sincronização única em segundo plano (todas as páginas) ----
-const SYNC_CHECK_MIN_MS = 30000;      // não consulta o servidor mais de 1x a cada 30s (somando todas as páginas)
-const SYNC_CHECK_INTERVAL_MS = 60000; // checagem periódica enquanto a aba está visível
-const SYNC_FALLBACK_FULL_MS = 300000; // se o servidor ainda não tem a ação 'revisao'
-let _syncBgIniciado = false;
-let _syncBgEmAndamento = false;
-
-async function consultarRevisaoServidor() {
-    const json = await executarPostAPI('revisao', { sessao: obterSessaoAPI() });
-    if (json.status !== 'sucesso' || !Number.isFinite(Number(json._revision))) return null; // Code.gs antigo
-    return Number(json._revision);
-}
-
-async function verificarAtualizacaoServidor(forcar = false) {
-    if (_syncBgEmAndamento || syncInFlight || reenvioEmAndamento || syncPendingData || syncTimer) return;
-    if (localStorage.getItem('syncPendente') === 'true' || localStorage.getItem(SYNC_CONFLICT_KEY)) return;
-    if (!localStorage.getItem('usuarioLogado') || !navigator.onLine) return;
-    const u = obterUsuarioAtual();
-    if (u && normalizarTexto(u.nome) === 'teste') return;
-    const agora = Date.now();
-    if (!forcar && agora - Number(localStorage.getItem('ultimaChecagemMs') || 0) < SYNC_CHECK_MIN_MS) return;
-
-    _syncBgEmAndamento = true;
-    localStorage.setItem('ultimaChecagemMs', String(agora));
-    try {
-        const revRemota = await consultarRevisaoServidor();
-        const revLocal = Number(window.revisaoServidorAtual ?? memoriaSistema?._revision) || 0;
-        if (revRemota !== null) {
-            if (revRemota === revLocal) {
-                localStorage.setItem('ultimoSyncMs', String(Date.now()));
-                atualizarIndicadorSyncUI('success');
-                return;
-            }
-        } else if (agora - Number(localStorage.getItem('ultimoSyncMs') || 0) < SYNC_FALLBACK_FULL_MS) {
-            return;
-        }
-        const json = await buscarDadosServidor();
-        // Houve edição local durante o download? Então não sobrescreve.
-        if (syncInFlight || syncPendingData || syncTimer || localStorage.getItem('syncPendente') === 'true' || localStorage.getItem(SYNC_CONFLICT_KEY)) return;
-        if (revRemota === null && Number(json._revision) === revLocal) { localStorage.setItem('ultimoSyncMs', String(Date.now())); return; }
-        _migracaoCacheRef = null; _migracaoCacheDados = null;
-        gravarSnapshotLocal(migrarDados(json).dados, true);
-        const ae = document.activeElement;
-        const digitando = ae && /^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName);
-        const modalAberto = [...document.querySelectorAll('.modal-overlay')].some(m => m.style.display && m.style.display !== 'none');
-        if (!digitando && !modalAberto) rerenderizarTelaAtual();
-        atualizarIndicadorSyncUI('success');
-    } catch (e) {
-        console.warn('Checagem em segundo plano falhou:', e);
-        atualizarIndicadorSyncUI('error');
-    } finally {
-        _syncBgEmAndamento = false;
-    }
-}
-
-function iniciarSincronizacaoSegundoPlano() {
-    if (_syncBgIniciado) return;
-    _syncBgIniciado = true;
-    setTimeout(() => verificarAtualizacaoServidor(), 500);
-    setInterval(() => { if (!document.hidden) verificarAtualizacaoServidor(); }, SYNC_CHECK_INTERVAL_MS);
-    document.addEventListener('visibilitychange', () => { if (!document.hidden) verificarAtualizacaoServidor(); });
-    window.addEventListener('online', () => {
-        if (syncPendingData || localStorage.getItem('syncPendente') === 'true') {
-            if (!syncPendingData) syncPendingData = clonarDados(lerJSONLocal(DB_KEY, {}) || {});
-            agendarSincronizacaoSilenciosa(true);
-        } else verificarAtualizacaoServidor(true);
-    });
-}
-
-async function sincronizarComServidor() {
-    if (reenvioEmAndamento || syncInFlight || !syncPendingData || localStorage.getItem(SYNC_CONFLICT_KEY) || !navigator.onLine) return;
-    syncInFlight = true; let payloadAtual = null, tentativas = 0;
-    try {
-        while (syncPendingData && tentativas < 5 && !localStorage.getItem(SYNC_CONFLICT_KEY)) {
-            tentativas++; payloadAtual = syncPendingData; syncPendingData = null;
-            const json = await executarPostAPI('salvarDados',
-                { sessao: obterSessaoAPI(), dados: payloadAtual }, 45000);
-            if (json.status === 'conflito') {
-                const lAtual = lerJSONLocal(DB_KEY, payloadAtual) || payloadAtual;
-                const base = lerJSONLocal(SYNC_BASELINE_KEY, null);
-                // O snapshot remoto é a autoridade para campos protegidos.
-                // Migrá-lo antes da conciliação pode introduzir alterações
-                // artificiais em perfis de outros usuários.
-                const serv = clonarDados(await buscarDadosServidor());
-                if (!base) { marcarConflitoSincronizacao(lAtual, [], 'Sem snapshot-base.'); break; }
-                const mescla = prepararReenvioSeguro(
-                    migrarDados(clonarDados(base)).dados,
-                    migrarDados(clonarDados(lAtual)).dados,
-                    serv,
-                    localStorage.getItem('usuarioLogado')
-                );
-                if (mescla.conflitos.length) { marcarConflitoSincronizacao(lAtual, mescla.conflitos, 'Conflito de mesclagem.'); break; }
-                localStorage.setItem(SYNC_BASELINE_KEY, JSON.stringify(serv));
-                mescla.dados._revision = Number(serv._revision) || 0;
-                gravarSnapshotLocal(mescla.dados, false);
-                syncPendingData = clonarDados(mescla.dados);
-                localStorage.setItem('syncPendente', 'true');
-                continue;
-            }
-            if (json.status !== 'sucesso') throw new Error(json.mensagem || 'Erro sync.');
-            syncFalhasConsecutivas = 0;
-            const rev = Number(json._revision);
-            if (!Number.isFinite(rev)) throw new Error('Revisão inválida.');
-            payloadAtual._revision = rev;
-            localStorage.setItem(SYNC_BASELINE_KEY, JSON.stringify(payloadAtual));
-            window.revisaoServidorAtual = rev;
-            if (syncPendingData) syncPendingData._revision = rev;
-            if (memoriaSistema) { memoriaSistema._revision = rev; localStorage.setItem(DB_KEY, JSON.stringify(memoriaSistema)); }
-            if (!syncPendingData) {
-                localStorage.removeItem('syncPendente');
-                localStorage.removeItem(CHAVE_DONO_PENDENCIAS);
-                atualizarIndicadorSyncUI('success');
-                atualizarFeedbackIntegrado('Alterações sincronizadas.', 'success', 3000);
-            }
-            else { localStorage.setItem('syncPendente', 'true'); atualizarIndicadorSyncUI('pending'); }
-        }
-    } catch (e) {
-        syncFalhasConsecutivas++;
-        console.warn('Sync adiada:', e);
-        if (!syncPendingData && payloadAtual) syncPendingData = clonarDados(lerJSONLocal(DB_KEY, payloadAtual) || payloadAtual);
-        localStorage.setItem('syncPendente', 'true'); atualizarIndicadorSyncUI('error');
-        if (syncFalhasConsecutivas === 1) atualizarFeedbackIntegrado(
-            'Não foi possível sincronizar. Alterações preservadas no navegador; nova tentativa automática.', 'error', 8000);
-    } finally {
-        syncInFlight = false;
-        if (syncPendingData && !localStorage.getItem(SYNC_CONFLICT_KEY)) agendarSincronizacaoSilenciosa();
-    }
-}
-
-async function inicializarBanco() {
-    window.ultimaOrigemBanco = 'indefinida';
-    const local = lerJSONLocal(DB_KEY, null);
-    if (local && localStorage.getItem('syncPendente') === 'true') {
-        window.ultimaOrigemBanco = 'local-pendente';
-        memoriaSistema = migrarDados(local).dados;
-        syncPendingData = clonarDados(memoriaSistema);
-        if (!localStorage.getItem(SYNC_CONFLICT_KEY)) {
-            if (!lerJSONLocal(SYNC_BASELINE_KEY, null)) {
-                marcarConflitoSincronizacao(memoriaSistema, [], 'Sem snapshot.');
-            } else {
-                agendarSincronizacaoSilenciosa();
-            }
-        }
-        return memoriaSistema;
-    }
-    try {
-        const json = await buscarDadosServidor();
-        const norm = migrarDados(json).dados;
-        window.ultimaOrigemBanco = 'remoto';
-        memoriaSistema = norm; window.revisaoServidorAtual = Number(norm._revision) || 0;
-        gravarSnapshotLocal(norm, true);
-        localStorage.removeItem('syncPendente'); localStorage.removeItem(CHAVE_DONO_PENDENCIAS); localStorage.removeItem(SYNC_CONFLICT_KEY);
-        atualizarIndicadorSyncUI('success'); return norm;
-    } catch (e) {
-        if (local) {
-            window.ultimaOrigemBanco = 'local-offline';
-            console.warn('Dados locais usados porque a atualização remota falhou:', e);
-            return memoriaSistema = migrarDados(local).dados;
-        }
-        throw e;
-    }
-}
-
-function migrarDados(dados) {
-    let alterou = false; if (!dados || typeof dados !== 'object') dados = {};
-    const d = { usuarios: [], categorias: [], cartoes: [], lancamentos: [], financiamentos: [], bens: [], notificacoes: [], logs: [], exclusao_movimento: [], edicao_movimento: [], fatura_cartao: [] };
-    Object.keys(d).forEach(k => { if (!Array.isArray(dados[k])) { dados[k] = d[k]; alterou = true; } });
-
-    const camposDataPorColecao = {
-        lancamentos: ['vencimento', 'dataCompra', 'dataPagamento'],
-        financiamentos: ['primeiroVencimento', 'dataLiberacao'],
-        fatura_cartao: ['dataVencimento']
-    };
-    Object.entries(camposDataPorColecao).forEach(([colecao, campos]) => {
-        (dados[colecao] || []).forEach(registro => {
-            campos.forEach(campo => {
-                const original = registro?.[campo];
-                if (original == null || original === '') return;
-                const iso = normalizarDataISO(original);
-                if (iso && String(original) !== iso) { registro[campo] = iso; alterou = true; }
-            });
-        });
-    });
-
-    (dados.logs || []).forEach(registro => {
-        if (!registro) return;
-        const referencia = registro.dataHora || registro.dataHoraFormatada;
-        if (referencia) {
-            const dataExibicao = formatarDataSemHora(referencia);
-            if (registro.dataHoraFormatada !== dataExibicao) { registro.dataHoraFormatada = dataExibicao; alterou = true; }
-        }
-    });
-    ['exclusao_movimento', 'edicao_movimento'].forEach(colecao => {
-        (dados[colecao] || []).forEach(registro => {
-            if (!registro || !registro.dataHora) return;
-            const dataExibicao = formatarDataSemHora(registro.dataHora);
-            if (registro.dataHora !== dataExibicao) { registro.dataHora = dataExibicao; alterou = true; }
-        });
-    });
-
-    dados.cartoes.forEach(c => {
-        if (c.ativo === undefined) { c.ativo = true; alterou = true; }
-        if (!c.tipoCartao) { c.tipoCartao = c.isBeneficio ? 'beneficio' : 'credito'; alterou = true; }
-        if (c.usuarioId == null && dados.usuarios[0]) { c.usuarioId = dados.usuarios[0].id; alterou = true; }
-    });
-
-    dados.financiamentos.forEach(f => {
-        if (f.ativo === undefined) { f.ativo = true; alterou = true; }
-        if (f.totalMeses == null) { f.totalMeses = 0; alterou = true; }
-        if (!f.valorParcela) { f.valorParcela = 0; alterou = true; }
-        if (!f.tipoContrato) { f.tipoContrato = 'financiamento'; alterou = true; }
-        if (f.valorLiberado == null) { f.valorLiberado = 0; alterou = true; }
-        if (f.categoriaEntradaId == null) { f.categoriaEntradaId = ''; alterou = true; }
-        if (f.dataLiberacao == null) { f.dataLiberacao = ''; alterou = true; }
-        if (!f.escopoContrato) { f.escopoContrato = 'individual'; alterou = true; }
-
-        if (f.valorCompra === '' || f.valorCompra === undefined) { f.valorCompra = null; alterou = true; }
-        else if (f.valorCompra !== null && !Number.isFinite(Number(f.valorCompra))) { f.valorCompra = null; alterou = true; }
-
-        if (f.valorEntrada === '' || f.valorEntrada === undefined || f.valorEntrada === null) {
-            if (f.valorEntrada !== 0) { f.valorEntrada = 0; alterou = true; }
-        } else if (!Number.isFinite(Number(f.valorEntrada))) {
-            f.valorEntrada = 0; alterou = true;
-        }
-
-        if (f.valorFinanciado === '' || f.valorFinanciado === undefined || f.valorFinanciado === null
-            || !Number.isFinite(Number(f.valorFinanciado))) {
-            f.valorFinanciado = Number(f.valorCompra) > 0
-                ? Number(Math.max(0, Number(f.valorCompra) - Number(f.valorEntrada || 0)).toFixed(2))
-                : null;
-            alterou = true;
-        }
-    });
-
-    const mat = dados.usuarios.some(u => u?.permissoes?.paginas && u?.permissoes?.acoes);
-    dados.usuarios.forEach((u, i) => {
-        if (u?.permissoes?.paginas && u?.permissoes?.acoes) return;
-        const p = !mat && i === dados.usuarios.findIndex(us => us?.ativo !== false) ? 'admin' : 'supervisor';
-        u.permissoes = { perfil: p, paginas: { dashboard: true, relatorios: true, lancamentos: true, cartoes: true, categorias: true, configuracoes: p === 'admin' }, acoes: { criarMovimento: p !== 'usuario', excluirMovimento: p !== 'usuario', financiamentos: p !== 'usuario', lotes: p !== 'usuario', usuarios: p === 'admin', logs: p === 'admin' } };
-        alterou = true;
-    });
-
-    [['exclusao_movimento', 'legacy_exc'], ['edicao_movimento', 'legacy_edit']].forEach(([nc, pref]) => {
-        dados[nc].forEach((r, i) => {
-            if (!r || r.id) return;
-            const c = { ...r }; delete c.id;
-            r.id = `${pref}_${encodeURIComponent(`${serializarEstavel(c)}#${i}`)}`; alterou = true;
-        });
-    });
-
-    dados.lancamentos.forEach(l => {
-        const pago = l.pago === true || String(l.status).toLowerCase() === 'pago';
-        if (l.pago !== pago) { l.pago = pago; alterou = true; }
-        const sts = pago ? 'pago' : (String(l.status).toLowerCase() === 'atrasado' ? 'atrasado' : 'pendente');
-        if (l.status !== sts) { l.status = sts; alterou = true; }
-        if (l.horaExtra == null) { l.horaExtra = 0; alterou = true; }
-        if (!l.servicoEssencial) { l.servicoEssencial = 'nao'; alterou = true; }
-        if (!l.escopo) { l.escopo = 'casal'; alterou = true; }
-        if (!l.observacao) l.observacao = '';
-        if (!l.cartaoId && l.formaPagamento !== 'CARTAO') l.cartaoId = null;
-
-        if (l.formaPagamento === 'CARTAO' && l.cartaoId && l.vencimento && !l.faturaId) {
-            l.faturaId = `fat_${l.cartaoId}_${String(l.vencimento).slice(0, 7)}`;
-            alterou = true;
-        }
-
-        if (!l.parcelamentoId && Number(l.totalParcelas) > 1 && l.dataCompra) {
-            const ch = `${l.usuarioId || 0}|${l.cartaoId || 0}|${descricaoBaseParcelamento(l.descricao)}|${l.totalParcelas}|${String(l.dataCompra).slice(0, 10)}`;
-            if (!l._legacyParcelamentoChave) { l._legacyParcelamentoChave = ch; alterou = true; }
-        }
-        if (!l.financiamentoId && normalizarTexto(l.descricao).startsWith('financiamento:')) {
-            const cand = (dados.financiamentos || []).filter(f => normalizarTexto(f.nome) === normalizarTexto(l.descricao).slice(14).replace(/\s\(\d+\/\d+\)$/, '').trim());
-            const fin = l.usuarioId == null ? cand : (cand.filter(f => String(f.usuarioId) === String(l.usuarioId)).length ? cand.filter(f => String(f.usuarioId) === String(l.usuarioId)) : cand);
-            if (fin.length === 1) { l.financiamentoId = fin[0].id; alterou = true; }
-        }
-    });
-
-    const grps = new Map();
-    dados.lancamentos.forEach(l => {
-        if (l._legacyParcelamentoChave) {
-            if (!grps.has(l._legacyParcelamentoChave)) grps.set(l._legacyParcelamentoChave, `legacy_${encodeURIComponent(l._legacyParcelamentoChave)}`);
-            l.parcelamentoId = grps.get(l._legacyParcelamentoChave); delete l._legacyParcelamentoChave; alterou = true;
-        }
-    });
-
-    const faturasAtivas = new Set();
-    dados.lancamentos.forEach(l => {
-        if (l.faturaId && l.formaPagamento === 'CARTAO') {
-            faturasAtivas.add(l.faturaId);
-            let fat = dados.fatura_cartao.find(f => f.id === l.faturaId);
-            if (!fat) {
-                fat = {
-                    id: l.faturaId, cartaoId: l.cartaoId, mesReferencia: String(l.vencimento).slice(0, 7),
-                    valorTotal: 0, valorPago: 0, status: 'pendente',
-                    dataVencimento: l.vencimento, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString()
-                };
-                dados.fatura_cartao.push(fat);
-                alterou = true;
-            }
-        }
-    });
-
-    dados.fatura_cartao.forEach(fat => {
-        const itens = dados.lancamentos.filter(l => String(l.faturaId) === String(fat.id));
-        const vTot = Number(itens.reduce((a, b) => a + Number(b.valor || 0), 0).toFixed(2));
-        const vPag = Number(itens.filter(x => x.pago).reduce((a, b) => a + Number(b.valor || 0), 0).toFixed(2));
-        const st = vPag === 0 ? 'pendente' : (vPag >= vTot ? 'paga' : 'parcial');
-
-        if (fat.valorTotal !== vTot || fat.valorPago !== vPag || fat.status !== st) {
-            fat.valorTotal = vTot; fat.valorPago = vPag; fat.status = st;
-            fat.updatedAt = new Date().toISOString();
-            alterou = true;
-        }
-    });
-
-    const antesOrfas = dados.fatura_cartao.length;
-    dados.fatura_cartao = dados.fatura_cartao.filter(f => faturasAtivas.has(f.id));
-    if (dados.fatura_cartao.length !== antesOrfas) alterou = true;
-
-    if (dados._schemaVersion !== SCHEMA_VERSION) { dados._schemaVersion = SCHEMA_VERSION; alterou = true; }
-    return { dados, alterou };
 }
 
 // ============================================================================
@@ -1558,31 +564,21 @@ async function verificarSenhaAdmin(nomeSecao = 'esta seção') {
     if (senhaInformada === null || !String(senhaInformada).trim()) return false;
 
     try {
-        const resposta = await fetch(API_URL, {
-            method: 'POST',
-            headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-            body: JSON.stringify({
-                action: 'verificarAdmin',
-                token: TOKEN_API,
-                sessao: obterSessaoAPI(),
-                senha: String(senhaInformada).trim()
-            })
+        const resposta = await executarPostAPI('verificarAdmin', {
+            sessao: obterSessaoAPI(),
+            senha: String(senhaInformada).trim()
         });
-        const dadosResposta = await resposta.json();
-        conferirSessaoRespostaAPI(dadosResposta);
-
-        if (dadosResposta.status === 'sucesso' && dadosResposta.autorizado === true) {
-            return true;
-        }
-
-        if (dadosResposta.status === 'sucesso') {
+        if (resposta.status === 'sucesso' && resposta.autorizado === true) return true;
+        if (resposta.status === 'sucesso') {
             await mostrarAlertaModal('Senha administrativa incorreta. Tente novamente.');
         } else {
-            console.warn('Falha na verificação administrativa:', dadosResposta.mensagem);
+            console.warn('Falha na verificação administrativa:', resposta.mensagem);
             await mostrarAlertaModal('Não foi possível validar o acesso agora. Tente novamente.');
         }
         return false;
     } catch (erro) {
+        // executarPostAPI já redirecionou para o login em caso de sessão expirada.
+        if (/sess[aã]o expir/i.test(erro?.message || '')) return false;
         console.warn('Verificação administrativa indisponível:', erro);
         await mostrarAlertaModal('Não foi possível validar a senha. Verifique sua conexão e tente novamente.');
         return false;
@@ -1907,18 +903,6 @@ function inicializarPrivacidade() {
     atualizarIconePrivacidade();
 }
 
-function injetarBannerPrivacidade() {
-    if (document.getElementById('bannerPrivacidade')) return;
-    const b = document.createElement('button');
-    b.id = 'bannerPrivacidade';
-    b.type = 'button';
-    b.className = 'privacy-banner';
-    b.innerHTML = '🔒 Modo Discreto ativo — <u>revelar valores</u>';
-    b.title = 'Clique para mostrar os valores';
-    b.onclick = alternarPrivacidade;
-    document.body.appendChild(b);
-}
-
 function alternarPrivacidade() {
     const ativa = document.body.classList.toggle('privacidade-ativa');
     localStorage.setItem('privacidadeAtiva', ativa.toString());
@@ -2116,19 +1100,6 @@ async function forcarEnvioComBackup() {
     }
 }
 
-function atualizarIndicadorSyncUI(status) {
-    const c = document.getElementById('syncStatusIcon'); if (!c) return;
-    const l = c.querySelector('#syncTextLabel'), i = c.querySelector('img');
-    if (!l || !i) return;
-    const estado = status === 'pending' ? 'pending' : status === 'success' ? 'success' : 'error';
-    c.dataset.syncState = estado;
-    l.textContent = estado === 'pending' ? 'Sincronizando...' : estado === 'success' ? 'Sincronizado' : 'Erro';
-    i.src = estado === 'pending' ? 'imagens/sincronizar.gif' : 'imagens/sincronizar.png';
-    c.setAttribute('aria-label', estado === 'pending' ? 'Sincronização em andamento' : estado === 'success'
-        ? 'Sincronizado. Clique para consultar as informações do servidor'
-        : 'Erro de sincronização. Clique para tentar novamente');
-    c.title = estado === 'pending' ? 'Sincronizando...' : estado === 'success' ? 'Sincronizado' : 'Erro na sincronização';
-}
 
 // ============================================================================
 // 7. CRUD — CATEGORIAS, LANÇAMENTOS, FATURAS, FINANCIAMENTOS, LOTES
@@ -2207,7 +1178,7 @@ async function adicionarLancamentoComParcelas(form) {
         const valP = dividirValorExato(vt, q);
         const heP = horaExtraInformada ? dividirValorExato(horaExtraInformada, q) : Array(q).fill(0);
         const dB = criarDataLocal(form.vencimento);
-        let nId = d.lancamentos.reduce((m, l) => Math.max(m, l.id||0), 0) + 1;
+        let nId = proximoIdLancamento(d.lancamentos, q);
         const pId = q > 1 ? gerarId('parc') : null;
 
         for (let i = 1; i <= q; i++) {
@@ -2692,7 +1663,7 @@ async function adicionarFinanciamentoComRecorrencia(nome, recorrente, valorParce
         };
         dados.financiamentos.push(valorContrato);
 
-        let nId = (dados.lancamentos || []).reduce((m, l) => Math.max(m, Number(l.id) || 0), 0) + 1;
+        let nId = proximoIdLancamento(dados.lancamentos, (Number(totalMeses) || 1) + 1);
         const agora = new Date().toISOString();
         const prefixo = tipoContrato === 'emprestimo' ? 'Empréstimo' : 'Financiamento';
 
@@ -2800,7 +1771,7 @@ async function adicionarContaLotePorPeriodo(descricao, valorParcela, dataInicio,
         }
         const observacao = String(opcoes.observacao || '').trim().slice(0, 250) || 'Gerado por lote/período';
         const servicoEssencial = opcoes.servicoEssencial === 'sim' ? 'sim' : 'nao';
-        let nId = (dados.lancamentos || []).reduce((m, l) => Math.max(m, Number(l.id) || 0), 0) + 1;
+        let nId = proximoIdLancamento(dados.lancamentos, quantidade);
         const parcelamentoId = quantidade > 1 ? gerarId('lote') : null;
         const agora = new Date().toISOString(), hoje = dataLocalYYYYMMDD();
 
@@ -2836,144 +1807,8 @@ async function adicionarContaLotePorPeriodo(descricao, valorParcela, dataInicio,
 }
 
 // ============================================================================
-// 7.5 FORMULÁRIO DE LANÇAMENTO
+// 7.5 MEMÓRIA DE ADIANTAMENTO SALARIAL
 // ============================================================================
-function popularSelectsLancamento() {
-    const dados = obterDados();
-    const selectTipo = document.getElementById('tipoLancamento');
-    const selectCartao = document.getElementById('cartaoLancamento');
-    const tipoInicial = selectTipo?.value === 'entrada' ? 'entrada' : 'saida';
-    atualizarFiltroCategoriasPorTipo(tipoInicial);
-    if (selectCartao) {
-        selectCartao.innerHTML = '';
-        const uId = Number(obterUsuarioAtualId(dados));
-        const cartoes = dados.cartoes.filter(c => c.ativo !== false && !c.isBeneficio && Number(c.usuarioId) === uId);
-        if (!cartoes.length) {
-            const opt = document.createElement('option');
-            opt.value = ''; opt.textContent = 'Nenhum cartão ativo cadastrado';
-            selectCartao.appendChild(opt); return;
-        }
-        cartoes.forEach(c => {
-            const opt = document.createElement('option');
-            opt.value = c.id; opt.textContent = c.nome;
-            selectCartao.appendChild(opt);
-        });
-    }
-}
-
-function atualizarFiltroCategoriasPorTipo(tipo, categoriaIdPreferida = null) {
-    const dados = obterDados();
-    const sel = document.getElementById('categoriaLancamento');
-    if (!sel) return false;
-    const t = tipo === 'entrada' ? 'entrada' : 'saida';
-    const atual = categoriaIdPreferida ?? sel.value;
-    const usuario = obterUsuarioAtual(dados);
-    const filtradas = dados.categorias.filter(c => c.tipo === t && categoriaRendaDisponivel(c, usuario))
-        .sort((a, b) => normalizarTexto(a.nome).localeCompare(normalizarTexto(b.nome), 'pt-BR'));
-    sel.innerHTML = '';
-    if (!filtradas.length) {
-        const opt = document.createElement('option');
-        opt.value = ''; opt.textContent = `Nenhuma categoria de ${t === 'entrada' ? 'entrada' : 'saída'}`;
-        sel.appendChild(opt); sel.disabled = true; sel.dataset.tipoAtual = t;
-        return false;
-    }
-    sel.disabled = false;
-    filtradas.forEach(c => { const o = document.createElement('option'); o.value = String(c.id); o.textContent = c.nome; sel.appendChild(o); });
-    const existe = filtradas.some(c => String(c.id) === String(atual));
-    sel.value = existe ? String(atual) : String(filtradas[0].id);
-    sel.dataset.tipoAtual = t;
-    return true;
-}
-
-function tratarMudancaTipoLancamento() {
-    const sel = document.getElementById('tipoLancamento');
-    if (!sel) return;
-    const tipo = sel.value === 'entrada' ? 'entrada' : 'saida';
-    atualizarFiltroCategoriasPorTipo(tipo);
-
-    const blHE = document.getElementById('blocoHoraExtra');
-    const blForma = document.getElementById('blocoFormaPagamentoContainer');
-    const blCartao = document.getElementById('blocoCartao');
-    const blEss = document.getElementById('blocoServicoEssencial');
-    const lblData = document.getElementById('labelDataReferencia');
-    const inHE = document.getElementById('valorHoraExtra');
-    const blEsc = document.getElementById('blocoEscopo');
-    const blSt = document.getElementById('blocoStatusPagamento');
-    const blBem = document.getElementById('blocoBemLancamento');
-    const ehEntrada = tipo === 'entrada';
-
-    if (blHE) blHE.style.display = ehEntrada ? 'block' : 'none';
-    if (blForma) blForma.style.display = ehEntrada ? 'none' : 'block';
-    if (blEss) blEss.style.display = ehEntrada ? 'none' : 'block';
-    if (blEsc) blEsc.style.display = ehEntrada ? 'none' : 'block';
-    if (blSt) blSt.style.display = ehEntrada ? 'none' : 'block';
-    if (blBem) blBem.style.display = ehEntrada ? 'none' : 'block';
-    if (lblData) lblData.textContent = ehEntrada ? 'Data de recebimento' : 'Data de vencimento / referência';
-
-    if (ehEntrada) { if (blCartao) blCartao.style.display = 'none'; if (inHE) inHE.value = inHE.value || '0'; }
-    else tratarMudancaFormaPagamento();
-
-    if (typeof verificarCategoriaSalario === 'function') verificarCategoriaSalario();
-}
-
-function tratarMudancaFormaPagamento() {
-    const sel = document.getElementById('formaPagamento');
-    if (!sel) return;
-    const forma = sel.value;
-    const usaCartao = forma === 'CARTAO';
-    const tipo = document.getElementById('tipoLancamento')?.value || 'saida';
-    const blCartao = document.getElementById('blocoCartao');
-    const blVenc = document.getElementById('blocoVencimento');
-    const blSt = document.getElementById('blocoStatusPagamento');
-    const selSt = document.getElementById('statusPagamento');
-    if (blCartao) blCartao.style.display = usaCartao && tipo !== 'entrada' ? 'block' : 'none';
-    if (blVenc) blVenc.style.display = usaCartao && tipo !== 'entrada' ? 'none' : 'block';
-    if (blSt) blSt.style.display = tipo === 'entrada' || usaCartao ? 'none' : 'block';
-    if (selSt && tipo !== 'entrada') {
-        if (usaCartao || forma === 'BOLETO' || forma === 'FIXO') selSt.value = 'pendente';
-        else if (forma === 'DINHEIRO') selSt.value = 'pago';
-    }
-}
-
-function inicializarControlesLancamento() {
-    const selTipo = document.getElementById('tipoLancamento');
-    const selForma = document.getElementById('formaPagamento');
-    if (selTipo && selTipo.dataset.controleInicializado !== 'true') {
-        selTipo.addEventListener('change', tratarMudancaTipoLancamento);
-        selTipo.dataset.controleInicializado = 'true';
-    }
-    if (selForma && selForma.dataset.controleInicializado !== 'true') {
-        selForma.addEventListener('change', tratarMudancaFormaPagamento);
-        selForma.dataset.controleInicializado = 'true';
-    }
-    tratarMudancaTipoLancamento();
-}
-
-function verificarCategoriaSalario() {
-    const sel = document.getElementById('categoriaLancamento');
-    const selTipo = document.getElementById('tipoLancamento');
-    if (!sel || !selTipo || selTipo.value !== 'entrada') return;
-    const dados = obterDados();
-    const cat = dados.categorias.find(c => String(c.id) === String(sel.value));
-    if (cat && normalizarTexto(cat.nome).includes('adiantamento')) carregarEPreencherAdiantamentoMemorizado();
-}
-
-function carregarEPreencherAdiantamentoMemorizado() {
-    const inputValor = document.getElementById('valorTotalLancamento') || document.getElementById('valorTotal') || document.getElementById('valorLancamento');
-    const inputData = document.getElementById('vencimentoLancamento') || document.getElementById('vencimento');
-    const uId = localStorage.getItem('usuarioLogado');
-    const chave = `adiantamentoSalario_u${uId}`;
-    const salvo = localStorage.getItem(chave);
-    if (salvo) {
-        try { const obj = JSON.parse(salvo); if (inputValor && obj?.valor != null) inputValor.value = obj.valor; }
-        catch { localStorage.removeItem(chave); }
-    }
-    if (inputData && inputData.value) {
-        const p = inputData.value.split('-');
-        if (p.length === 3) { p[2] = '15'; inputData.value = p.join('-'); }
-    }
-}
-
 function salvarMemoriaAdiantamentoSeNecessario(descricao, valor) {
     const sel = document.getElementById('categoriaLancamento');
     const dados = obterDados();
@@ -3011,13 +1846,35 @@ function carregarDashboard() {
     const elMes = document.getElementById('filtroMesAno');
     if (elMes && !elMes.value) elMes.value = dataLocalYYYYMMDD().slice(0, 7);
     const mes = elMes?.value || '', esc = document.getElementById('filtroEscopoDashboardGeral')?.value || 'casal';
+    const buscaDash = normalizarTexto(document.getElementById('filtroDescricaoDashboard')?.value || '');
+    
     const d = obterDados();
     popularFiltrosDashboard(d);
     const nomeCat = id => (d.categorias.find(x => String(x.id) === String(id)) || {}).nome || 'Sem categoria';
-    const lns = filtrarDadosPorPermissao(d.lancamentos || [], d, esc).filter(l => String(l.vencimento || l.dataCompra || '').startsWith(mes) && (esc === 'todos' || l.tipo === 'entrada' || (l.escopo || 'casal') === esc));
+    
+    // Lançamentos base (sem busca) para cálculos consolidados
+    const lnsBase = filtrarDadosPorPermissao(d.lancamentos || [], d, esc).filter(l => {
+        const mesValido = String(l.vencimento || l.dataCompra || '').startsWith(mes);
+        const escopoValido = (esc === 'todos' || l.tipo === 'entrada' || (l.escopo || 'casal') === esc);
+        return mesValido && escopoValido;
+    });
+    
+    // Lançamentos filtrados pela busca (para tabela e saídas)
+    const lnsFiltrados = lnsBase.filter(l => 
+        !buscaDash || normalizarTexto(l.descricao || '').includes(buscaDash)
+    );
+    
+    // Saídas filtradas (para KPI de saídas e gráficos de saída)
+    const lnsSaidasFiltradas = lnsFiltrados.filter(l => l.tipo === 'saida');
+
+    // Totais de entrada (base) e saídas (base e filtrada)
+    let tE = 0, tSal = 0, tUb = 0, tEmprestimos = 0;
+    let tS_original = 0, tCart_original = 0;
+    let tS_filtrado = 0, tCart_filtrado = 0;
+    
     const reUber = /uber|(^|[^0-9])99(?![0-9])/;
-    let tE = 0, tS = 0, tSal = 0, tUb = 0, tEmprestimos = 0, tCart = 0;
-    lns.forEach(l => {
+    
+    lnsBase.forEach(l => {
         const v = Number(l.valor || 0), c = normalizarTexto(nomeCat(l.categoriaId));
         const contratoEntrada = l.tipo === 'entrada' && (d.financiamentos || []).some(f =>
             String(f.id) === String(l.financiamentoId) && f.tipoContrato === 'emprestimo'
@@ -3027,38 +1884,99 @@ function carregarDashboard() {
             if (contratoEntrada) tEmprestimos += v;
             else if (['folha', 'adiantamento', 'salarial_extra'].includes(classificarEntradaRendimento(l, d))) tSal += v;
             else if (reUber.test(c)) tUb += v;
-        } else { tS += v; if (l.formaPagamento === 'CARTAO') tCart += v; }
+        } else {
+            tS_original += v;
+            if (l.formaPagamento === 'CARTAO') tCart_original += v;
+        }
     });
+    
+    lnsSaidasFiltradas.forEach(l => {
+        const v = Number(l.valor || 0);
+        tS_filtrado += v;
+        if (l.formaPagamento === 'CARTAO') tCart_filtrado += v;
+    });
+    
+        // [SALDO ACUMULADO] O saldo "geral" representa o dinheiro que continua em conta:
+    // soma de todas as entradas − saídas até o mês selecionado (inclusive).
+    // O saldo do mês isolado continua disponível no sub-detalhe.
+    const calcularSaldoAte = (limiteMes) => {
+        if (!limiteMes) return 0;
+        const todos = filtrarDadosPorPermissao(d.lancamentos || [], d, esc).filter(l => {
+            const mesLanc = String(l.vencimento || l.dataCompra || '').slice(0, 7);
+            if (!mesLanc || mesLanc > limiteMes) return false;
+            return l.tipo === 'entrada' || (l.escopo || 'casal') === esc;
+        });
+        return todos.reduce((acc, l) => acc + (l.tipo === 'entrada' ? 1 : -1) * Number(l.valor || 0), 0);
+    };
+
+    const saldoMes = tE - tS_original;
+    let saldoAnterior = 0;
+    if (/^\d{4}-\d{2}$/.test(mes)) {
+        const [anoRef, mesRef] = mes.split('-').map(Number);
+        const dataAnt = new Date(anoRef, mesRef - 2, 1);
+        const mesAnt = dataAnt.getFullYear() + '-' + String(dataAnt.getMonth() + 1).padStart(2, '0');
+        saldoAnterior = calcularSaldoAte(mesAnt);
+    }
+    const saldoAcumulado = saldoAnterior + saldoMes;
 
     const priv = document.body.classList.contains('privacidade-ativa');
     const safeHTML = (id, html) => { const e = document.getElementById(id); if (e) e.innerHTML = html; };
 
-    safeHTML('totalEntradas', formatarMoeda(tE)); safeHTML('totalSaidas', formatarMoeda(tS));
-    const eS = document.getElementById('saldoGeral'); if (eS) { eS.textContent = formatarMoeda(tE - tS); eS.className = `stat-value saldo-destaque ${tE - tS >= 0 ? 'positivo' : 'negativo'}`; }
+    safeHTML('totalEntradas', formatarMoeda(tE)); 
+    safeHTML('totalSaidas', formatarMoeda(tS_filtrado));
+    
+    const eS = document.getElementById('saldoGeral'); 
+    if (eS) { 
+        eS.textContent = formatarMoeda(saldoAcumulado); 
+        eS.className = `stat-value saldo-destaque ${saldoAcumulado >= 0 ? 'positivo' : 'negativo'}`;
+        const rotuloEl = eS.previousElementSibling;
+        if (rotuloEl && rotuloEl.classList.contains('stat-label')) {
+            rotuloEl.textContent = 'Saldo em Conta';
+        }
+        const detalheEl = eS.nextElementSibling;
+        if (detalheEl && detalheEl.classList.contains('stat-detail')) {
+            detalheEl.innerHTML = priv
+                ? ''
+                : `<strong>Mês:</strong> ${formatarMoeda(saldoMes)}<br><strong>Anterior:</strong> ${formatarMoeda(saldoAnterior)}`;
+        }
+    }
 
-    // Modo Discreto: os sub-detalhes (Salário/Cartão/etc.) são informação sensível.
-    // Não são apenas mascarados, são completamente removidos quando privacidade está ativa.
     if (priv) {
         safeHTML('subDetalhesEntradas', '');
         safeHTML('subDetalhesSaidas', '');
         safeHTML('maiorFocoDetalhe', '');
         const elFoco = document.getElementById('maiorFocoValor');
-        if (elFoco) elFoco.textContent = formatarMoeda(0); // já é 0, mas garante
+        if (elFoco) elFoco.textContent = formatarMoeda(0);
     } else {
         safeHTML('subDetalhesEntradas', `<strong>Renda principal:</strong> ${formatarMoeda(tSal)}<br><strong>Uber:</strong> ${formatarMoeda(tUb)}<br><strong>Empréstimos:</strong> ${formatarMoeda(tEmprestimos)}<br><strong>Outros:</strong> ${formatarMoeda(Math.max(0, tE - tSal - tUb - tEmprestimos))}`);
-        safeHTML('subDetalhesSaidas', `<strong>Cartão:</strong> ${formatarMoeda(tCart)}<br><strong>Outras:</strong> ${formatarMoeda(Math.max(0, tS - tCart))}`);
-        const saidas = lns.filter(l => l.tipo !== 'entrada');
-        const topo = somarPor(saidas, l => nomeCat(l.categoriaId))[0];
+        safeHTML('subDetalhesSaidas', `<strong>Cartão:</strong> ${formatarMoeda(tCart_filtrado)}<br><strong>Outras:</strong> ${formatarMoeda(Math.max(0, tS_filtrado - tCart_filtrado))}`);
+        
+        // Maior foco usa as saídas ORIGINAIS (sem busca)
+        const saidasOriginais = lnsBase.filter(l => l.tipo !== 'entrada');
+        const topo = somarPor(saidasOriginais, l => nomeCat(l.categoriaId))[0];
         safeHTML('maiorFocoValor', formatarMoeda(topo ? topo[1] : 0));
-        safeHTML('maiorFocoDetalhe', topo ? `${escaparHTML(topo[0])} — ${Math.round((topo[1] / (tS || 1)) * 100)}% das saídas` : 'Nenhum gasto registrado');
+        safeHTML('maiorFocoDetalhe', topo ? `${escaparHTML(topo[0])} — ${Math.round((topo[1] / (tS_original || 1)) * 100)}% das saídas` : 'Nenhum gasto registrado');
     }
 
-    atualizarGraficosDashboard(tE, tS, d, lns);
-    renderizarTabelaUltimosLancamentos(lns, d, nomeCat);
-    renderizarCentralLembretes(lns, d, mes);
+    // Gráficos usam saídas filtradas (mas entradas totais)
+    atualizarGraficosDashboard(tE, tS_filtrado, d, lnsSaidasFiltradas);
+    
+    // Tabela usa todos os lançamentos filtrados (entradas + saídas)
+    renderizarTabelaUltimosLancamentos(lnsFiltrados, d, nomeCat);
+    
+    // Pulso usa dados base (sem busca)
+    renderizarCentralLembretes(lnsBase, d, mes);
 
+    // Extras: pulso e top categorias usam dados base (sem busca)
     if (typeof renderizarSessoesDashboardExtras === 'function') {
-        try { renderizarSessoesDashboardExtras(); } catch (e) { console.warn('[Extras Dashboard]', e); }
+        try { 
+            const dadosBase = { ...d, lancamentos: lnsBase };
+            renderizarPulsoDashboard(lnsBase, dadosBase, mes);
+            // Top categorias também com dados base
+            renderizarTopCategoriasDashboard(dadosBase, lnsBase);
+        } catch (e) { 
+            console.warn('[Extras Dashboard]', e); 
+        }
     }
 }
 
@@ -3086,7 +2004,6 @@ function atualizarGraficosDashboard(tE, tS, dados, lns) {
         };
     };
 
-    // [MODO DISCRETO] — injeta placeholder consistente em cada gráfico
     const gerenciarPlaceholder = (canvasId, mensagem) => {
         const canvas = document.getElementById(canvasId);
         if (!canvas) return;
@@ -3114,6 +2031,7 @@ function atualizarGraficosDashboard(tE, tS, dados, lns) {
     gerenciarPlaceholder('graficoGastosCategorias', 'Gastos por categoria oculto');
     gerenciarPlaceholder('graficoServicosEssenciais', 'Essenciais x não essenciais oculto');
     gerenciarPlaceholder('graficoCartoesLimite', 'Limite dos cartões oculto');
+    gerenciarPlaceholder('graficoTiposSaida', 'Tipos de saída oculto');
 
     if (priv) return;
 
@@ -3132,6 +2050,7 @@ function atualizarGraficosDashboard(tE, tS, dados, lns) {
         });
     };
 
+    // Gráfico Entradas x Saídas
     draw('entradasSaidas', 'graficoEntradasSaidas', 'pie', ['Entradas', 'Saídas'], [tE, tS], ['#10b981', '#ef4444'], {
         options: clickOpts((evt, els) => {
             let filtro = 'todos';
@@ -3140,6 +2059,7 @@ function atualizarGraficosDashboard(tE, tS, dados, lns) {
         })
     });
 
+    // Gráfico Gastos por Categoria
     const fCat = val('filtroCategoriaDashboard') || 'todas';
     const base = fCat === 'todas'
         ? somarPor(saidas, l => nomeCat(l.categoriaId))
@@ -3156,6 +2076,7 @@ function atualizarGraficosDashboard(tE, tS, dados, lns) {
         })
     });
 
+    // Gráfico Essenciais x Não Essenciais
     const fEss = val('filtroServicoEssencialDashboard') || 'todos';
     const ehEss = l => normalizarTexto(l.servicoEssencial) === 'sim';
     if (fEss === 'todos') {
@@ -3178,6 +2099,7 @@ function atualizarGraficosDashboard(tE, tS, dados, lns) {
         });
     }
 
+    // Gráfico Limite dos Cartões (usa dados globais)
     const fCar = val('filtroGraficoCartao') || 'todos';
     const cartoes = (dados.cartoes || []).filter(c => c.ativo !== false && (fCar === 'todos' || String(c.id) === String(fCar)));
     const usado = cartoes.map(c => (dados.lancamentos || []).filter(l => l.formaPagamento === 'CARTAO' && String(l.cartaoId) === String(c.id) && !l.pago).reduce((a, l) => a + Number(l.valor || 0), 0));
@@ -3196,6 +2118,29 @@ function atualizarGraficosDashboard(tE, tS, dados, lns) {
                 irParaGrafico('cartao', cartaoId ? { cartaoId: String(cartaoId) } : {});
             })
         )
+    });
+
+    // Gráfico Tipos de Saída (por forma de pagamento) — clicável.
+    // Preservamos a chave bruta (DINHEIRO/CARTAO/BOLETO/PIX/DEBITO/FIXO) em paralelo
+    // ao rótulo traduzido, para que o filtro enviado ao grafico.html corresponda
+    // exatamente ao valor armazenado no lançamento.
+    const mapaFormas = { DINHEIRO: 'Dinheiro / Pix / Débito', BOLETO: 'Boleto', CARTAO: 'Cartão', FIXO: 'Conta Fixa', PIX: 'Pix', DEBITO: 'Débito' };
+    const somasFormas = new Map();
+    saidas.forEach(l => {
+        const chave = l.formaPagamento || 'Outros';
+        somasFormas.set(chave, (somasFormas.get(chave) || 0) + Number(l.valor || 0));
+    });
+    const chavesFormas = [...somasFormas.keys()];
+    const labelsFormas = chavesFormas.map(f => mapaFormas[f] || f);
+    const dataFormas = chavesFormas.map(k => somasFormas.get(k));
+
+    draw('tiposSaida', 'graficoTiposSaida', 'doughnut', labelsFormas, dataFormas, PALETA_GRAFICOS, {
+        options: clickOpts((evt, els) => {
+            if (!els || !els.length) return;
+            const chave = chavesFormas[els[0].index];
+            if (!chave) return;
+            irParaGrafico('formaPagamento', { formaPagamento: chave });
+        })
     });
 }
 
@@ -3273,55 +2218,80 @@ function redirecionarNovoLancamento(tipoAcao) {
     }
 }
 
-function renderizarCentralLembretes(lns, dados, mes) {
-    const lst = document.getElementById('listaCentralLembretes'), cnt = document.getElementById('contadorLembretes');
-    if (!lst) return;
+// Extrai os lembretes (contas + faturas consolidadas) a partir da base.
+// Reutilizada pelo modal de notificações e por compatibilidade.
+function obterLembretesAtivos(dados = obterDados()) {
+    const hj = dataLocalYYYYMMDD();
+    const lns = filtrarDadosPorPermissao(dados.lancamentos || [], dados, 'casal');
+    const fats = {}, lms = [];
+    lns.forEach(l => {
+        if (l.tipo !== 'saida') return;
+        if (l.formaPagamento === 'CARTAO' && l.cartaoId) {
+            const mesRef = String(l.vencimento || '').slice(0, 7);
+            const cF = `${l.cartaoId}_${mesRef}`;
+            if (!fats[cF]) {
+                const cartaoObj = (dados.cartoes || []).find(c => String(c.id) === String(l.cartaoId));
+                fats[cF] = { cartaoId: l.cartaoId, cartaoNome: cartaoObj?.nome || 'Cartão', val: 0, v: l.vencimento, pago: true, m: mesRef };
+            }
+            fats[cF].val += Number(l.valor || 0);
+            if (!l.pago) fats[cF].pago = false;
+            if (l.vencimento > fats[cF].v) fats[cF].v = l.vencimento;
+        } else {
+            lms.push({ id: l.id, desc: l.descricao, val: Number(l.valor || 0), v: l.vencimento, pago: l.pago });
+        }
+    });
+    Object.values(fats).forEach(f => lms.push({ cartaoId: f.cartaoId, desc: `Fatura: ${f.cartaoNome}`, val: f.val, v: f.v, pago: f.pago, isFat: true, m: f.m }));
+    return lms.filter(x => !x.pago || (x.v && x.v >= hj)).sort((a, b) => (a.v || '9999').localeCompare(b.v || '9999'));
+}
 
-    // [MODO DISCRETO] — oculta os lembretes e o contador de pendências
+function renderizarListaLembretes(container, lembretes) {
+    if (!container) return;
     if (document.body.classList.contains('privacidade-ativa')) {
-        if (cnt) cnt.style.display = 'none';
-        lst.innerHTML = `<li style="list-style:none;padding:0;">
+        container.innerHTML = `<li style="list-style:none;padding:0;">
             <div class="privacy-section-placeholder" style="padding:26px 18px;margin:6px 0;">
                 <div><strong>Lembretes ocultos</strong></div>
-                <div style="font-size:0.82rem;font-weight:500;">Toque no banner de privacidade para revelar os compromissos financeiros.</div>
+                <div style="font-size:0.82rem;font-weight:500;">Use o botão de privacidade na barra superior para revelar.</div>
             </div>
         </li>`;
         return;
     }
-
-    const hj = dataLocalYYYYMMDD(), fats = {}, lms = [];
-    lns.forEach(l => {
-        if (l.tipo !== 'saida') return;
-        if (l.formaPagamento === 'CARTAO' && l.cartaoId) {
-            const cF = `${l.cartaoId}_${l.vencimento?.slice(0,7) || mes}`;
-            if (!fats[cF]) fats[cF] = { cartaoId: l.cartaoId, cartaoNome: (dados.cartoes.find(c => String(c.id) === String(l.cartaoId)) || {}).nome, val: 0, v: l.vencimento, pago: true, m: cF.slice(cF.lastIndexOf('_') + 1) };
-            fats[cF].val += Number(l.valor || 0); if (!l.pago) fats[cF].pago = false;
-            if (l.vencimento > fats[cF].v) fats[cF].v = l.vencimento;
-        } else { lms.push({ id: l.id, desc: l.descricao, val: Number(l.valor || 0), v: l.vencimento, pago: l.pago }); }
-    });
-    Object.values(fats).forEach(f => lms.push({ cartaoId: f.cartaoId, desc: `Fatura: ${f.cartaoNome}`, val: f.val, v: f.v, pago: f.pago, isFat: true, m: f.m }));
-    const fin = lms.filter(x => !x.pago || (x.v && x.v >= hj)).sort((a, b) => (a.v || '9999').localeCompare(b.v || '9999'));
-    if (cnt) { const pnd = fin.filter(x => !x.pago).length; cnt.style.display = pnd ? 'inline-flex' : 'none'; cnt.textContent = pnd; }
-
-    lst.innerHTML = fin.length ? fin.map(i => {
+    container.innerHTML = lembretes.length ? lembretes.map(i => {
         const btnAcao = i.isFat
             ? `<a href="grafico.html?tipo=cartao&cartaoId=${i.cartaoId}&mes=${i.m}" class="btn-acao-icone" title="Gerenciar Fatura" style="display:inline-flex; align-items:center; justify-content:center; text-decoration:none;"><span style="font-size:16px;">💳</span></a>`
-            : `<button class="btn-acao-icone ${i.pago ? 'desfazer' : 'pagar'}" onclick="alternarStatusPagamento(${Number(i.id)})"><img src="imagens/${i.pago ? 'desfazer' : 'pagar'}.png" style="width:20px;" alt=""></button>`;
-
-        return `<li style="opacity:${i.pago ? '0.55' : '1'}; border-bottom:1px solid var(--border); display:flex; justify-content:space-between; align-items:center;">
+            : `<button type="button" class="btn-acao-icone ${i.pago ? 'desfazer' : 'pagar'}" title="${i.pago ? 'Desfazer pagamento' : 'Marcar como pago'}" onclick="alternarStatusPagamento(${Number(i.id)}).then(function(ok){ if (ok) atualizarModalNotificacoesAposAcao(); })"><img src="imagens/${i.pago ? 'desfazer' : 'pagar'}.png" style="width:20px;" alt=""></button>`;
+        return `<li style="opacity:${i.pago ? '0.55' : '1'}; border-bottom:1px solid var(--border); display:flex; justify-content:space-between; align-items:center; padding:10px 0; list-style:none;">
             <div><strong style="${i.pago ? 'text-decoration:line-through;' : ''}">${escaparHTML(i.desc)}</strong><br><small>Venc: ${formatarDataBR(i.v)}</small></div>
             <div style="display:flex; align-items:center; gap:10px;">
                 <span class="${i.pago ? 'muted' : 'negativo'}">${formatarMoeda(i.val)}</span>
                 ${btnAcao}
             </div>
         </li>`;
-    }).join('') : `<li><span class="muted" style="width:100%; text-align:center;">Nada pendente. 🎉</span></li>`;
+    }).join('') : `<li style="list-style:none;text-align:center;padding:20px;"><span class="muted">Nada pendente. 🎉</span></li>`;
 }
 
-async function toggleFaturaDaCentral(cId, m, p) {
-    const fatId = `fat_${cId}_${m}`;
-    await alternarStatusFaturaConsolidada(fatId, p);
-    if (typeof carregarDashboard === 'function') carregarDashboard();
+// Compatibilidade: a Central de Lembretes agora vive dentro do modal de notificações.
+function renderizarCentralLembretes(lns, dados, mes) {
+    if (typeof renderizarSinoNotificacoes === 'function') {
+        try { renderizarSinoNotificacoes(); } catch (_) {}
+    }
+}
+
+function atualizarModalNotificacoesAposAcao() {
+    const modal = document.querySelector('.modal-overlay[data-notif-modal]');
+    if (!modal) return;
+    const lembretes = obterLembretesAtivos();
+    const lista = modal.querySelector('#notifLembretesLista');
+    if (lista) renderizarListaLembretes(lista, lembretes);
+    const pendentes = lembretes.filter(x => !x.pago).length;
+    const tab = modal.querySelector('[data-tab="lembretes"]');
+    if (tab) {
+        const badge = tab.querySelector('.notif-tab-badge');
+        if (pendentes > 0) {
+            if (badge) badge.textContent = pendentes;
+            else tab.insertAdjacentHTML('beforeend', ` <span class="notif-tab-badge">${pendentes}</span>`);
+        } else if (badge) badge.remove();
+    }
+    if (typeof renderizarSinoNotificacoes === 'function') renderizarSinoNotificacoes();
 }
 
 function toggleCentralLembretes() {
@@ -3332,69 +2302,10 @@ function toggleCentralLembretes() {
 }
 
 function carregarRelatorios() {
-    if (typeof window.carregarRelatorioMensal === 'function') return window.carregarRelatorioMensal();
-    if (typeof Chart === 'undefined') return;
-    const dados = obterDados();
-    const mes = document.getElementById('filtroMesAnoRelatorio')?.value || '';
-    const servFiltro = document.getElementById('filtroServicoEssencialDashboard')?.value || 'todos';
-    const uFiltro = document.getElementById('filtroUsuarioGraficos')?.value || 'todos';
-    const periodo = dados.lancamentos.filter(l =>
-        (!mes || String(l.vencimento || l.data || l.dataCompra || l.createdAt || '').startsWith(mes)) &&
-        (servFiltro === 'todos' || (l.tipo === 'saida' && l.servicoEssencial === servFiltro) || (l.tipo === 'entrada' && servFiltro !== 'sim'))
-    );
-    const setTxt = (id, v) => { const e = document.getElementById(id); if (e) e.textContent = v; };
-    let eS = 0, sS = 0, eM = 0, sM = 0;
-    periodo.forEach(l => {
-        const v = Number(l.valor);
-        if (Number(l.usuarioId) === 1) l.tipo === 'entrada' ? eS += v : sS += v;
-        else if (Number(l.usuarioId) === 2) l.tipo === 'entrada' ? eM += v : sM += v;
-    });
-    setTxt('relatorioEntradaSamuel', formatarMoeda(eS));
-    setTxt('relatorioSaidaSamuel', formatarMoeda(sS));
-    setTxt('relatorioEntradaMariana', formatarMoeda(eM));
-    setTxt('relatorioSaidaMariana', formatarMoeda(sM));
-    let tE = 0, tS = 0;
-    periodo.forEach(l => {
-        if (uFiltro !== 'todos' && Number(l.usuarioId) !== Number(uFiltro)) return;
-        l.tipo === 'entrada' ? tE += Number(l.valor) : tS += Number(l.valor);
-    });
-    const cES = document.getElementById('graficoRelatorioEntradasSaidas');
-    if (cES) {
-        if (charts.relatorioES) charts.relatorioES.destroy();
-        charts.relatorioES = new Chart(cES, {
-            type: 'pie',
-            data: { labels: ['Entradas', 'Saídas'], datasets: [{ data: (tE > 0 || tS > 0) ? [tE, tS] : [1,1], backgroundColor: (tE > 0 || tS > 0) ? ['#10b981', '#ef4444'] : ['#cbd5e1','#cbd5e1'], borderWidth: 1 }] },
-            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom', labels: { boxWidth: 12 } } } }
-        });
-    }
-    const somCat = {};
-    periodo.filter(l => l.tipo === 'saida' && (uFiltro === 'todos' || Number(l.usuarioId) === Number(uFiltro)))
-        .forEach(l => somCat[l.categoriaId] = (somCat[l.categoriaId] || 0) + Number(l.valor));
-    const labelsCat = [], valoresCat = [], cores = ['#3b82f6','#f59e0b','#10b981','#8b5cf6','#ec4899','#06b6d4','#64748b','#ef4444'];
-    for (const catId in somCat) {
-        const c = dados.categorias.find(x => Number(x.id) === Number(catId));
-        labelsCat.push(c ? c.nome : 'Outros'); valoresCat.push(somCat[catId]);
-    }
-    const cCat = document.getElementById('graficoRelatorioCategorias');
-    if (cCat) {
-        if (charts.relatorioCat) charts.relatorioCat.destroy();
-        charts.relatorioCat = new Chart(cCat, {
-            type: 'pie',
-            data: { labels: valoresCat.length ? labelsCat : ['Sem gastos'], datasets: [{ data: valoresCat.length ? valoresCat : [1], backgroundColor: valoresCat.length ? cores.slice(0, valoresCat.length) : ['#cbd5e1'], borderWidth: 1 }] },
-            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom', labels: { boxWidth: 12 } } } }
-        });
-    }
-    let ess = 0, naoEss = 0;
-    periodo.filter(l => l.tipo === 'saida' && (uFiltro === 'todos' || Number(l.usuarioId) === Number(uFiltro)))
-        .forEach(l => l.servicoEssencial === 'sim' ? ess += Number(l.valor) : naoEss += Number(l.valor));
-    const cSrv = document.getElementById('graficoServicosEssenciais');
-    if (cSrv) {
-        if (charts.servicosEssenciaisRel) charts.servicosEssenciaisRel.destroy();
-        charts.servicosEssenciaisRel = new Chart(cSrv, {
-            type: 'pie',
-            data: { labels: ['Essenciais', 'Não Essenciais'], datasets: [{ data: (ess > 0 || naoEss > 0) ? [ess, naoEss] : [1], backgroundColor: (ess > 0 || naoEss > 0) ? ['#10b981', '#f59e0b'] : ['#cbd5e1'], borderWidth: 1 }] },
-            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom', labels: { boxWidth: 12 } } } }
-        });
+    // Compatibilidade: quando existe a página de relatórios dedicada, delega
+    // para carregarRelatorioMensal. O código legado não é mais necessário.
+    if (typeof window.carregarRelatorioMensal === 'function') {
+        return window.carregarRelatorioMensal();
     }
 }
 
@@ -3465,23 +2376,6 @@ function renderizarCategorias() {
     });
 }
 
-function abrirDetalhamentoFatura(cartaoId, anoMes) {
-    const dados = obterDados();
-    const cartao = dados.cartoes.find(c => Number(c.id) === Number(cartaoId));
-    const nomeCartao = cartao ? cartao.nome : 'Cartão';
-    const itens = dados.lancamentos.filter(l => Number(l.cartaoId) === Number(cartaoId) && l.vencimento && l.vencimento.startsWith(anoMes));
-    let linhas = '';
-    if (!itens.length) linhas = `<tr><td colspan="4" style="text-align:center;">Nenhuma compra encontrada.</td></tr>`;
-    else itens.forEach(it => {
-        const parc = Number(it.totalParcelas) > 1 ? `${escaparHTML(it.parcelaAtual)}/${escaparHTML(it.totalParcelas)}` : 'À vista';
-        linhas += `<tr><td>${escaparHTML(it.descricao || '-')}</td><td style="text-align:center;">${parc}</td><td style="text-align:right;">${escaparHTML(formatarMoeda(it.valor))}</td><td style="text-align:center;">${escaparHTML(formatarDataBR(it.vencimento))}</td></tr>`;
-    });
-    const overlay = document.createElement('div');
-    overlay.className = 'modal-overlay';
-    overlay.innerHTML = `<div class="modal-box" style="max-width:800px;width:95%;"><h3>Detalhamento da Fatura: ${escaparHTML(nomeCartao)}</h3><p style="margin-bottom:14px;font-size:.9rem;">Competência: ${escaparHTML(anoMes)}</p><div class="tabela-container" style="max-height:400px;overflow-y:auto;margin-bottom:20px;"><table class="tabela" style="width:100%;"><thead><tr><th>Descrição</th><th style="text-align:center;width:100px;">Parcela</th><th style="text-align:right;width:120px;">Valor</th><th style="text-align:center;width:140px;">Vencimento</th></tr></thead><tbody>${linhas}</tbody></table></div><button onclick="this.closest('.modal-overlay').remove()" style="width:100%;background-color:var(--primary);">Fechar</button></div>`;
-    document.body.appendChild(overlay);
-}
-
 function abrirDetalhamentoParcelamento(lancamentoId, paginaAtual = 1) {
     const dados = obterDados();
     const lanc = (dados.lancamentos || []).find(l => Number(l.id) === Number(lancamentoId));
@@ -3534,65 +2428,126 @@ function renderizarSinoNotificacoes() {
     if (!btn) return;
     const d = obterDados();
     const uId = obterUsuarioAtualId();
-    const naoLidas = (d.notificacoes || []).filter(n => String(n.usuarioDestinoId) === String(uId) && !n.lida);
+    const naoLidas = (d.notificacoes || []).filter(n => String(n.usuarioDestinoId) === String(uId) && !n.lida).length;
+    const pendentes = typeof obterLembretesAtivos === 'function'
+        ? obterLembretesAtivos(d).filter(x => !x.pago).length : 0;
+    const total = naoLidas + pendentes;
     let badge = btn.querySelector('.badge-notificacao');
-    if (naoLidas.length > 0) {
+    if (total > 0) {
         if (!badge) {
             badge = document.createElement('span');
             badge.className = 'badge-notificacao';
             badge.style.cssText = 'position:absolute;top:-4px;right:-4px;background:var(--danger,#ef4444);color:white;border-radius:50%;padding:2px 5px;font-size:.65rem;font-weight:bold;min-width:16px;text-align:center;';
             btn.appendChild(badge);
         }
-        badge.textContent = naoLidas.length > 9 ? '9+' : naoLidas.length;
+        badge.textContent = total > 9 ? '9+' : total;
     } else if (badge) badge.remove();
 }
 
-async function abrirModalNotificacoes() {
+async function abrirModalNotificacoes(abaInicial) {
     const dados = obterDados();
     const usuarioId = obterUsuarioAtualId();
     const notificacoes = (dados.notificacoes || []).filter(n => String(n.usuarioDestinoId) === String(usuarioId));
-    const haviaNaoLidas = notificacoes.some(n => !n.lida);
-    if (haviaNaoLidas) {
+    const naoLidasSnapshot = notificacoes.filter(n => !n.lida).length;
+    const lembretes = obterLembretesAtivos(dados);
+    const lembretesPendentes = lembretes.filter(x => !x.pago).length;
+    const aba = abaInicial || (lembretesPendentes > 0 ? 'lembretes' : 'notificacoes');
+
+    if (naoLidasSnapshot > 0) {
         notificacoes.forEach(n => { n.lida = true; });
         await salvarDados(dados);
     }
+
     let itensHtml = '';
     if (notificacoes.length === 0) {
-        itensHtml = `<p style="text-align:center;color:var(--text-muted);padding:20px;">Nenhuma notificação no momento.</p>`;
+        itensHtml = `<p class="empty-state">Nenhuma notificação no momento.</p>`;
     } else {
-        notificacoes.reverse().forEach(n => {
+        notificacoes.slice().reverse().forEach(n => {
             let acoesHtml = '';
-            if (n.tipo === 'solicitacao_parceiro' && n.statusAprovacao === 'pendente') {
+            let linkRedirecionamento = '';
+            let icone = '🔔';
+
+            // Roteamento inteligente baseado no tipo
+            if (n.tipo === 'lancamento_casal') {
+                icone = '🤝';
+                linkRedirecionamento = 'lancamentos.html';
+                acoesHtml = `<a href="${linkRedirecionamento}" class="btn-acao-secundario" style="margin-top:8px; padding: 6px 12px; font-size: 0.75rem;">Ver lançamento</a>`;
+            } else if (n.tipo === 'alerta_vencimento') {
+                icone = '⚠️';
+                linkRedirecionamento = 'central-pagamentos.html';
+                acoesHtml = `<a href="${linkRedirecionamento}" class="btn-acao-secundario" style="margin-top:8px; padding: 6px 12px; font-size: 0.75rem;">Ir para Central</a>`;
+            } else if (n.tipo === 'solicitacao_parceiro' && n.statusAprovacao === 'pendente') {
+                icone = '👤';
                 const idSeguro = String(n.id == null ? '' : n.id).replace(/[^a-zA-Z0-9_-]/g, '');
-                acoesHtml = idSeguro ? `
-                    <div style="margin-top:8px; display:flex; gap:8px;">
-                        <button onclick="responderSolicitacaoParceiro('${idSeguro}', true)" style="background: var(--success); padding:6px 12px; font-size:.8rem;">Aprovar</button>
-                        <button onclick="responderSolicitacaoParceiro('${idSeguro}', false)" style="background: var(--danger); padding:6px 12px; font-size:.8rem;">Negar</button>
-                    </div>
-                ` : '';
+                if (idSeguro) {
+                    acoesHtml = `
+                        <div style="margin-top:10px; display:flex; gap:8px;">
+                            <button onclick="responderSolicitacaoParceiro('${idSeguro}', true)" class="btn-success" style="padding:6px 12px; font-size:.8rem; flex:1;">Aprovar</button>
+                            <button onclick="responderSolicitacaoParceiro('${idSeguro}', false)" class="btn-danger" style="padding:6px 12px; font-size:.8rem; flex:1;">Negar</button>
+                        </div>`;
+                }
             } else if (n.statusAprovacao && n.statusAprovacao !== 'pendente') {
-                acoesHtml = `<p style="font-size:.78rem; font-weight:bold; margin-top:4px; color:${n.statusAprovacao === 'aprovado' ? 'var(--success)' : 'var(--danger)'};">Status: ${n.statusAprovacao.toUpperCase()}</p>`;
+                icone = n.statusAprovacao === 'aprovado' ? '✅' : '❌';
+                acoesHtml = `<p style="font-size:.78rem; font-weight:bold; margin-top:6px; color:${n.statusAprovacao === 'aprovado' ? 'var(--success)' : 'var(--danger)'};">Status: ${n.statusAprovacao.toUpperCase()}</p>`;
             }
+
+            // Estrutura do Card de Notificação
             itensHtml += `
-                <div style="background: var(--surface-2); padding:12px; border-radius:8px; margin-bottom:8px; text-align:left; border-left:4px solid var(--primary);">
-                    <strong style="font-size:.9rem; color:var(--text-main);">${escaparHTML(n.titulo || '')}</strong>
-                    <p style="font-size:.85rem; margin-top:4px; color:var(--text-muted);">${escaparHTML(n.mensagem || '')}</p>
-                    <small style="font-size:.7rem; color:var(--text-muted);">${n.createdAt ? escaparHTML(formatarDataSemHora(n.createdAt)) : ''}</small>
-                    ${acoesHtml}
-                </div>
-            `;
+                <div class="notif-card" ${linkRedirecionamento && !acoesHtml.includes('button') ? `onclick="window.location.href='${linkRedirecionamento}'"` : ''}>
+                    <div class="notif-card-icon">${icone}</div>
+                    <div class="notif-card-content">
+                        <strong>${escaparHTML(n.titulo || '')}</strong>
+                        <p>${escaparHTML(n.mensagem || '')}</p>
+                        <small>${n.createdAt ? escaparHTML(formatarDataSemHora(n.createdAt)) : ''}</small>
+                        ${acoesHtml}
+                    </div>
+                </div>`;
         });
     }
+
     const overlay = document.createElement('div');
     overlay.className = 'modal-overlay';
+    overlay.setAttribute('data-notif-modal', 'true');
     overlay.innerHTML = `
-        <div class="modal-box" style="max-width:500px; width:95%;">
-            <h3>Central de Notificações</h3>
-            <div style="max-height:350px; overflow-y:auto; margin:16px 0; padding-right:4px;">${itensHtml}</div>
-            <button type="button" data-fechar-notif style="width:100%; background-color:var(--primary);">Fechar</button>
+        <div class="modal-box notif-modal-box" style="max-width:560px; width:95%; padding: 0; overflow: hidden;">
+            <div class="notif-modal-head" style="padding: 24px 24px 0;">
+                <h3 style="margin-bottom: 16px;">Central de Avisos</h3>
+                <div class="notif-tabs" role="tablist">
+                    <button type="button" role="tab" data-tab="lembretes" aria-selected="${aba === 'lembretes'}" class="${aba === 'lembretes' ? 'active' : ''}">
+                        📅 Lembretes${lembretesPendentes ? ` <span class="notif-tab-badge">${lembretesPendentes}</span>` : ''}
+                    </button>
+                    <button type="button" role="tab" data-tab="notificacoes" aria-selected="${aba === 'notificacoes'}" class="${aba === 'notificacoes' ? 'active' : ''}">
+                        🔔 Eventos${naoLidasSnapshot ? ` <span class="notif-tab-badge">${naoLidasSnapshot}</span>` : ''}
+                    </button>
+                </div>
+            </div>
+            <div class="notif-tab-body" id="notifTabLembretes" ${aba !== 'lembretes' ? 'hidden' : ''} style="padding: 16px 24px 24px;">
+                <p style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 12px;">Suas pendências financeiras operacionais.</p>
+                <ul class="lista-simples" style="margin:0;padding:0;" id="notifLembretesLista"></ul>
+            </div>
+            <div class="notif-tab-body" id="notifTabNotificacoes" ${aba !== 'notificacoes' ? 'hidden' : ''} style="padding: 16px 24px 24px; background: var(--surface-2);">
+                <p style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 12px;">Avisos do sistema e interações sociais.</p>
+                <div id="notifNotificacoesLista" style="max-height:360px; overflow-y:auto; padding-right:4px;">${itensHtml}</div>
+            </div>
+            <div style="padding: 16px 24px; border-top: 1px solid var(--border); background: var(--surface);">
+                <button type="button" data-fechar-notif style="width:100%; background-color:var(--primary);">Fechar Central</button>
+            </div>
         </div>
     `;
     document.body.appendChild(overlay);
+
+    renderizarListaLembretes(overlay.querySelector('#notifLembretesLista'), lembretes);
+
+    const alternarAba = tab => {
+        overlay.querySelectorAll('[data-tab]').forEach(b => {
+            const ativo = b.dataset.tab === tab;
+            b.classList.toggle('active', ativo);
+            b.setAttribute('aria-selected', String(ativo));
+        });
+        overlay.querySelector('#notifTabLembretes').hidden = tab !== 'lembretes';
+        overlay.querySelector('#notifTabNotificacoes').hidden = tab !== 'notificacoes';
+    };
+    overlay.querySelectorAll('[data-tab]').forEach(btn => btn.addEventListener('click', () => alternarAba(btn.dataset.tab)));
 
     const fechar = () => { overlay.remove(); renderizarSinoNotificacoes(); };
     overlay.querySelector('[data-fechar-notif]').onclick = fechar;
@@ -3641,62 +2596,66 @@ async function limparNotificacoes() {
     await mostrarAlertaModal("Notificações excluídas.");
 }
 
-function criarNotificacao(usuarioDestinoId, titulo, mensagem, tipo = 'info') {
-    const d = obterDados();
-    if (!Array.isArray(d.notificacoes)) d.notificacoes = [];
-    d.notificacoes.push({
-        id: gerarId('notif'),
-        usuarioDestinoId: String(usuarioDestinoId),
-        remetenteId: Number(obterUsuarioAtualId()),
-        tipo, titulo, mensagem,
-        lida: false,
-        statusAprovacao: '',
-        createdAt: new Date().toISOString()
-    });
-    salvarDados(d);
-    renderizarSinoNotificacoes();
-}
-
-// Um aviso por conta/vencimento: a chave estável evita duplicações ao navegar.
-// Funciona localmente e a sincronização existente o propaga para outros dispositivos.
 function gerarLembretesVencimento() {
     const dados = obterDados();
     const uId = obterUsuarioAtualId();
     const usuario = (dados.usuarios || []).find(u => String(u.id) === String(uId));
-    const preferencias = usuario?.preferenciasNotificacao || {};
-    if (!usuario || preferencias.ativo === false || usuario.trocaSenhaObrigatoria) return 0;
-    const dias = Math.max(1, Math.min(15, Number(preferencias.diasAntecedencia) || 3));
+    if (!usuario || usuario.trocaSenhaObrigatoria) return 0;
+    
     const hoje = normalizarDataISO(new Date());
     if (!hoje) return 0;
     const hojeUTC = Date.parse(hoje + 'T00:00:00Z');
     const ids = new Set((dados.notificacoes || []).map(n => String(n.id)));
     let criados = 0;
+    
     (dados.lancamentos || []).forEach(l => {
         if (String(l.usuarioId) !== String(uId) || normalizarTexto(l.tipo) !== 'saida') return;
         if (l.pago === true || normalizarTexto(l.status) === 'pago') return;
+        
         const vencimento = normalizarDataISO(l.vencimento);
         if (!vencimento) return;
+        
         const diferenca = Math.round((Date.parse(vencimento + 'T00:00:00Z') - hojeUTC) / 86400000);
-        if (diferenca < 0 || diferenca > dias) return;
-        const id = `alerta_vencimento_${uId}_${String(l.id).replace(/[^a-zA-Z0-9_-]/g, '_')}_${vencimento.replace(/-/g, '')}`;
+        
+        // GERA NOTIFICAÇÃO APENAS PARA ATRASOS (O resto fica na aba Lembretes)
+        if (diferenca >= 0) return; 
+        
+        const id = `alerta_atraso_${uId}_${String(l.id).replace(/[^a-zA-Z0-9_-]/g, '_')}_${vencimento.replace(/-/g, '')}`;
         if (ids.has(id)) return;
         ids.add(id);
+        
         const descricao = String(l.descricao || 'Conta').slice(0, 120);
         dados.notificacoes.push({
             id, usuarioDestinoId: uId, remetenteId: uId, tipo: 'alerta_vencimento',
-            titulo: diferenca === 0 ? 'Conta vence hoje' : 'Conta próxima do vencimento',
-            mensagem: `${descricao} · ${new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(numeroSeguro(l.valor))} · ${formatarDataBR(vencimento)}`,
+            titulo: 'Conta em Atraso ⚠️',
+            mensagem: `${descricao} venceu em ${formatarDataBR(vencimento)}. Valor: ${formatarMoeda(l.valor)}.`,
             lida: false, statusAprovacao: '', createdAt: new Date().toISOString()
         });
         criados++;
     });
+    
     if (criados) {
-        salvarDados(dados).catch(erro => console.warn('Não foi possível guardar lembretes:', erro));
+        salvarDados(dados).catch(() => {});
         renderizarSinoNotificacoes();
     }
     return criados;
 }
 
+function limparNotificacoesResolvidas(dados) {
+    if (!dados.notificacoes || !dados.lancamentos) return false;
+    const totalAntes = dados.notificacoes.length;
+    
+    dados.notificacoes = dados.notificacoes.filter(n => {
+        if (n.tipo === 'alerta_vencimento') {
+            const lancamentoId = String(n.id).split('_')[3];
+            const lanc = dados.lancamentos.find(l => String(l.id).replace(/[^a-zA-Z0-9_-]/g, '_') === lancamentoId);
+            if (!lanc || lanc.pago || String(lanc.status).toLowerCase() === 'pago') return false;
+        }
+        return true;
+    });
+    
+    return dados.notificacoes.length !== totalAntes;
+}
 // ============================================================================
 // 9.5 PRIMEIRO ACESSO (index.html)
 // ============================================================================

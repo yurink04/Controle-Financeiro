@@ -96,24 +96,26 @@
             </div>
 
             <div class="rpt-compare-filters">
-                <div class="rpt-filter-cell">
-                    <label for="rptCategoriaEntrada"><span class="rpt-key rpt-key-income"></span>Categoria de entrada</label>
-                    <select id="rptCategoriaEntrada" aria-describedby="rptComparadorAjuda"><option value="">Selecione uma receita</option></select>
-                </div>
-                <div class="rpt-filter-cell">
-                    <label for="rptCategoriaSaida"><span class="rpt-key rpt-key-expense"></span>Categoria de saída</label>
-                    <select id="rptCategoriaSaida" aria-describedby="rptComparadorAjuda"><option value="">Selecione um custo</option></select>
-                </div>
-                <div class="rpt-filter-cell">
-                    <label for="rptJanelaComparacao">Janela de análise</label>
-                    <select id="rptJanelaComparacao">
-                        <option value="1">Mês selecionado</option>
-                        <option value="3">Últimos 3 meses</option>
-                        <option value="6" selected>Últimos 6 meses</option>
-                        <option value="12">Últimos 12 meses</option>
-                    </select>
-                </div>
-            </div>
+    <div class="rpt-filter-cell">
+        <label for="rptCategoriaEntrada"><span class="rpt-key rpt-key-income"></span>Categoria de entrada</label>
+        <select id="rptCategoriaEntrada" aria-describedby="rptComparadorAjuda"><option value="">Selecione uma receita</option></select>
+        <input type="search" id="rptBuscaEntrada" placeholder="Filtrar descrição (ex: Uber)" style="margin-top: 6px;">
+    </div>
+    <div class="rpt-filter-cell">
+        <label for="rptCategoriaSaida"><span class="rpt-key rpt-key-expense"></span>Categoria de saída</label>
+        <select id="rptCategoriaSaida" aria-describedby="rptComparadorAjuda"><option value="">Selecione um custo</option></select>
+        <input type="search" id="rptBuscaSaida" placeholder="Filtrar descrição (ex: McDonald's)" style="margin-top: 6px;">
+    </div>
+    <div class="rpt-filter-cell">
+        <label for="rptJanelaComparacao">Janela de análise</label>
+        <select id="rptJanelaComparacao">
+            <option value="1">Mês selecionado</option>
+            <option value="3">Últimos 3 meses</option>
+            <option value="6" selected>Últimos 6 meses</option>
+            <option value="12">Últimos 12 meses</option>
+        </select>
+    </div>
+</div>
             <p id="rptComparadorAjuda" class="rpt-method-note">O período termina no mês de referência escolhido acima. Categorias e filtros podem ser alterados a qualquer momento.</p>
 
             <div id="rptComparadorVazio" class="rpt-empty" hidden>Selecione uma categoria de cada tipo para comparar.</div>
@@ -208,7 +210,9 @@
         <p id="rptFeedback" class="rpt-status" role="status" aria-live="polite"></p>
     </main>
 
-    <script src="script.js"></script>
-    <script src="relatorios-page.js"></script>
+    <script defer src="js/script.js"></script>
+    <script defer src="js/calculos_trabalhistas.js"></script>
+    <script defer src="js/conexao_sheets.js"></script>
+    <script defer src="js/page/relatorios.js"></script>
 </body>
 </html>

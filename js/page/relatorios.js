@@ -81,7 +81,9 @@ function rptGuardarPreferencias() {
         situacao: rptEl('rptSituacao')?.value,
         janela: rptEl('rptJanelaComparacao')?.value,
         entrada: rptEl('rptCategoriaEntrada')?.value,
-        saida: rptEl('rptCategoriaSaida')?.value
+        saida: rptEl('rptCategoriaSaida')?.value,
+        buscaEntrada: rptEl('rptBuscaEntrada')?.value || '', // NOVO
+        buscaSaida: rptEl('rptBuscaSaida')?.value || ''      // NOVO
     };
     try { localStorage.setItem(rptEstado.prefKey, JSON.stringify(preferencias)); } catch (_) {}
 }
@@ -225,15 +227,28 @@ function rptRenderizarCategorias(mes, movimentos, resumo) {
     return ranking;
 }
 
-function rptDadosComparacao(mes, janela, entradaId, saidaId) {
+function rptDadosComparacao(mes, janela, entradaId, saidaId, buscaEntrada = '', buscaSaida = '') {
     const meses = Array.from({length: janela}, (_, indice) =>
         rptMesDeslocado(mes, indice - janela + 1));
+    
+    const bEntrada = normalizarTexto(buscaEntrada);
+    const bSaida = normalizarTexto(buscaSaida);
+    
     const linhas = meses.map(chave => {
         const movimentos = rptMesMovimentos(chave);
-        const daEntrada = movimentos.filter(l => l.tipo === 'entrada' &&
-            String(l.categoriaId) === String(entradaId));
-        const daSaida = movimentos.filter(l => l.tipo === 'saida' &&
-            String(l.categoriaId) === String(saidaId));
+        
+        const daEntrada = movimentos.filter(l => 
+            l.tipo === 'entrada' &&
+            String(l.categoriaId) === String(entradaId) &&
+            (!bEntrada || normalizarTexto(l.descricao || '').includes(bEntrada))
+        );
+        
+        const daSaida = movimentos.filter(l => 
+            l.tipo === 'saida' &&
+            String(l.categoriaId) === String(saidaId) &&
+            (!bSaida || normalizarTexto(l.descricao || '').includes(bSaida))
+        );
+        
         return {
             mes: chave,
             entrada: daEntrada.reduce((acc, l) => acc + rptValor(l), 0),
@@ -242,6 +257,7 @@ function rptDadosComparacao(mes, janela, entradaId, saidaId) {
             saidasQtd: daSaida.length
         };
     });
+    
     return {
         linhas,
         entradas: linhas.reduce((s, l) => s + l.entrada, 0),
@@ -251,21 +267,30 @@ function rptDadosComparacao(mes, janela, entradaId, saidaId) {
     };
 }
 
+
 function rptRenderizarComparador() {
     const {mes, escopo} = rptFiltroAtual();
     const entradaId = rptEl('rptCategoriaEntrada')?.value || '';
     const saidaId = rptEl('rptCategoriaSaida')?.value || '';
+    const buscaEntrada = rptEl('rptBuscaEntrada')?.value || '';
+    const buscaSaida = rptEl('rptBuscaSaida')?.value || '';
     const janela = Number(rptEl('rptJanelaComparacao')?.value || 6);
     const completo = Boolean(entradaId && saidaId);
+    
     rptEl('rptComparadorVazio').hidden = completo;
     rptEl('rptComparadorConteudo').hidden = !completo;
+    
     if (!completo || !rptMesValido(mes)) return;
 
-    const dados = rptDadosComparacao(mes, janela, entradaId, saidaId);
+    const dados = rptDadosComparacao(mes, janela, entradaId, saidaId, buscaEntrada, buscaSaida);
     const resultado = dados.entradas - dados.saidas;
     const custoPct = dados.entradas ? dados.saidas / dados.entradas * 100 : null;
-    const nomeEntrada = rptNomeCategoria(entradaId);
-    const nomeSaida = rptNomeCategoria(saidaId);
+    
+    let nomeEntrada = rptNomeCategoria(entradaId);
+    let nomeSaida = rptNomeCategoria(saidaId);
+    if (buscaEntrada) nomeEntrada += ` (busca: "${buscaEntrada}")`;
+    if (buscaSaida) nomeSaida += ` (busca: "${buscaSaida}")`;
+
     rptEl('rptNomeEntrada').textContent = nomeEntrada;
     rptEl('rptNomeSaida').textContent = nomeSaida;
     rptEl('rptValorEntrada').textContent = rptMoeda(dados.entradas);
@@ -312,7 +337,7 @@ function rptRenderizarComparador() {
     if (privacidadeAtiva()) {
         conclusao = 'A interpretação dos valores fica oculta no modo discreto.';
     } else if (!dados.entradas && !dados.saidas) {
-        conclusao = 'Não houve lançamentos nessas duas categorias no período. Experimente outra janela ou inclua novos registros.';
+        conclusao = 'Não houve lançamentos nessas duas categorias com os filtros atuais. Experimente outra janela, limpe a busca ou inclua novos registros.';
     } else if (!dados.entradas) {
         conclusao = 'Há saídas nesta categoria, mas nenhuma entrada na categoria comparada. Não é possível calcular a proporção de custo.';
     } else if (resultado < 0) {
@@ -503,22 +528,35 @@ document.addEventListener('DOMContentLoaded', async () => {
     const preferencias = rptLerPreferencias();
     const params = new URLSearchParams(window.location.search);
     const mesUrl = params.get('mes');
-    rptEl('filtroMesRelatorio').value = rptMesValido(mesUrl)
-        ? mesUrl : dataLocalYYYYMMDD().slice(0, 7);
-    rptEl('rptEscopo').value = ['casal', 'individual'].includes(preferencias.escopo)
-        ? preferencias.escopo : 'individual';
+    
+    rptEl('filtroMesRelatorio').value = rptMesValido(mesUrl) ? mesUrl : dataLocalYYYYMMDD().slice(0, 7);
+    rptEl('rptEscopo').value = ['casal', 'individual'].includes(preferencias.escopo) ? preferencias.escopo : 'individual';
     rptEl('rptSituacao').value = preferencias.situacao === 'todos' ? 'todos' : 'realizados';
-    rptEl('rptJanelaComparacao').value = ['1', '3', '6', '12'].includes(preferencias.janela)
-        ? preferencias.janela : '6';
+    rptEl('rptJanelaComparacao').value = ['1', '3', '6', '12'].includes(preferencias.janela) ? preferencias.janela : '6';
+    
+    // Restaura as buscas salvas
+    if (preferencias.buscaEntrada) rptEl('rptBuscaEntrada').value = preferencias.buscaEntrada;
+    if (preferencias.buscaSaida) rptEl('rptBuscaSaida').value = preferencias.buscaSaida;
+
     for (const id of ['filtroMesRelatorio', 'rptEscopo', 'rptSituacao']) {
         rptEl(id).addEventListener('change', carregarRelatorioMensal);
     }
+    
     for (const id of ['rptCategoriaEntrada', 'rptCategoriaSaida', 'rptJanelaComparacao']) {
         rptEl(id).addEventListener('change', () => {
             rptRenderizarComparador();
             rptGuardarPreferencias();
         });
     }
+
+    // Eventos para os novos campos de busca (input para tempo real)
+    for (const id of ['rptBuscaEntrada', 'rptBuscaSaida']) {
+        rptEl(id).addEventListener('input', () => {
+            rptRenderizarComparador();
+            rptGuardarPreferencias();
+        });
+    }
+
     rptEl('rptExportarCSV').addEventListener('click', rptExportarCSV);
     rptEl('rptExportarPDF').addEventListener('click', () => window.print());
     rptEstado.carregado = true;

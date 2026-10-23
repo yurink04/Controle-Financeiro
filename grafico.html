@@ -83,7 +83,9 @@
         </section>
     </main>
 
-    <script src="script.js"></script>
+    <script defer src="js/script.js"></script>
+    <script defer src="js/calculos_trabalhistas.js"></script>
+    <script defer src="js/conexao_sheets.js"></script>
     <script>
         let _graficoConfig = { tipo: 'todos' };
 
@@ -94,11 +96,12 @@
 
             const params = new URLSearchParams(window.location.search);
             _graficoConfig = {
-                tipo: params.get('tipo') || 'todos',
-                categoriaId: params.get('categoriaId') || '',
-                filtroEss: params.get('filtro') || '',
-                cartaoId: params.get('cartaoId') || ''
-            };
+    tipo: params.get('tipo') || 'todos',
+    categoriaId: params.get('categoriaId') || '',
+    filtroEss: params.get('filtro') || '',
+    cartaoId: params.get('cartaoId') || '',
+    formaPagamento: params.get('formaPagamento') || ''
+};
 
             const inputMes = document.getElementById('filtroMesGrafico');
             const selectEscopo = document.getElementById('filtroEscopoGrafico');
@@ -148,7 +151,11 @@
                 t = c ? `Cartão: ${c.nome}` : 'Movimentações no cartão';
                 s = 'Compras e lançamentos vinculados ao cartão selecionado.';
             }
-            else if (cfg.tipo === 'todos') { t = 'Todas as movimentações'; s = 'Histórico completo do período.'; }
+            else if (cfg.tipo === 'formaPagamento' && cfg.formaPagamento) {
+    const mapa = { DINHEIRO: 'Dinheiro / Pix / Débito', BOLETO: 'Boleto', PIX: 'Pix', DEBITO: 'Débito', FIXO: 'Conta Fixa', CARTAO: 'Cartão de crédito' };
+    t = `Forma de pagamento: ${mapa[cfg.formaPagamento] || cfg.formaPagamento}`;
+    s = 'Saídas filtradas pela forma de pagamento selecionada.';
+}else if (cfg.tipo === 'todos') { t = 'Todas as movimentações'; s = 'Histórico completo do período.'; }
 
             if (elTit) elTit.textContent = t;
             if (elSub) elSub.textContent = s;
@@ -254,7 +261,7 @@
             }
 
             // CASO 3: EXIBIÇÃO APENAS PARA SAÍDAS OU CATEGORIAS / ESSENCIAIS
-            if (cfg.tipo === 'saidas' || cfg.tipo === 'categoria' || cfg.tipo === 'essencial') {
+            if (cfg.tipo === 'saidas' || cfg.tipo === 'categoria' || cfg.tipo === 'essencial' || cfg.tipo === 'formaPagamento') {
                 const mediaGasto = totalRegistros > 0 ? somaValores / totalRegistros : 0;
                 grid.innerHTML = `
                     <div class="stat-box">
@@ -336,6 +343,7 @@
         else if (cfg.filtroEss === 'nao') lista = lista.filter(l => normalizarTexto(l.servicoEssencial) !== 'sim');
     }
     else if (cfg.tipo === 'cartao' && cfg.cartaoId) lista = lista.filter(l => String(l.cartaoId) === String(cfg.cartaoId));
+else if (cfg.tipo === 'formaPagamento' && cfg.formaPagamento) lista = lista.filter(l => l.tipo === 'saida' && String(l.formaPagamento) === String(cfg.formaPagamento));
 
     if (mes) lista = lista.filter(l => String(l.vencimento || l.dataCompra || '').startsWith(mes));
 

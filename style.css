@@ -2632,3 +2632,152 @@ body.profile-page .account-photo-inline-note p { font-size: .75rem; color: var(-
     .rpt-intro :is(p,.rpt-eyebrow) { color: #444 !important; }
     .rpt-compare, .rpt-analysis-grid, .rpt-spending { break-inside: avoid; }
 }
+
+/* Ajuste para inputs de busca no comparador de relatórios */
+.rpt-compare-filters .rpt-filter-cell input[type="search"] {
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 8px 12px;
+    width: 100%;
+    background: var(--surface);
+    color: var(--text-main);
+    transition: var(--transition-fast);
+}
+.rpt-compare-filters .rpt-filter-cell input[type="search"]:focus {
+    border-color: var(--primary);
+    outline: none;
+    box-shadow: 0 0 0 3px var(--primary-soft);
+}
+
+/* Central de notificações com abas */
+.notif-modal-box { display: flex; flex-direction: column; }
+.notif-modal-head { display: flex; flex-direction: column; gap: 14px; margin-bottom: 4px; }
+.notif-modal-head h3 { margin-bottom: 0; }
+.notif-tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--border); }
+.notif-tabs button {
+    background: transparent;
+    color: var(--text-muted);
+    padding: 9px 14px;
+    border: none;
+    border-radius: 10px 10px 0 0;
+    font-weight: 700;
+    font-size: .82rem;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -1px;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    cursor: pointer;
+    transition: var(--transition-fast);
+}
+.notif-tabs button:hover { color: var(--primary); background: var(--primary-soft); transform: none; }
+.notif-tabs button.active { color: var(--primary); border-bottom-color: var(--primary); background: transparent; }
+.notif-tab-badge {
+    background: var(--danger);
+    color: #fff;
+    font-size: .65rem;
+    padding: 2px 7px;
+    border-radius: 99px;
+    font-weight: 800;
+    min-width: 18px;
+    text-align: center;
+    line-height: 1.3;
+}
+.notif-tabs button.active .notif-tab-badge { background: var(--primary); }
+.notif-tab-body { animation: contentReveal .18s ease both; }
+.notif-tab-body[hidden] { display: none !important; }
+
+/* =========================================================
+   MODAL DE NOTIFICAÇÕES E LEMBRETES
+   ========================================================= */
+.notif-tabs {
+    display: flex;
+    gap: 8px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 0;
+}
+.notif-tabs button {
+    flex: 1;
+    background: transparent;
+    color: var(--text-muted);
+    padding: 12px;
+    border-radius: 12px 12px 0 0;
+    border: 1px solid transparent;
+    border-bottom: 0;
+    font-size: 0.85rem;
+    font-weight: 700;
+    transition: var(--transition-fast);
+}
+.notif-tabs button:hover {
+    background: var(--surface-2);
+    color: var(--text-main);
+}
+.notif-tabs button.active {
+    background: var(--surface-2);
+    color: var(--primary);
+    border-color: var(--border);
+    position: relative;
+}
+.notif-tabs button.active::after {
+    content: ''; position: absolute; bottom: -1px; left: 0; right: 0;
+    height: 2px; background: var(--primary);
+}
+.notif-tab-badge {
+    background: var(--danger); color: white;
+    padding: 2px 6px; border-radius: 99px;
+    font-size: 0.65rem; margin-left: 6px;
+}
+
+/* Cards de Notificações Inteligentes */
+.notif-card {
+    display: flex;
+    gap: 14px;
+    background: var(--surface);
+    padding: 16px;
+    border-radius: 12px;
+    margin-bottom: 12px;
+    border: 1px solid var(--border);
+    border-left: 4px solid var(--primary);
+    transition: var(--transition-fast);
+    cursor: default;
+}
+.notif-card[onclick] {
+    cursor: pointer;
+}
+.notif-card[onclick]:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--shadow);
+    border-color: var(--primary);
+}
+.notif-card-icon {
+    font-size: 1.5rem;
+    flex-shrink: 0;
+    display: grid;
+    place-items: center;
+    width: 40px;
+    height: 40px;
+    background: var(--surface-2);
+    border-radius: 10px;
+}
+.notif-card-content {
+    flex: 1;
+    min-width: 0;
+    text-align: left;
+}
+.notif-card-content strong {
+    display: block;
+    font-size: 0.95rem;
+    color: var(--text-main);
+    margin-bottom: 4px;
+}
+.notif-card-content p {
+    font-size: 0.85rem !important;
+    color: var(--text-muted);
+    line-height: 1.4 !important;
+    margin-bottom: 6px !important;
+}
+.notif-card-content small {
+    display: block;
+    font-size: 0.7rem;
+    color: var(--text-soft);
+}

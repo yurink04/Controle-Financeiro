@@ -48,6 +48,8 @@
                             <select id="editFormaPagamento" onchange="tratarMudancaFormaEdicao()">
                                 <option value="DINHEIRO">Dinheiro / Pix / Débito</option>
                                 <option value="BOLETO">Boleto / Conta</option>
+                                <option value="PIX">Pix</option>
+                                <option value="DEBITO">Débito</option>
                                 <option value="FIXO">Conta fixa</option>
                                 <option value="CARTAO">Cartão de crédito</option>
                             </select>
@@ -151,7 +153,9 @@
         </section>
     </main>
 
-    <script src="script.js"></script>
+    <script defer src="js/script.js"></script>
+    <script defer src="js/calculos_trabalhistas.js"></script>
+    <script defer src="js/conexao_sheets.js"></script>
     <script>
         const urlParams = new URLSearchParams(window.location.search);
         const lancamentoId = urlParams.get('id') || '';
@@ -269,7 +273,6 @@
             if (lanc.cartaoId) document.getElementById('editCartao').value = String(lanc.cartaoId);
             if (lanc.bemId) document.getElementById('editBem').value = String(lanc.bemId);
 
-            // Info sobre parcelamento (não editável individualmente)
             if (Number(lanc.totalParcelas) > 1 || lanc.parcelamentoId) {
                 document.getElementById('infoParcelamentoEdit').textContent =
                     `Parcela ${lanc.parcelaAtual || 1} de ${lanc.totalParcelas || 1}. O número total de parcelas é definido na criação — para alterar, exclua e recrie o parcelamento.`;
@@ -294,7 +297,6 @@
             atualizarOpcoesNaturezaRenda(document.getElementById('editNaturezaRenda'), obterUsuarioAtual(),
                 lancamentoAtualEdicao?.naturezaRenda || '');
 
-            // Hora extra só integra a folha; nunca é somada pela segunda vez à renda.
             const catSel = document.getElementById('editCategoria');
             const dados = obterDados();
             const amostra = { tipo, categoriaId: catSel.value, descricao: document.getElementById('editDescricao').value,
@@ -322,7 +324,6 @@
             document.getElementById('blocoEditDataCompra').style.display = ehCartao ? 'block' : 'none';
         }
 
-        // Categoria muda → precisa reavaliar hora extra
         document.addEventListener('change', e => {
             if (e.target.id === 'editCategoria') tratarMudancaTipoEdicao(false);
         });
